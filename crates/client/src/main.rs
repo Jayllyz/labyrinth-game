@@ -1,5 +1,5 @@
-use shared::func::{get_server_address, send_message};
-use std::{io::Write, net::TcpStream};
+use shared::func::{get_server_address, receive_message, send_message};
+use std::net::TcpStream;
 
 fn main() {
     let server_address = get_server_address();
@@ -20,9 +20,9 @@ fn main() {
         }
     };
 
-    send_message(&mut stream, shared::messages::Message::Hello);
-    stream.flush().expect("Failed to flush stream");
-    drop(stream);
+    let msg = shared::messages::Message::Hello;
+    send_message(&mut stream, msg);
+    let _ = receive_message(&mut stream).expect("Failed to receive message");
 }
 
 #[cfg(test)]

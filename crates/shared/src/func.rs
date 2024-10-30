@@ -1,13 +1,10 @@
 use std::{
     env,
-    io::{BufReader, Read, Write},
+    io::{Read, Write},
     net::TcpStream,
 };
 
 use crate::messages::Message;
-
-const MAX_REQUEST_SIZE: u64 = 32 * 1024;
-const BUFFER_SIZE: usize = 8 * 1024;
 
 pub fn get_server_address() -> String {
     const DEFAULT_SERVER_ADDRESS: &str = "127.0.0.1:7878";
@@ -18,27 +15,40 @@ pub fn get_server_address() -> String {
 }
 
 pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
-    let buf_reader = BufReader::with_capacity(BUFFER_SIZE, stream);
-    let mut buffer = String::new();
-
-    match buf_reader.take(MAX_REQUEST_SIZE).read_to_string(&mut buffer) {
+    let mut buf_len = [0u8; 4];
+    match stream.read_exact(&mut buf_len) {
         Ok(_) => (),
-        Err(e) => eprintln!("Error reading from connection: {}", e),
+        Err(e) => Err(format!("Failed to read message body: {}", e))?,
     }
 
-    let request = String::from_utf8_lossy(buffer.as_bytes());
-    println!("\n\x1b[34mReceived: {}\x1b[0m", request);
-
-    match serde_json::from_str(&request) {
-        Ok(msg) => Ok(msg),
-        Err(e) => Err(format!("Error parsing message: {}", e)),
+    let len = u32::from_be_bytes(buf_len) as usize;
+    if len > 1_000_000 {
+        return Err(format!("Message too large: {} bytes", len));
     }
+
+    let mut buf = vec![0u8; len];
+    match stream.read_exact(&mut buf) {
+        Ok(_) => (),
+        Err(e) => Err(format!("Failed to read message body: {}", e))?,
+    }
+
+    let str = String::from_utf8_lossy(&buf);
+    let json: Message = match serde_json::from_str(&str) {
+        Ok(msg) => msg,
+        Err(e) => return Err(format!("Failed to parse JSON: {}", e)),
+    };
+
+    println!("\n\x1b[34mReceived : {}\x1b[0m", serde_json::to_string_pretty(&json).unwrap());
+
+    Ok(json)
 }
 
 pub fn send_message(stream: &mut TcpStream, msg: Message) {
-    let json = serde_json::to_string(&msg).unwrap();
+    let json = serde_json::to_string(&msg).expect("Failed to serialize message");
     println!("\n\x1b[32mSending: {}\x1b[0m", json);
 
+    let len = (json.len() as u32).to_be_bytes();
+    stream.write_all(&len).expect("Failed to write to stream");
     stream.write_all(json.as_bytes()).expect("Failed to write to stream");
     stream.flush().expect("Failed to flush stream");
 }
