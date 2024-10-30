@@ -36,10 +36,11 @@ pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
 }
 
 pub fn send_message(stream: &mut TcpStream, msg: Message) {
-    let serialized = serde_json::to_string(&msg).unwrap();
-    println!("\n\x1b[32mSending: {}\x1b[0m", serialized);
+    let json = serde_json::to_string(&msg).unwrap();
+    println!("\n\x1b[32mSending: {}\x1b[0m", json);
 
-    stream.write_all(serialized.as_bytes()).expect("Failed to write to stream");
+    stream.write_all(json.as_bytes()).expect("Failed to write to stream");
+    stream.flush().expect("Failed to flush stream");
 }
 
 #[cfg(test)]
