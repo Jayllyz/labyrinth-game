@@ -30,12 +30,9 @@ fn handle_connection(mut stream: TcpStream) -> Result<(), String> {
 
     match response {
         Ok(Message::Hello) => {
-            send_message(
-                &mut stream,
-                Message::Welcome(shared::messages::Welcome { version: 1 }),
-            );
+            send_message(&mut stream, Message::Welcome(shared::messages::Welcome { version: 1 }));
             Ok(())
-        },
+        }
         Ok(_) => {
             send_message(
                 &mut stream,
@@ -44,10 +41,8 @@ fn handle_connection(mut stream: TcpStream) -> Result<(), String> {
                 }),
             );
             Ok(())
-        },
-        Err(e) => {
-            Err(e.to_string())
         }
+        Err(e) => Err(e.to_string()),
     }
 }
 
