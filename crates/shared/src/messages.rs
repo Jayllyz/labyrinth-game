@@ -31,15 +31,15 @@ pub struct Subscribe {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum SubscribeError {
-    AlreadyRegistered,
-    InvalidName,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
 pub enum SubscribeResult {
     Ok,
     Err(SubscribeError),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum SubscribeError {
+    AlreadyRegistered,
+    InvalidName,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
