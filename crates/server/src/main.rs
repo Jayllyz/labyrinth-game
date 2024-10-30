@@ -1,4 +1,7 @@
-use shared::func::{get_server_address, receive_message};
+use shared::{
+    func::{get_server_address, receive_message, send_message},
+    messages::{Message, MessageError},
+};
 use std::net::{TcpListener, TcpStream};
 
 fn main() {
@@ -12,7 +15,7 @@ fn main() {
                 std::thread::spawn(|| {
                     let res = handle_connection(stream);
                     if let Err(e) = res {
-                        eprintln!("Error handling connection: {}", e);
+                        eprintln!("{}", e);
                     }
                 });
             }
@@ -21,12 +24,15 @@ fn main() {
     }
 }
 
-fn handle_connection(mut stream: TcpStream) -> Result<(), std::io::Error> {
-    let json = receive_message(&mut stream);
-    match json {
-        Ok(_) => (),
-        Err(e) => eprintln!("Error receiving message: {}", e),
-    }
+fn handle_connection(mut stream: TcpStream) -> Result<(), String> {
+    let msg = receive_message(&mut stream)?;
+
+    let response = match msg {
+        Message::Hello => Message::Welcome(shared::messages::Welcome { version: 1 }),
+        _ => Message::MessageError(MessageError { message: "Invalid message".to_string() }),
+    };
+
+    send_message(&mut stream, response);
 
     Ok(())
 }

@@ -7,6 +7,7 @@ use std::{
 use crate::messages::Message;
 
 const MAX_REQUEST_SIZE: u64 = 32 * 1024;
+const BUFFER_SIZE: usize = 8 * 1024;
 
 pub fn get_server_address() -> String {
     const DEFAULT_SERVER_ADDRESS: &str = "127.0.0.1:7878";
@@ -17,7 +18,7 @@ pub fn get_server_address() -> String {
 }
 
 pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
-    let buf_reader = BufReader::with_capacity(8192, stream); // 8KB buffer
+    let buf_reader = BufReader::with_capacity(BUFFER_SIZE, stream);
     let mut buffer = String::new();
 
     match buf_reader.take(MAX_REQUEST_SIZE).read_to_string(&mut buffer) {
