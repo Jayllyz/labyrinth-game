@@ -14,23 +14,28 @@ pub fn get_server_address() -> String {
         .unwrap_or_else(|| DEFAULT_SERVER_ADDRESS.to_string())
 }
 
+pub fn get_player_name() -> String {
+    const DEFAULT_PLAYER_NAME: &str = "Player1";
+    env::args().nth(2).filter(|s| !s.is_empty()).unwrap_or_else(|| DEFAULT_PLAYER_NAME.to_string())
+}
+
 pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
     let mut buf_len = [0u8; 4];
     match stream.read_exact(&mut buf_len) {
         Ok(_) => (),
-        Err(e) => Err(format!("Failed to read message body: {}", e))?,
+        Err(e) => Err(format!("Failed to read message length: {}", e))?,
     }
 
     let len = u32::from_be_bytes(buf_len) as usize;
     if len > 1_000_000 {
-        return Err(format!("Message too large: {} bytes", len));
+        Err(format!("Message too large: {} bytes", len))?
     }
 
     let mut buf = vec![0u8; len];
     match stream.read_exact(&mut buf) {
         Ok(_) => (),
         Err(e) => Err(format!("Failed to read message body: {}", e))?,
-    }
+    };
 
     let str = String::from_utf8_lossy(&buf);
     let json: Message = match serde_json::from_str(&str) {
@@ -47,8 +52,8 @@ pub fn send_message(stream: &mut TcpStream, msg: Message) {
     let json = serde_json::to_string(&msg).expect("Failed to serialize message");
     println!("\n\x1b[32mSending: {}\x1b[0m", json);
 
-    let len = (json.len() as u32).to_be_bytes();
-    stream.write_all(&len).expect("Failed to write to stream");
+    let len = json.len() as u32;
+    stream.write_all(&len.to_be_bytes()).expect("Failed to write to stream");
     stream.write_all(json.as_bytes()).expect("Failed to write to stream");
     stream.flush().expect("Failed to flush stream");
 }

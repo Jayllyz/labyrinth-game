@@ -33,6 +33,15 @@ fn handle_connection(mut stream: TcpStream) -> Result<(), String> {
             send_message(&mut stream, Message::Welcome(shared::messages::Welcome { version: 1 }));
             Ok(())
         }
+        Ok(Message::Subscribe(_sub)) => {
+            println!("Received subscribe message");
+
+            send_message(
+                &mut stream,
+                Message::SubscribeResult(shared::messages::SubscribeResult::Ok),
+            );
+            Ok(())
+        }
         Ok(_) => {
             send_message(
                 &mut stream,
