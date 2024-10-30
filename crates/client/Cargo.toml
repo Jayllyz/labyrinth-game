@@ -1,5 +1,5 @@
 [package]
-name = "labyrinth-client"
+name = "client"
 version = "0.1.0"
 include = ["/src"]
 categories.workspace = true
@@ -13,3 +13,4 @@ workspace = true
 [dependencies]
 serde_json = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+shared = { path = "../shared" }
