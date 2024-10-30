@@ -26,11 +26,6 @@ pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
         Err(e) => eprintln!("Error reading from connection: {}", e),
     }
 
-    if buffer.len() >= MAX_REQUEST_SIZE as usize {
-        eprintln!("Request too large");
-        return Err("Request too large".to_string());
-    }
-
     let request = String::from_utf8_lossy(buffer.as_bytes());
     println!("\n\x1b[34mReceived: {}\x1b[0m", request);
 
