@@ -10,12 +10,10 @@ const MAX_REQUEST_SIZE: u64 = 32 * 1024;
 
 pub fn get_server_address() -> String {
     const DEFAULT_SERVER_ADDRESS: &str = "127.0.0.1:7878";
-    let address = env::args()
+    env::args()
         .nth(1)
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| DEFAULT_SERVER_ADDRESS.to_string());
-
-    address
+        .unwrap_or_else(|| DEFAULT_SERVER_ADDRESS.to_string())
 }
 
 pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
