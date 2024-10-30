@@ -1,5 +1,5 @@
 [package]
-name = "labyrinth-shared"
+name = "shared"
 version = "0.1.0"
 include = ["/src"]
 categories.workspace = true
