@@ -31,7 +31,6 @@ fn main() {
             Message::Welcome(..) => {
                 let subscribe = Subscribe { name: get_player_name() };
                 send_message(&mut stream, Message::Subscribe(subscribe));
-                print!("Subscribing...");
             }
             Message::SubscribeResult(result) => match result {
                 SubscribeResult::Ok => {

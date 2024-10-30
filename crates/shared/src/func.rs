@@ -68,4 +68,11 @@ mod tests {
         const DEFAULT_SERVER_ADDRESS: &str = "127.0.0.1:7878";
         assert_eq!(address, DEFAULT_SERVER_ADDRESS);
     }
+
+    #[test]
+    fn test_get_player_name() {
+        let name = get_player_name();
+        const DEFAULT_PLAYER_NAME: &str = "Player1";
+        assert_eq!(name, DEFAULT_PLAYER_NAME);
+    }
 }

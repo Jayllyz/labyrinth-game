@@ -8,7 +8,6 @@ fn main() {
     let server_address = get_server_address();
     let listener = TcpListener::bind(server_address.clone()).expect("Failed to bind to address");
     println!("Server listening on: {:?}", server_address);
-    listener.set_ttl(100).expect("could not set TTL");
 
     for stream in listener.incoming() {
         match stream {
@@ -26,35 +25,27 @@ fn main() {
 }
 
 fn handle_connection(mut stream: TcpStream) -> Result<(), String> {
-    let response = receive_message(&mut stream);
-
-    match response {
-        Ok(Message::Hello) => {
-            send_message(&mut stream, Message::Welcome(shared::messages::Welcome { version: 1 }));
-            Ok(())
-        }
-        Ok(Message::Subscribe(_sub)) => {
-            println!("Received subscribe message");
-
-            send_message(
-                &mut stream,
-                Message::SubscribeResult(shared::messages::SubscribeResult::Ok),
-            );
-            Ok(())
-        }
-        Ok(_) => {
-            send_message(
-                &mut stream,
-                Message::MessageError(shared::messages::MessageError {
-                    message: "Invalid message".to_string(),
-                }),
-            );
-            Ok(())
-        }
-        Err(e) => Err(e.to_string()),
+    while let Ok(message) = receive_message(&mut stream) {
+        let response = match message {
+            Message::Hello => Message::Welcome(shared::messages::Welcome { version: 1 }),
+            Message::Subscribe(subscribe) => {
+                if subscribe.name.is_empty() {
+                    Message::SubscribeResult(shared::messages::SubscribeResult::Err(
+                        shared::messages::SubscribeError::InvalidName,
+                    ))
+                } else {
+                    Message::SubscribeResult(shared::messages::SubscribeResult::Ok)
+                }
+                //todo already registered user
+            }
+            _ => Message::MessageError(shared::messages::MessageError {
+                message: "Invalid message".to_string(),
+            }),
+        };
+        send_message(&mut stream, response)
     }
+    Ok(())
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
