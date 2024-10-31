@@ -1,30 +1,27 @@
 use shared::{
-    func::{get_server_address, receive_message, send_message},
-    messages::Message,
+    messages::{receive_message, send_message, Message},
+    utils::{get_server_address, print_error, print_log, Color},
 };
 use std::net::{TcpListener, TcpStream};
 
 fn main() {
     let server_address = get_server_address();
     let listener = TcpListener::bind(server_address.clone()).expect("Failed to bind to address");
-    println!("Server listening on: {:?}", server_address);
+    print_log(&format!("Server started on {}", server_address), Color::Blue);
 
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 std::thread::spawn(|| {
-                    let res = handle_connection(stream);
-                    if let Err(e) = res {
-                        eprintln!("{}", e);
-                    }
+                    handle_connection(stream);
                 });
             }
-            Err(e) => eprintln!("Error accepting connection: {}", e),
+            Err(e) => print_error(&format!("Failed to establish connection: {}", e)),
         }
     }
 }
 
-fn handle_connection(mut stream: TcpStream) -> Result<(), String> {
+fn handle_connection(mut stream: TcpStream) {
     while let Ok(message) = receive_message(&mut stream) {
         let response = match message {
             Message::Hello => Message::Welcome(shared::messages::Welcome { version: 1 }),
@@ -44,8 +41,8 @@ fn handle_connection(mut stream: TcpStream) -> Result<(), String> {
         };
         send_message(&mut stream, response)
     }
-    Ok(())
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
