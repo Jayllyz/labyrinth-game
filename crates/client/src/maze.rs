@@ -8,11 +8,14 @@ pub fn maze_parser(input: &str) -> Vec<Vec<u8>> {
 
     let mut maze = vec![vec![0u8; width]; height];
 
+    const WALL: u8 = 1;
+    const SPACE: u8 = 0;
+
     for (y, line) in lines.iter().enumerate() {
         for (x, char) in line.chars().enumerate() {
             maze[y][x] = match char {
-                ' ' => 0,
-                _ => 1,
+                ' ' => SPACE,
+                _ => WALL,
             };
         }
     }
