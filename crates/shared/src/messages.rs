@@ -1,4 +1,9 @@
+use crate::utils::{print_log, Color};
 use serde::{Deserialize, Serialize};
+use std::{
+    io::{Read, Write},
+    net::TcpStream,
+};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Message {
@@ -78,6 +83,53 @@ pub enum ActionResult {
     Ok,
     Completed,
     Err(ActionError),
+}
+
+pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
+    let mut buf_len = [0u8; 4];
+    match stream.read_exact(&mut buf_len) {
+        Ok(_) => (),
+        Err(e) => Err(format!("Failed to read message length: {}", e))?,
+    }
+
+    let len = u32::from_be_bytes(buf_len) as usize;
+
+    let mut buf = vec![0u8; len];
+    match stream.read_exact(&mut buf) {
+        Ok(_) => (),
+        Err(e) => Err(format!("Failed to read message body: {}", e))?,
+    };
+
+    let str = String::from_utf8_lossy(&buf);
+    let json: Message = match serde_json::from_str(&str) {
+        Ok(msg) => msg,
+        Err(e) => return Err(format!("Failed to parse JSON: {}", e)),
+    };
+
+    let sender = match stream.peer_addr() {
+        Ok(addr) => format!("{}:{}", addr.ip(), addr.port()),
+        Err(_) => String::from("unknown address"),
+    };
+
+    print_log(&format!("Received: {:?} from ({})", json, sender,), Color::Green);
+
+    Ok(json)
+}
+
+pub fn send_message(stream: &mut TcpStream, msg: Message) {
+    let json = serde_json::to_string(&msg).expect("Failed to serialize message");
+    let len = json.len() as u32;
+
+    stream.write_all(&len.to_be_bytes()).expect("Failed to write to stream");
+    stream.write_all(json.as_bytes()).expect("Failed to write to stream");
+    stream.flush().expect("Failed to flush stream");
+
+    let receiver = match stream.peer_addr() {
+        Ok(addr) => format!("{}:{}", addr.ip(), addr.port()),
+        Err(_) => String::from("unknown address"),
+    };
+
+    print_log(&format!("Sent: {:?} to ({})", msg, receiver), Color::Blue);
 }
 
 #[cfg(test)]
