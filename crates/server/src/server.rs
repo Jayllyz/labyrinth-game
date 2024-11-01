@@ -26,8 +26,8 @@ impl GameServer {
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
-                    let clients = self.clients.clone();
-                    let teams = self.teams.clone();
+                    let clients = Arc::clone(&self.clients);
+                    let teams = Arc::clone(&self.teams);
                     std::thread::spawn(move || {
                         Self::handle_connection(&GameServer { clients, teams }, stream)
                     });
@@ -69,7 +69,7 @@ impl GameServer {
 
         print_log(
             &format!("{} registered successfully on team {}", player.player_name, player.team_name),
-            shared::utils::Color::Green,
+            Color::Green,
         );
         SubscribeResult::Ok
     }
@@ -96,6 +96,12 @@ impl GameServer {
             };
             send_message(&mut stream, response)
         }
+    }
+}
+
+impl Default for GameServer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
