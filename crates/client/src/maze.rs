@@ -9,6 +9,15 @@ pub struct Maze {
     pub exit: Point,
 }
 
+pub struct PositionType;
+
+impl PositionType {
+    pub const WALL: u8 = 1;
+    pub const SPACE: u8 = 0;
+    pub const ENTRY: u8 = 2;
+    pub const EXIT: u8 = 3;
+}
+
 impl Maze {
     pub fn new(map: Vec<Vec<u8>>, entry: Point, exit: Point) -> Self {
         let row_len = map.len();
@@ -41,6 +50,18 @@ impl Maze {
             println!();
         }
         println!();
+    }
+
+    pub fn is_out_of_bound_point(&self, point: &Point) -> bool {
+        point.row < 0
+            || point.column < 0
+            || point.row >= (self.row_len as i8)
+            || point.column >= (self.col_len as i8)
+    }
+
+    pub fn is_walkable_point(&self, point: &Point, visited_points: &Vec<Vec<bool>>) -> bool {
+        !visited_points[point.row as usize][point.column as usize]
+            && !(self.map[point.row as usize][point.column as usize] == PositionType::WALL)
     }
 }
 

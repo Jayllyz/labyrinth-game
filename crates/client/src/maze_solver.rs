@@ -1,49 +1,45 @@
 use crate::maze::{Maze, Point};
 use std::collections::VecDeque;
 
+pub struct Directions;
+
+impl Directions {
+    pub const NORTH: Point = Point { row: -1, column: 0 };
+    pub const SOUTH: Point = Point { row: 1, column: 0 };
+    pub const WEST: Point = Point { row: 0, column: -1 };
+    pub const EAST: Point = Point { row: 0, column: 1 };
+}
+
 pub fn bfs_maze(maze: &Maze) -> bool {
     let mut queue: VecDeque<Point> = VecDeque::new();
 
     let Maze { entry, exit, row_len, col_len, .. } = *maze;
     queue.push_back(maze.entry);
 
-    let mut visited: Vec<Vec<bool>> = vec![vec![false; col_len]; row_len];
-    visited[entry.row as usize][entry.column as usize] = true;
+    let mut visited_points: Vec<Vec<bool>> = vec![vec![false; col_len]; row_len];
+    visited_points[entry.row as usize][entry.column as usize] = true;
 
-    let directions = [
-        Point { row: -1, column: 0 },
-        Point { row: 1, column: 0 },
-        Point { row: 0, column: 1 },
-        Point { row: 0, column: -1 },
-    ];
+    let directions = [Directions::NORTH, Directions::SOUTH, Directions::WEST, Directions::EAST];
 
     while !queue.is_empty() {
         let curr: Point = queue.pop_front().unwrap();
 
         if curr == exit {
-            maze.print(&visited);
+            maze.print(&visited_points);
             return true;
         }
 
         for direction in directions.iter() {
-            let neighbor: Point = curr + *direction;
+            let neighbour_point: Point = curr + *direction;
 
-            if neighbor.row < 0
-                || neighbor.column < 0
-                || neighbor.row >= (row_len as i8)
-                || neighbor.column >= (col_len as i8)
+            if maze.is_out_of_bound_point(&neighbour_point)
+                || !maze.is_walkable_point(&neighbour_point, &visited_points)
             {
                 continue;
             }
 
-            if visited[neighbor.row as usize][neighbor.column as usize]
-                || maze.map[neighbor.row as usize][neighbor.column as usize] == 1
-            {
-                continue;
-            }
-
-            queue.push_back(neighbor);
-            visited[neighbor.row as usize][neighbor.column as usize] = true;
+            queue.push_back(neighbour_point);
+            visited_points[neighbour_point.row as usize][neighbour_point.column as usize] = true;
         }
     }
     false

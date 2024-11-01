@@ -1,4 +1,4 @@
-use crate::maze::{Maze, Point};
+use crate::maze::{Maze, Point, PositionType};
 
 pub fn maze_parser(input: &str) -> Maze {
     if input.is_empty() {
@@ -13,29 +13,24 @@ pub fn maze_parser(input: &str) -> Maze {
     let exit = Point { row: 0, column: 0 };
     let mut maze = Maze::new(map, entry, exit);
 
-    const WALL: u8 = 1;
-    const SPACE: u8 = 0;
-    const ENTRY: u8 = 2;
-    const EXIT: u8 = 3;
-
-    for (y, line) in lines.iter().enumerate() {
-        for (x, char) in line.chars().enumerate() {
+    for (row, line) in lines.iter().enumerate() {
+        for (col, char) in line.chars().enumerate() {
             match char {
                 ' ' => {
-                    maze.map[y][x] = SPACE;
+                    maze.map[row][col] = PositionType::SPACE;
                 }
                 '2' => {
-                    maze.map[y][x] = ENTRY;
-                    maze.entry.row = y as i8;
-                    maze.entry.column = x as i8;
+                    maze.map[row][col] = PositionType::ENTRY;
+                    maze.entry.row = row as i8;
+                    maze.entry.column = col as i8;
                 }
                 '3' => {
-                    maze.map[y][x] = EXIT;
-                    maze.exit.row = y as i8;
-                    maze.exit.column = x as i8;
+                    maze.map[row][col] = PositionType::EXIT;
+                    maze.exit.row = row as i8;
+                    maze.exit.column = col as i8;
                 }
                 _ => {
-                    maze.map[y][x] = WALL;
+                    maze.map[row][col] = PositionType::WALL;
                 }
             }
         }
