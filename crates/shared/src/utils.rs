@@ -39,6 +39,11 @@ pub fn get_player_name() -> String {
     env::args().nth(2).filter(|s| !s.is_empty()).unwrap_or_else(|| DEFAULT_PLAYER_NAME.to_string())
 }
 
+pub fn get_team_name() -> String {
+    const DEFAULT_TEAM_NAME: &str = "Team1";
+    env::args().nth(3).filter(|s| !s.is_empty()).unwrap_or_else(|| DEFAULT_TEAM_NAME.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -55,6 +60,13 @@ mod tests {
         let name = get_player_name();
         const DEFAULT_PLAYER_NAME: &str = "Player1";
         assert_eq!(name, DEFAULT_PLAYER_NAME);
+    }
+
+    #[test]
+    fn test_get_team_name() {
+        let name = get_team_name();
+        const DEFAULT_TEAM_NAME: &str = "Team1";
+        assert_eq!(name, DEFAULT_TEAM_NAME);
     }
 
     #[test]

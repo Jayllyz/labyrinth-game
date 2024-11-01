@@ -2,7 +2,7 @@ use crate::utils::{print_log, Color};
 use serde::{Deserialize, Serialize};
 use std::{
     io::{Read, Write},
-    net::TcpStream,
+    net::{SocketAddr, TcpStream},
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -33,6 +33,7 @@ pub struct MessageError {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Subscribe {
     pub name: String,
+    pub team: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -83,6 +84,24 @@ pub enum ActionResult {
     Ok,
     Completed,
     Err(ActionError),
+}
+
+#[derive(Debug, Clone)]
+pub struct Client {
+    pub player_name: String,
+    pub team_name: String,
+    pub address: SocketAddr,
+    #[allow(dead_code)]
+    pub moves_count: u32,
+    #[allow(dead_code)]
+    pub score: u32,
+}
+
+#[derive(Debug)]
+pub struct Teams {
+    pub team_name: String,
+    pub players: Vec<Client>,
+    pub score: i32,
 }
 
 pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
@@ -152,7 +171,10 @@ mod tests {
         let messages = vec![
             Message::Hello,
             Message::Welcome(Welcome { version: 1 }),
-            Message::Subscribe(Subscribe { name: "Player1".to_string() }),
+            Message::Subscribe(Subscribe {
+                name: "Player1".to_string(),
+                team: "Team1".to_string(),
+            }),
             Message::SubscribeResult(SubscribeResult::Ok),
             Message::View(View { view: "Initial state".to_string() }),
             Message::Action(Action::MoveTo(Direction::Right)),

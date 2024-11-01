@@ -1,6 +1,6 @@
 use shared::{
     messages::*,
-    utils::{get_player_name, get_server_address},
+    utils::{get_player_name, get_server_address, get_team_name},
 };
 use std::net::TcpStream;
 
@@ -26,7 +26,7 @@ fn connect_to_server(mut max_retries: u32) -> TcpStream {
 fn handle_server_message(stream: &mut TcpStream, message: Message) {
     match message {
         Message::Welcome(..) => {
-            let subscribe = Subscribe { name: get_player_name() };
+            let subscribe = Subscribe { name: get_player_name(), team: get_team_name() };
             send_message(stream, Message::Subscribe(subscribe));
         }
         Message::SubscribeResult(result) => match result {
