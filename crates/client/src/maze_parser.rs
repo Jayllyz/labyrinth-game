@@ -1,16 +1,20 @@
-use crate::maze::{Maze, Point, PositionType};
+use crate::maze::{Maze, Position, PositionType};
 
 pub fn maze_parser(input: &str) -> Maze {
     if input.is_empty() {
-        return Maze::new(Vec::new(), Point { row: 0, column: 0 }, Point { row: 0, column: 0 });
+        return Maze::new(
+            Vec::new(),
+            Position { row: 0, column: 0 },
+            Position { row: 0, column: 0 },
+        );
     }
 
     let lines: Vec<&str> = input.lines().collect();
     let (height, width) = (lines.len(), lines[0].len());
 
     let map = vec![vec![0u8; width]; height];
-    let entry = Point { row: 0, column: 0 };
-    let exit = Point { row: 0, column: 0 };
+    let entry = Position { row: 0, column: 0 };
+    let exit = Position { row: 0, column: 0 };
     let mut maze = Maze::new(map, entry, exit);
 
     for (row, line) in lines.iter().enumerate() {

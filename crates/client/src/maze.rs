@@ -5,8 +5,8 @@ pub struct Maze {
     pub map: Vec<Vec<u8>>,
     pub row_len: usize,
     pub col_len: usize,
-    pub entry: Point,
-    pub exit: Point,
+    pub entry: Position,
+    pub exit: Position,
 }
 
 pub struct PositionType;
@@ -19,7 +19,7 @@ impl PositionType {
 }
 
 impl Maze {
-    pub fn new(map: Vec<Vec<u8>>, entry: Point, exit: Point) -> Self {
+    pub fn new(map: Vec<Vec<u8>>, entry: Position, exit: Position) -> Self {
         let row_len = map.len();
         let col_len = if map.is_empty() { 0 } else { map[0].len() };
         Self { map, row_len, col_len, entry, exit }
@@ -28,7 +28,7 @@ impl Maze {
     pub fn print(&self, visited_points: &[Vec<bool>]) {
         for (row_idx, row) in self.map.iter().enumerate() {
             for (col_idx, &cell) in row.iter().enumerate() {
-                let point = Point { row: row_idx as i8, column: col_idx as i8 };
+                let point = Position { row: row_idx as i8, column: col_idx as i8 };
 
                 if point == self.entry {
                     print!("3 ");
@@ -52,29 +52,29 @@ impl Maze {
         println!();
     }
 
-    pub fn is_out_of_bound_point(&self, point: &Point) -> bool {
+    pub fn is_point_out_of_bound(&self, point: &Position) -> bool {
         point.row < 0
             || point.column < 0
             || point.row >= (self.row_len as i8)
             || point.column >= (self.col_len as i8)
     }
 
-    pub fn is_walkable_point(&self, point: &Point, visited_points: &Vec<Vec<bool>>) -> bool {
+    pub fn is_point_walkable(&self, point: &Position, visited_points: &[Vec<bool>]) -> bool {
         !visited_points[point.row as usize][point.column as usize]
-            && !(self.map[point.row as usize][point.column as usize] == PositionType::WALL)
+            && self.map[point.row as usize][point.column as usize] != PositionType::WALL
     }
 }
 
 #[derive(Clone, PartialEq, Copy)]
-pub struct Point {
+pub struct Position {
     pub row: i8,
     pub column: i8,
 }
 
-impl Add for Point {
-    type Output = Point;
+impl Add for Position {
+    type Output = Position;
 
-    fn add(self, other: Point) -> Point {
-        Point { row: self.row + other.row, column: self.column + other.column }
+    fn add(self, other: Position) -> Position {
+        Position { row: self.row + other.row, column: self.column + other.column }
     }
 }
