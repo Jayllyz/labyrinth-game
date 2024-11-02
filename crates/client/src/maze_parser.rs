@@ -21,13 +21,13 @@ pub fn maze_parser(input: &str) -> Maze {
                 }
                 '2' => {
                     maze.map[row][col] = PositionType::ENTRY;
-                    maze.entry.row = row as i8;
-                    maze.entry.column = col as i8;
+                    maze.entry.row = row as i16;
+                    maze.entry.column = col as i16;
                 }
                 '3' => {
                     maze.map[row][col] = PositionType::EXIT;
-                    maze.exit.row = row as i8;
-                    maze.exit.column = col as i8;
+                    maze.exit.row = row as i16;
+                    maze.exit.column = col as i16;
                 }
                 _ => {
                     maze.map[row][col] = PositionType::WALL;

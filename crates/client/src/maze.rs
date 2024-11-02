@@ -19,7 +19,7 @@ impl Maze {
     pub fn print(&self, visited_points: &[Vec<bool>]) {
         for (row_idx, row) in self.map.iter().enumerate() {
             for (col_idx, &cell) in row.iter().enumerate() {
-                let point = Cell { row: row_idx as i8, column: col_idx as i8 };
+                let point = Cell { row: row_idx as i16, column: col_idx as i16 };
 
                 if point == self.entry {
                     print!("3 ");
@@ -46,7 +46,7 @@ impl Maze {
     pub fn print_path(&self, path: &[Cell]) {
         for (row_idx, row) in self.map.iter().enumerate() {
             for (col_idx, &cell) in row.iter().enumerate() {
-                let point = Cell { row: row_idx as i8, column: col_idx as i8 };
+                let point = Cell { row: row_idx as i16, column: col_idx as i16 };
 
                 if point == self.entry {
                     print!("3 ");
@@ -73,8 +73,8 @@ impl Maze {
     pub fn is_point_out_of_bound(&self, point: &Cell) -> bool {
         point.row < 0
             || point.column < 0
-            || point.row >= (self.row_len as i8)
-            || point.column >= (self.col_len as i8)
+            || point.row >= (self.row_len as i16)
+            || point.column >= (self.col_len as i16)
     }
 
     pub fn is_point_walkable(&self, point: &Cell, visited_points: &[Vec<bool>]) -> bool {
@@ -85,8 +85,8 @@ impl Maze {
 
 #[derive(Clone, PartialEq, Copy, Debug)]
 pub struct Cell {
-    pub row: i8,
-    pub column: i8,
+    pub row: i16,
+    pub column: i16,
 }
 
 impl Add for Cell {
