@@ -15,7 +15,7 @@ env:
   CARGO_TERM_COLOR: always
   RUST_LOG: info
   RUST_BACKTRACE: 1
-  RUSTFLAGS: "-Dwarnings -C debug=false"
+  RUSTFLAGS: "-Dwarnings -C debuginfo=0"
 
 jobs:
   code-quality:
