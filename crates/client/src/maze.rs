@@ -52,6 +52,33 @@ impl Maze {
         println!();
     }
 
+    pub fn print_path(&self, path: &[Position]) {
+        for (row_idx, row) in self.map.iter().enumerate() {
+            for (col_idx, &cell) in row.iter().enumerate() {
+                let point = Position { row: row_idx as i8, column: col_idx as i8 };
+
+                if point == self.entry {
+                    print!("3 ");
+                } else if point == self.exit {
+                    print!("2 ");
+                } else if path.contains(&point) {
+                    print!("{}X{} ", ColorsAnsi::RED, ColorsAnsi::RESET);
+                } else {
+                    print!(
+                        "{} ",
+                        match cell {
+                            1 => '#',
+                            0 => ' ',
+                            _ => '?',
+                        }
+                    );
+                }
+            }
+            println!();
+        }
+        println!();
+    }
+
     pub fn is_point_out_of_bound(&self, point: &Position) -> bool {
         point.row < 0
             || point.column < 0
@@ -65,7 +92,7 @@ impl Maze {
     }
 }
 
-#[derive(Clone, PartialEq, Copy)]
+#[derive(Clone, PartialEq, Copy, Debug)]
 pub struct Position {
     pub row: i8,
     pub column: i8,
