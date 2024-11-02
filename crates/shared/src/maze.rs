@@ -1,5 +1,7 @@
-use shared::utils::ColorsAnsi;
+use crate::utils::ColorsAnsi;
 use std::ops::Add;
+
+use crate::maze_generator::sidewinder;
 
 pub struct Maze {
     pub map: Vec<Vec<u16>>,
@@ -9,6 +11,10 @@ pub struct Maze {
     pub exit: Cell,
 }
 
+pub enum GeneratorAlgorithm {
+    Sidewinder,
+}
+
 impl Maze {
     pub fn new(map: Vec<Vec<u16>>, entry: Cell, exit: Cell) -> Self {
         let row_len = map.len();
@@ -16,7 +22,34 @@ impl Maze {
         Self { map, row_len, col_len, entry, exit }
     }
 
-    pub fn print(&self, visited_points: &[Vec<bool>]) {
+    pub fn generate(
+        algorithm: GeneratorAlgorithm,
+        width: usize,
+        height: usize,
+        print: bool,
+    ) -> Self {
+        match algorithm {
+            GeneratorAlgorithm::Sidewinder => sidewinder(width, height, print),
+        }
+    }
+
+    pub fn print_maze(maze: &Maze) {
+        for row in &maze.map {
+            for cell in row {
+                print!(
+                    "{} ",
+                    match cell {
+                        1 => '#',
+                        0 => ' ',
+                        _ => '?',
+                    }
+                );
+            }
+            println!();
+        }
+    }
+
+    pub fn print_visited(&self, visited_points: &[Vec<bool>]) {
         for (row_idx, row) in self.map.iter().enumerate() {
             for (col_idx, &cell) in row.iter().enumerate() {
                 let point = Cell { row: row_idx as i16, column: col_idx as i16 };

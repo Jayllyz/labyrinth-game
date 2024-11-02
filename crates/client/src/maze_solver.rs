@@ -1,5 +1,6 @@
-use crate::maze::{Cell, Directions, Maze};
 use std::collections::VecDeque;
+
+use shared::maze::{Cell, Directions, Maze};
 
 pub fn bfs_shortest_path(maze: &Maze, print: bool) -> Vec<Cell> {
     let mut queue: VecDeque<Cell> = VecDeque::new();
@@ -20,7 +21,7 @@ pub fn bfs_shortest_path(maze: &Maze, print: bool) -> Vec<Cell> {
 
         if curr == exit {
             if print {
-                maze.print(&visited_points);
+                maze.print_visited(&visited_points);
             }
             return reconstruct_shortest_path(maze, previous_path, print);
         }
@@ -65,6 +66,8 @@ fn reconstruct_shortest_path(maze: &Maze, previous_path: Vec<Vec<Cell>>, print: 
 
 #[cfg(test)]
 mod tests {
+    use shared::maze_generator::sidewinder;
+
     use super::*;
 
     #[test]
@@ -140,5 +143,12 @@ mod tests {
         ];
 
         assert_eq!(bfs_shortest_path(&maze, false), shortest_path);
+    }
+
+    #[test]
+    fn test_random_generated() {
+        let maze = sidewinder(10, 10, false);
+        let shortest_path = bfs_shortest_path(&maze, false);
+        assert!(!shortest_path.is_empty());
     }
 }
