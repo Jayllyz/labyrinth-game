@@ -1,7 +1,7 @@
 use crate::maze::{Cell, Directions, Maze};
 use std::collections::VecDeque;
 
-pub fn bfs_shortest_path(maze: &Maze) -> Vec<Cell> {
+pub fn bfs_shortest_path(maze: &Maze, print: bool) -> Vec<Cell> {
     let mut queue: VecDeque<Cell> = VecDeque::new();
 
     let Maze { entry, exit, row_len, col_len, .. } = *maze;
@@ -19,8 +19,10 @@ pub fn bfs_shortest_path(maze: &Maze) -> Vec<Cell> {
         let curr: Cell = queue.pop_front().unwrap();
 
         if curr == exit {
-            maze.print(&visited_points);
-            return reconstruct_shortest_path(maze, previous_path);
+            if print {
+                maze.print(&visited_points);
+            }
+            return reconstruct_shortest_path(maze, previous_path, print);
         }
 
         for direction in directions.iter() {
@@ -44,7 +46,7 @@ pub fn bfs_shortest_path(maze: &Maze) -> Vec<Cell> {
     vec![]
 }
 
-fn reconstruct_shortest_path(maze: &Maze, previous_path: Vec<Vec<Cell>>) -> Vec<Cell> {
+fn reconstruct_shortest_path(maze: &Maze, previous_path: Vec<Vec<Cell>>, print: bool) -> Vec<Cell> {
     let mut shortest_path: Vec<Cell> = Vec::new();
     const NO_PREV_PATH: Cell = Cell { row: -1, column: -1 };
     let mut end = maze.exit;
@@ -55,7 +57,9 @@ fn reconstruct_shortest_path(maze: &Maze, previous_path: Vec<Vec<Cell>>) -> Vec<
     }
 
     shortest_path.reverse();
-    maze.print_path(&shortest_path);
+    if print {
+        maze.print_path(&shortest_path);
+    }
     shortest_path
 }
 
@@ -100,7 +104,7 @@ mod tests {
             Cell { row: 2, column: 1 },
         ];
 
-        assert_eq!(bfs_shortest_path(&maze), shortest_path);
+        assert_eq!(bfs_shortest_path(&maze, false), shortest_path);
 
         let maze_map = vec![
             vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -135,6 +139,6 @@ mod tests {
             Cell { row: 1, column: 1 },
         ];
 
-        assert_eq!(bfs_shortest_path(&maze), shortest_path);
+        assert_eq!(bfs_shortest_path(&maze, false), shortest_path);
     }
 }

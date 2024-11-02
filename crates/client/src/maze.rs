@@ -2,7 +2,7 @@ use shared::utils::ColorsAnsi;
 use std::ops::Add;
 
 pub struct Maze {
-    pub map: Vec<Vec<u8>>,
+    pub map: Vec<Vec<u16>>,
     pub row_len: usize,
     pub col_len: usize,
     pub entry: Cell,
@@ -10,7 +10,7 @@ pub struct Maze {
 }
 
 impl Maze {
-    pub fn new(map: Vec<Vec<u8>>, entry: Cell, exit: Cell) -> Self {
+    pub fn new(map: Vec<Vec<u16>>, entry: Cell, exit: Cell) -> Self {
         let row_len = map.len();
         let col_len = if map.is_empty() { 0 } else { map[0].len() };
         Self { map, row_len, col_len, entry, exit }
@@ -100,10 +100,10 @@ impl Add for Cell {
 pub struct PositionType;
 
 impl PositionType {
-    pub const WALL: u8 = 1;
-    pub const SPACE: u8 = 0;
-    pub const ENTRY: u8 = 2;
-    pub const EXIT: u8 = 3;
+    pub const WALL: u16 = 1;
+    pub const SPACE: u16 = 0;
+    pub const ENTRY: u16 = 2;
+    pub const EXIT: u16 = 3;
 }
 
 pub struct Directions;

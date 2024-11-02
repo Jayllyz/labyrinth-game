@@ -1,0 +1,20 @@
+[package]
+name = "benchmarks"
+version = "0.0.0"
+repository.workspace = true
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+criterion2 = { workspace = true }
+client = { path = "../client" }
+
+[[bench]]
+name = "maze_parser"
+harness = false
+
+[[bench]]
+name = "bfs_solver"
+harness = false
