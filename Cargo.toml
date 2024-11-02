@@ -35,4 +35,4 @@ debug = true         # Include maximum amount of debug information
 [profile.dev]
 # Disabling debug info speeds up local and CI builds,
 # and we don't rely on it for debugging that much.
-debug = false
+debug = true
