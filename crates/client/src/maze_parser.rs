@@ -1,20 +1,16 @@
-use crate::maze::{Maze, Position, PositionType};
+use crate::maze::{Cell, Maze, PositionType};
 
 pub fn maze_parser(input: &str) -> Maze {
     if input.is_empty() {
-        return Maze::new(
-            Vec::new(),
-            Position { row: 0, column: 0 },
-            Position { row: 0, column: 0 },
-        );
+        return Maze::new(Vec::new(), Cell { row: 0, column: 0 }, Cell { row: 0, column: 0 });
     }
 
     let lines: Vec<&str> = input.lines().collect();
     let (height, width) = (lines.len(), lines[0].len());
 
     let map = vec![vec![0u8; width]; height];
-    let entry = Position { row: 0, column: 0 };
-    let exit = Position { row: 0, column: 0 };
+    let entry = Cell { row: 0, column: 0 };
+    let exit = Cell { row: 0, column: 0 };
     let mut maze = Maze::new(map, entry, exit);
 
     for (row, line) in lines.iter().enumerate() {
@@ -74,7 +70,6 @@ mod tests {
             #       #       #   #
             # # # # # # # # # # #
         */
-
         let input = "###########\n# # 2 #   #\n#3### # ###\n# #   #   #\n# ### # ###\n# #       #\n# # ### ###\n#     #   #\n### # # # #\n#   #   # #\n###########\n";
         let expected = vec![
             vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
