@@ -1,7 +1,6 @@
+use crate::maze_generator::sidewinder;
 use crate::utils::ColorsAnsi;
 use std::ops::Add;
-
-use crate::maze_generator::sidewinder;
 
 pub struct Maze {
     pub map: Vec<Vec<u16>>,
@@ -38,9 +37,9 @@ impl Maze {
             for cell in row {
                 print!(
                     "{} ",
-                    match cell {
-                        1 => '#',
-                        0 => ' ',
+                    match *cell {
+                        PositionType::WALL => '#',
+                        PositionType::SPACE => ' ',
                         _ => '?',
                     }
                 );
@@ -64,8 +63,8 @@ impl Maze {
                     print!(
                         "{} ",
                         match cell {
-                            1 => '#',
-                            0 => ' ',
+                            PositionType::WALL => '#',
+                            PositionType::SPACE => ' ',
                             _ => '?',
                         }
                     );
@@ -91,8 +90,8 @@ impl Maze {
                     print!(
                         "{} ",
                         match cell {
-                            1 => '#',
-                            0 => ' ',
+                            PositionType::WALL => '#',
+                            PositionType::SPACE => ' ',
                             _ => '?',
                         }
                     );
