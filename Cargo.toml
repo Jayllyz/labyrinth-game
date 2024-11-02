@@ -11,6 +11,7 @@ license = "MIT"
 [workspace.dependencies]
 serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
+clap = { version = "4.5.20", features = ["derive", "color"] }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -31,8 +32,3 @@ panic = "abort"   # Let it crash and force ourselves to write safe Rust
 inherits = "release"
 strip = false        # Keep debug information in binary
 debug = true         # Include maximum amount of debug information
-
-[profile.dev]
-# Disabling debug info speeds up local and CI builds,
-# and we don't rely on it for debugging that much.
-debug = true

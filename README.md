@@ -7,11 +7,19 @@
 1 - Start server
 
 ```bash
-cargo run -p server <ip:port>
+cargo run -p server -- --host <ip> -p <port>
 ```
 
 2 - Start client (multiple clients can be started)
 
 ```bash
-cargo run -p client <ip:port> <player_name> <team_name>
+cargo run -p client -- --host <ip> -p <port> -n <player_name> -t <team_name>
+```
+
+In case of any doubt, you can always run the following command to get help:
+
+```bash
+cargo run -p client -- --help
+# or
+cargo run -p server -- --help
 ```
