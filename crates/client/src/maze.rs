@@ -2,7 +2,7 @@ use shared::utils::ColorsAnsi;
 use std::ops::Add;
 
 pub struct Maze {
-    pub map: Vec<Vec<u8>>,
+    pub map: Vec<Vec<u16>>,
     pub row_len: usize,
     pub col_len: usize,
     pub entry: Cell,
@@ -10,7 +10,7 @@ pub struct Maze {
 }
 
 impl Maze {
-    pub fn new(map: Vec<Vec<u8>>, entry: Cell, exit: Cell) -> Self {
+    pub fn new(map: Vec<Vec<u16>>, entry: Cell, exit: Cell) -> Self {
         let row_len = map.len();
         let col_len = if map.is_empty() { 0 } else { map[0].len() };
         Self { map, row_len, col_len, entry, exit }
@@ -19,7 +19,7 @@ impl Maze {
     pub fn print(&self, visited_points: &[Vec<bool>]) {
         for (row_idx, row) in self.map.iter().enumerate() {
             for (col_idx, &cell) in row.iter().enumerate() {
-                let point = Cell { row: row_idx as i8, column: col_idx as i8 };
+                let point = Cell { row: row_idx as i16, column: col_idx as i16 };
 
                 if point == self.entry {
                     print!("3 ");
@@ -46,7 +46,7 @@ impl Maze {
     pub fn print_path(&self, path: &[Cell]) {
         for (row_idx, row) in self.map.iter().enumerate() {
             for (col_idx, &cell) in row.iter().enumerate() {
-                let point = Cell { row: row_idx as i8, column: col_idx as i8 };
+                let point = Cell { row: row_idx as i16, column: col_idx as i16 };
 
                 if point == self.entry {
                     print!("3 ");
@@ -73,8 +73,8 @@ impl Maze {
     pub fn is_point_out_of_bound(&self, point: &Cell) -> bool {
         point.row < 0
             || point.column < 0
-            || point.row >= (self.row_len as i8)
-            || point.column >= (self.col_len as i8)
+            || point.row >= (self.row_len as i16)
+            || point.column >= (self.col_len as i16)
     }
 
     pub fn is_point_walkable(&self, point: &Cell, visited_points: &[Vec<bool>]) -> bool {
@@ -85,8 +85,8 @@ impl Maze {
 
 #[derive(Clone, PartialEq, Copy, Debug)]
 pub struct Cell {
-    pub row: i8,
-    pub column: i8,
+    pub row: i16,
+    pub column: i16,
 }
 
 impl Add for Cell {
@@ -100,10 +100,10 @@ impl Add for Cell {
 pub struct PositionType;
 
 impl PositionType {
-    pub const WALL: u8 = 1;
-    pub const SPACE: u8 = 0;
-    pub const ENTRY: u8 = 2;
-    pub const EXIT: u8 = 3;
+    pub const WALL: u16 = 1;
+    pub const SPACE: u16 = 0;
+    pub const ENTRY: u16 = 2;
+    pub const EXIT: u16 = 3;
 }
 
 pub struct Directions;

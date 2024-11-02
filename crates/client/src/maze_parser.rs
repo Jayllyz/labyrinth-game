@@ -8,7 +8,7 @@ pub fn maze_parser(input: &str) -> Maze {
     let lines: Vec<&str> = input.lines().collect();
     let (height, width) = (lines.len(), lines[0].len());
 
-    let map = vec![vec![0u8; width]; height];
+    let map = vec![vec![0u16; width]; height];
     let entry = Cell { row: 0, column: 0 };
     let exit = Cell { row: 0, column: 0 };
     let mut maze = Maze::new(map, entry, exit);
@@ -21,13 +21,13 @@ pub fn maze_parser(input: &str) -> Maze {
                 }
                 '2' => {
                     maze.map[row][col] = PositionType::ENTRY;
-                    maze.entry.row = row as i8;
-                    maze.entry.column = col as i8;
+                    maze.entry.row = row as i16;
+                    maze.entry.column = col as i16;
                 }
                 '3' => {
                     maze.map[row][col] = PositionType::EXIT;
-                    maze.exit.row = row as i8;
-                    maze.exit.column = col as i8;
+                    maze.exit.row = row as i16;
+                    maze.exit.column = col as i16;
                 }
                 _ => {
                     maze.map[row][col] = PositionType::WALL;
@@ -86,6 +86,6 @@ mod tests {
         ];
         assert_eq!(maze_parser(input).map, expected);
 
-        assert_eq!(maze_parser("").map, Vec::<Vec<u8>>::new());
+        assert_eq!(maze_parser("").map, Vec::<Vec<u16>>::new());
     }
 }
