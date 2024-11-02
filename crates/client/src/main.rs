@@ -1,59 +1,43 @@
-use shared::{
-    messages::*,
-    utils::{get_player_name, get_server_address, get_team_name},
-};
-use std::net::TcpStream;
+use clap::Parser;
+use client::client::{ClientConfig, GameClient};
 
-fn connect_to_server(mut max_retries: u32) -> TcpStream {
-    let server_address = get_server_address();
-    loop {
-        match TcpStream::connect(&server_address) {
-            Ok(stream) => return stream,
-            Err(e) => {
-                eprintln!("Failed to connect to server: {}", e);
-                max_retries -= 1;
-                std::thread::sleep(std::time::Duration::from_secs(2));
-                if max_retries == 0 {
-                    eprintln!("Max retries reached, exiting...");
-                    std::process::exit(1);
-                }
-                continue;
-            }
-        }
-    }
-}
+#[derive(Parser, Debug)]
+#[command(name = "Labyrinth-client")]
+#[command(version = "1.0")]
+#[command(about = "Client for the Labyrinth game")]
+struct Args {
+    #[arg(long, default_value = "127.0.0.1")]
+    #[arg(help_heading = "SERVER OPTIONS")]
+    host: String,
 
-fn handle_server_message(stream: &mut TcpStream, message: Message) {
-    match message {
-        Message::Welcome(..) => {
-            let subscribe = Subscribe { name: get_player_name(), team: get_team_name() };
-            send_message(stream, Message::Subscribe(subscribe));
-        }
-        Message::SubscribeResult(result) => match result {
-            SubscribeResult::Ok => {
-                eprintln!("Subscribed successfully");
-                std::process::exit(1);
-            }
-            SubscribeResult::Err(err) => {
-                eprintln!("Subscribe error: {:?}", err);
-            }
-        },
-        Message::MessageError(err) => {
-            eprintln!("Error: {}", err.message);
-        }
-        _ => {
-            eprintln!("Unexpected message, exiting...");
-            std::process::exit(1);
-        }
-    }
+    #[arg(short, long, default_value = "7878")]
+    #[arg(help_heading = "SERVER OPTIONS")]
+    #[arg(value_parser = clap::value_parser!(u16).range(1024..=65535))]
+    port: u16,
+
+    #[arg(short, long, default_value = "5")]
+    #[arg(help_heading = "SERVER OPTIONS")]
+    retries: u32,
+
+    #[arg(short, long, default_value = "Player1")]
+    #[arg(help_heading = "PLAYER OPTIONS")]
+    name: String,
+
+    #[arg(short, long, default_value = "Team1")]
+    #[arg(help_heading = "PLAYER OPTIONS")]
+    team: String,
 }
 
 fn main() {
-    println!("Client started, connecting to server...");
-    let mut stream = connect_to_server(5);
+    let args = Args::parse();
 
-    send_message(&mut stream, Message::Hello);
-    while let Ok(message) = receive_message(&mut stream) {
-        handle_server_message(&mut stream, message);
-    }
+    let config = ClientConfig {
+        server_addr: format!("{}:{}", args.host, args.port),
+        player_name: args.name,
+        team_name: args.team,
+    };
+
+    let client = GameClient::new(config);
+    const MAX_RETRIES: u32 = 5;
+    client.run(MAX_RETRIES);
 }

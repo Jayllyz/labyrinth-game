@@ -14,3 +14,4 @@ workspace = true
 serde_json = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 shared = { path = "../shared" }
+clap = { workspace = true }
