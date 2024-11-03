@@ -1,4 +1,4 @@
-use crate::maze::{Cell, Maze, PositionType};
+use shared::maze::{Cell, Maze, PositionType};
 
 pub fn maze_parser(input: &str) -> Maze {
     if input.is_empty() {
