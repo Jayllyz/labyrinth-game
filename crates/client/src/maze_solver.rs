@@ -144,8 +144,8 @@ pub fn a_star_shortest_path(maze: &Maze, print: u8) -> Vec<Cell> {
             let neighbour_g_score = g_cost[curr_row][curr_col] + 1;
 
             if neighbour_g_score
-                < g_cost[neighbour_cell.row as usize][neighbour_cell.column as usize]
-                || g_cost[neighbour_cell.row as usize][neighbour_cell.column as usize] < 0
+                < f_cost[neighbour_cell.row as usize][neighbour_cell.column as usize]
+                || f_cost[neighbour_cell.row as usize][neighbour_cell.column as usize] < 0
             {
                 if open.contains(&neighbour_cell) {
                     continue;

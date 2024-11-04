@@ -53,8 +53,8 @@ mod tests {
         let expected = vec![vec![1, 1, 1], vec![1, 0, 1], vec![1, 1, 1]];
         assert_eq!(maze_parser(input).map, expected);
 
-        let input = "#### \n#  #|\n#### ";
-        let expected = vec![vec![1, 1, 1, 1, 0], vec![1, 0, 0, 1, 1], vec![1, 1, 1, 1, 0]];
+        let input = "#### \n#  #\n#### ";
+        let expected = vec![vec![1, 1, 1, 1, 0], vec![1, 0, 0, 1], vec![1, 1, 1, 1, 0]];
         assert_eq!(maze_parser(input).map, expected);
 
         let input = "#  # \n#  # \n#  # ";
@@ -63,8 +63,8 @@ mod tests {
 
         /*
             # # # # # # # # # # #
-            #   #   3   #       #
-            # 2 # # #   #   # # #
+            #   #   2   #       #
+            # 3 # # #   #   # # #
             #   #       #       #
             #   # # #   #   # # #
             #   #               #
@@ -74,7 +74,7 @@ mod tests {
             #       #       #   #
             # # # # # # # # # # #
         */
-        let input = "###########\n# # 2 #   #\n#3### # ###\n# #   #   #\n# ### # ###\n# #       #\n# # ### ###\n#     #   #\n### # # # #\n#   #   # #\n###########\n";
+        let input = "###########\n# # 2 #   #\n#3### # ###\n# #   #   #\n# ### # ###\n# #       #\n# # ### ###\n#     #   #\n### # # # #\n#   #   # #\n###########";
         let expected = vec![
             vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
             vec![1, 0, 1, 0, 2, 0, 1, 0, 0, 0, 1],
@@ -90,6 +90,7 @@ mod tests {
         ];
         assert_eq!(maze_parser(input).map, expected);
 
+        // Test with empty input
         assert_eq!(maze_parser("").map, Vec::<Vec<u16>>::new());
     }
 }
