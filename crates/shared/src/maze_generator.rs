@@ -14,7 +14,7 @@ pub fn sidewinder(width: usize, height: usize, print: bool, seed: u64) -> Maze {
 
         for col in 0..width {
             if print {
-                maze.print_visited(&vec![vec![false; width * 2 + 1]; height * 2 + 1]);
+                maze.print_visited(&vec![vec![-1; width * 2 + 1]; height * 2 + 1]);
                 std::thread::sleep(std::time::Duration::from_millis(500));
             }
             let cell_row = row * 2 + 1;
