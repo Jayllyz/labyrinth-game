@@ -1,6 +1,6 @@
 // /!\ This priority queue implementation is made for A* search algorithm and not for general purpose /!\
 
-use crate::maze::Cell;
+use shared::maze::Cell;
 use std::cmp::{Ord, Ordering};
 use std::collections::{BinaryHeap, HashSet};
 

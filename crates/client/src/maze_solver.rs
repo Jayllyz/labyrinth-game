@@ -1,10 +1,6 @@
-use crate::{
-    data_structures::priority_queue::{Node, PriorityQueue},
-    maze::{Cell, Directions, Maze},
-};
-use std::collections::VecDeque;
-
+use crate::data_structures::priority_queue::{Node, PriorityQueue};
 use shared::maze::{Cell, Directions, Maze};
+use std::collections::VecDeque;
 
 pub fn bfs_shortest_path(maze: &Maze, print: bool) -> Vec<Cell> {
     let mut queue: VecDeque<Cell> = VecDeque::new();
@@ -292,7 +288,7 @@ mod tests {
 
         assert_eq!(a_star_shortest_path(&maze), shortest_path);
     }
-    
+
     #[test]
     fn test_random_generated() {
         let maze = sidewinder(10, 10, false);
