@@ -52,19 +52,19 @@ fn bench_bfs_solver(c: &mut Criterion) {
     group.warm_up_time(Duration::from_secs(3));
 
     group.bench_function("maze1", |b| {
-        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze1), false))
+        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze1), 0))
     });
     group.bench_function("maze2", |b| {
-        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze2), false))
+        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze2), 0))
     });
     group.bench_function("maze3", |b| {
-        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze3), false))
+        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze3), 0))
     });
     group.bench_function("maze4", |b| {
-        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze4), false))
+        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze4), 0))
     });
     group.bench_function("maze5", |b| {
-        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze5), false))
+        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze5), 0))
     });
 
     group.finish();

@@ -2,28 +2,44 @@ use std::collections::VecDeque;
 
 use shared::maze::{Cell, Directions, Maze};
 
-pub fn bfs_shortest_path(maze: &Maze, print: bool) -> Vec<Cell> {
+/// Algorithme du breadth-first search (BFS) pour trouver le chemin le plus court
+/// 
+/// ## Arguments
+/// 
+/// * `maze` - La structure de données du labyrinthe
+/// * `print` - Un u8 pour afficher le labyrinthe
+///     * 0 - Ne pas afficher
+///     * 1 - Afficher les points visités
+///     * 2 - Afficher les points visités numérotés
+pub fn bfs_shortest_path(maze: &Maze, print: u8) -> Vec<Cell> {
+    if (print != 0) && (print != 1) && (print != 2) {
+        panic!("Invalid print value");
+    }
     let mut queue: VecDeque<Cell> = VecDeque::new();
 
     let Maze { entry, exit, row_len, col_len, .. } = *maze;
     queue.push_back(maze.entry);
 
-    let mut visited_points: Vec<Vec<bool>> = vec![vec![false; col_len]; row_len];
-    visited_points[entry.row as usize][entry.column as usize] = true;
-
+    let mut visited_points: Vec<Vec<i32>> = vec![vec![-1; col_len]; row_len];
+    visited_points[entry.row as usize][entry.column as usize] = 0;
+    
     let mut previous_path: Vec<Vec<Cell>> =
-        vec![vec![Cell { row: -1, column: -1 }; col_len]; row_len];
-
+    vec![vec![Cell { row: -1, column: -1 }; col_len]; row_len];
+    
     let directions = [Directions::NORTH, Directions::SOUTH, Directions::WEST, Directions::EAST];
-
+    let mut index = 1;
+    
     while !queue.is_empty() {
         let curr: Cell = queue.pop_front().unwrap();
 
         if curr == exit {
-            if print {
+            if print == 1 {
                 maze.print_visited(&visited_points);
             }
-            return reconstruct_shortest_path(maze, previous_path, print);
+            if print == 2 {
+                maze.print_visited_number(&visited_points);
+            }
+            return reconstruct_shortest_path(maze, previous_path, true);
         }
 
         for direction in directions.iter() {
@@ -39,9 +55,11 @@ pub fn bfs_shortest_path(maze: &Maze, print: bool) -> Vec<Cell> {
             let column = neighbour_point.column as usize;
 
             queue.push_back(neighbour_point);
-            visited_points[row][column] = true;
+            visited_points[row][column] = index;
             previous_path[row][column].row = curr.row;
             previous_path[row][column].column = curr.column;
+
+            index += 1;
         }
     }
     vec![]
@@ -107,7 +125,7 @@ mod tests {
             Cell { row: 2, column: 1 },
         ];
 
-        assert_eq!(bfs_shortest_path(&maze, false), shortest_path);
+        assert_eq!(bfs_shortest_path(&maze, 1), shortest_path);
 
         let maze_map = vec![
             vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -142,13 +160,13 @@ mod tests {
             Cell { row: 1, column: 1 },
         ];
 
-        assert_eq!(bfs_shortest_path(&maze, false), shortest_path);
+        assert_eq!(bfs_shortest_path(&maze, 0), shortest_path);
     }
 
     #[test]
     fn test_random_generated() {
         let maze = sidewinder(10, 10, false);
-        let shortest_path = bfs_shortest_path(&maze, false);
+        let shortest_path = bfs_shortest_path(&maze, 0);
         assert!(!shortest_path.is_empty());
     }
 }

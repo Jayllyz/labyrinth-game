@@ -48,7 +48,13 @@ impl Maze {
         }
     }
 
-    pub fn print_visited(&self, visited_points: &[Vec<bool>]) {
+    pub fn print_visited(&self, visited_points: &[Vec<i32>]) {
+        let steps = *visited_points.iter().flatten().max().unwrap();
+        let gradient: Vec<String> = (0..=steps).map(|step| {
+            let gradient_value = 255 - (255 * step / steps);
+            format!("\x1b[38;2;255;{};0m", gradient_value)
+        }).collect();
+
         for (row_idx, row) in self.map.iter().enumerate() {
             for (col_idx, &cell) in row.iter().enumerate() {
                 let point = Cell { row: row_idx as i16, column: col_idx as i16 };
@@ -57,8 +63,8 @@ impl Maze {
                     print!("3 ");
                 } else if point == self.exit {
                     print!("2 ");
-                } else if visited_points[row_idx][col_idx] {
-                    print!("{}X{} ", ColorsAnsi::RED, ColorsAnsi::RESET);
+                } else if visited_points[row_idx][col_idx] != -1 {
+                    print!("{}X{} ", gradient[visited_points[row_idx][col_idx] as usize], ColorsAnsi::RESET);
                 } else {
                     print!(
                         "{} ",
@@ -68,6 +74,43 @@ impl Maze {
                             _ => '?',
                         }
                     );
+                }
+            }
+            println!();
+        }
+        println!();
+    }
+
+    pub fn print_visited_number(&self, visited_points: &[Vec<i32>]) {
+        let steps = *visited_points.iter().flatten().max().unwrap();
+        let gradient: Vec<String> = (0..=steps).map(|step| {
+            let gradient_value = 255 - (255 * step / steps);
+            format!("\x1b[38;2;255;{};0m", gradient_value)
+        }).collect();
+    
+        for (row_idx, row) in self.map.iter().enumerate() {
+            for (col_idx, &cell) in row.iter().enumerate() {
+                let point = Cell { row: row_idx as i16, column: col_idx as i16 };
+    
+                if point == self.entry {
+                    print!("  3  ");
+                } else if point == self.exit {
+                    print!("  2  ");
+                } else if visited_points[row_idx][col_idx] != -1 {
+                    let step_num = visited_points[row_idx][col_idx];
+                    if step_num < 10 {
+                        print!("{}  {}  {}", gradient[step_num as usize], step_num, ColorsAnsi::RESET);
+                    } else if step_num < 100 {
+                        print!("{}  {} {}", gradient[step_num as usize], step_num, ColorsAnsi::RESET);
+                    } else {
+                        print!("{} {} {}", gradient[step_num as usize], step_num, ColorsAnsi::RESET);
+                    }
+                } else {
+                    match cell {
+                        PositionType::WALL => print!("#####"),
+                        PositionType::SPACE => print!("     "),
+                        _ => print!("?  "),
+                    }
                 }
             }
             println!();
@@ -109,8 +152,8 @@ impl Maze {
             || point.column >= (self.col_len as i16)
     }
 
-    pub fn is_point_walkable(&self, point: &Cell, visited_points: &[Vec<bool>]) -> bool {
-        !visited_points[point.row as usize][point.column as usize]
+    pub fn is_point_walkable(&self, point: &Cell, visited_points: &[Vec<i32>]) -> bool {
+        visited_points[point.row as usize][point.column as usize] == -1
             && self.map[point.row as usize][point.column as usize] != PositionType::WALL
     }
 }
