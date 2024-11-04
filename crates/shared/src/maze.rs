@@ -145,20 +145,20 @@ impl Maze {
         println!();
     }
 
-    pub fn is_point_out_of_bound(&self, point: &Cell) -> bool {
+    pub fn is_cell_out_of_bound(&self, point: &Cell) -> bool {
         point.row < 0
             || point.column < 0
             || point.row >= (self.row_len as i16)
             || point.column >= (self.col_len as i16)
     }
 
-    pub fn is_point_walkable(&self, point: &Cell, visited_points: &[Vec<i32>]) -> bool {
+    pub fn is_cell_walkable(&self, point: &Cell, visited_points: &[Vec<i32>]) -> bool {
         visited_points[point.row as usize][point.column as usize] == -1
             && self.map[point.row as usize][point.column as usize] != PositionType::WALL
     }
 }
 
-#[derive(Clone, PartialEq, Copy, Debug)]
+#[derive(Clone, PartialEq, Copy, Debug, Eq, Hash)]
 pub struct Cell {
     pub row: i16,
     pub column: i16,
