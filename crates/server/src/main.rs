@@ -1,25 +1,35 @@
 use clap::Parser;
-use server::server::GameServer;
+use server::server::{GameServer, ServerConfig};
+use shared::utils::{print_log, Color};
 
 #[derive(Parser, Debug)]
 #[command(name = "Labyrinth-server")]
 #[command(version = "1.0")]
 #[command(about = "Server for the Labyrinth game", long_about = None)]
 struct Args {
-    #[arg(short, long, default_value = "7878")]
+    #[arg(short, long, default_value = "8778", help = "Port to listen to.")]
     #[arg(value_parser = clap::value_parser!(u16).range(1024..=65535))]
     port: u16,
 
-    #[arg(long, default_value = "127.0.0.1")]
+    #[arg(
+        long = "host-address",
+        default_value = "127.0.0.1",
+        help = "Address allowed to connect to."
+    )]
     host: String,
+
+    #[arg(short, long, help = "Seed for the maze generation.")]
+    seed: Option<u64>,
 }
 
 fn main() {
     let args = Args::parse();
-    let address = format!("{}:{}", args.host, args.port);
+    let seed = args.seed.unwrap_or_else(rand::random);
+    let config = ServerConfig { host: args.host, port: args.port, seed };
+    print_log(&format!("seed {}", seed), Color::Blue);
 
-    let server = GameServer::new();
-    server.run(&address);
+    let server = GameServer::new(config);
+    server.run();
 }
 
 #[cfg(test)]
@@ -29,7 +39,7 @@ mod tests {
     #[test]
     fn test_default_values() {
         let args = Args::try_parse_from(["test"]).unwrap();
-        assert_eq!(args.port, 7878);
+        assert_eq!(args.port, 8778);
         assert_eq!(args.host, "127.0.0.1");
     }
 

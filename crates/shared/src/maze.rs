@@ -26,9 +26,10 @@ impl Maze {
         width: usize,
         height: usize,
         print: bool,
+        seed: u64,
     ) -> Self {
         match algorithm {
-            GeneratorAlgorithm::Sidewinder => sidewinder(width, height, print),
+            GeneratorAlgorithm::Sidewinder => sidewinder(width, height, print, seed),
         }
     }
 

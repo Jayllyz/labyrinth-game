@@ -324,7 +324,7 @@ mod tests {
 
     #[test]
     fn test_random_generated() {
-        let maze = sidewinder(10, 10, false);
+        let maze = sidewinder(10, 10, false, 5849);
         let shortest_path = bfs_shortest_path(&maze, 0);
         assert!(!shortest_path.is_empty());
     }
