@@ -1,5 +1,6 @@
 use clap::Parser;
-use server::server::GameServer;
+use server::server::{GameServer, ServerConfig};
+use shared::utils::{print_log, Color};
 
 #[derive(Parser, Debug)]
 #[command(name = "Labyrinth-server")]
@@ -18,15 +19,17 @@ struct Args {
     host: String,
 
     #[arg(short, long, help = "Seed for the maze generation.")]
-    seed: u64,
+    seed: Option<u64>,
 }
 
 fn main() {
     let args = Args::parse();
-    let address = format!("{}:{}", args.host, args.port);
+    let seed = args.seed.unwrap_or_else(rand::random);
+    let config = ServerConfig { host: args.host, port: args.port, seed };
+    print_log(&format!("seed {}", seed), Color::Blue);
 
-    let server = GameServer::new();
-    server.run(&address);
+    let server = GameServer::new(config);
+    server.run();
 }
 
 #[cfg(test)]
