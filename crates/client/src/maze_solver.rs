@@ -3,9 +3,9 @@ use shared::maze::{Cell, Directions, Maze};
 use std::collections::VecDeque;
 
 /// Algorithme du breadth-first search (BFS) pour trouver le chemin le plus court
-/// 
+///
 /// ## Arguments
-/// 
+///
 /// * `maze` - La structure de données du labyrinthe
 /// * `print` - Un u8 pour afficher le labyrinthe
 ///     * 0 - Ne pas afficher
@@ -22,13 +22,13 @@ pub fn bfs_shortest_path(maze: &Maze, print: u8) -> Vec<Cell> {
 
     let mut visited_points: Vec<Vec<i32>> = vec![vec![-1; col_len]; row_len];
     visited_points[entry.row as usize][entry.column as usize] = 0;
-    
+
     let mut previous_path: Vec<Vec<Cell>> =
-    vec![vec![Cell { row: -1, column: -1 }; col_len]; row_len];
-    
+        vec![vec![Cell { row: -1, column: -1 }; col_len]; row_len];
+
     let directions = [Directions::NORTH, Directions::SOUTH, Directions::WEST, Directions::EAST];
     let mut index = 1;
-    
+
     while !queue.is_empty() {
         let curr: Cell = queue.pop_front().unwrap();
 
