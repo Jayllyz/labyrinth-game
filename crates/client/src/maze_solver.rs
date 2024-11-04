@@ -35,9 +35,11 @@ pub fn bfs_shortest_path(maze: &Maze, print: u8) -> Vec<Cell> {
         if curr == exit {
             if print == 1 {
                 maze.print_visited(&visited_points);
+                println!("Number of steps: {}", index);
             }
             if print == 2 {
                 maze.print_visited_number(&visited_points);
+                println!("Number of steps: {}", index);
             }
             return reconstruct_shortest_path(maze, previous_path);
         }
@@ -120,9 +122,11 @@ pub fn a_star_shortest_path(maze: &Maze, print: u8) -> Vec<Cell> {
         if curr_cell.row == maze.exit.row && curr_cell.column == maze.exit.column {
             if print == 1 {
                 maze.print_visited(&visited_points);
+                println!("Number of steps: {}", index);
             }
             if print == 2 {
                 maze.print_visited_number(&visited_points);
+                println!("Number of steps: {}", index);
             }
             return reconstruct_shortest_path(maze, previous_path);
         }
