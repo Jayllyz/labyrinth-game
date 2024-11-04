@@ -1,6 +1,6 @@
-use std::collections::VecDeque;
-
+use crate::data_structures::priority_queue::{Node, PriorityQueue};
 use shared::maze::{Cell, Directions, Maze};
+use std::collections::VecDeque;
 
 pub fn bfs_shortest_path(maze: &Maze, print: bool) -> Vec<Cell> {
     let mut queue: VecDeque<Cell> = VecDeque::new();
@@ -23,22 +23,23 @@ pub fn bfs_shortest_path(maze: &Maze, print: bool) -> Vec<Cell> {
             if print {
                 maze.print_visited(&visited_points);
             }
-            return reconstruct_shortest_path(maze, previous_path, print);
+            return reconstruct_shortest_path(maze, previous_path);
         }
 
         for direction in directions.iter() {
-            let neighbour_point: Cell = curr + *direction;
+            let neighbour_cell: Cell = curr + *direction;
 
-            if maze.is_point_out_of_bound(&neighbour_point)
-                || !maze.is_point_walkable(&neighbour_point, &visited_points)
+            if maze.is_cell_out_of_bound(&neighbour_cell)
+                || !maze.is_cell_walkable(&neighbour_cell)
+                || visited_points[neighbour_cell.row as usize][neighbour_cell.column as usize]
             {
                 continue;
             }
 
-            let row = neighbour_point.row as usize;
-            let column = neighbour_point.column as usize;
+            let row = neighbour_cell.row as usize;
+            let column = neighbour_cell.column as usize;
 
-            queue.push_back(neighbour_point);
+            queue.push_back(neighbour_cell);
             visited_points[row][column] = true;
             previous_path[row][column].row = curr.row;
             previous_path[row][column].column = curr.column;
@@ -47,7 +48,7 @@ pub fn bfs_shortest_path(maze: &Maze, print: bool) -> Vec<Cell> {
     vec![]
 }
 
-fn reconstruct_shortest_path(maze: &Maze, previous_path: Vec<Vec<Cell>>, print: bool) -> Vec<Cell> {
+fn reconstruct_shortest_path(maze: &Maze, previous_path: Vec<Vec<Cell>>) -> Vec<Cell> {
     let mut shortest_path: Vec<Cell> = Vec::new();
     const NO_PREV_PATH: Cell = Cell { row: -1, column: -1 };
     let mut end = maze.exit;
@@ -58,10 +59,79 @@ fn reconstruct_shortest_path(maze: &Maze, previous_path: Vec<Vec<Cell>>, print: 
     }
 
     shortest_path.reverse();
-    if print {
-        maze.print_path(&shortest_path);
-    }
     shortest_path
+}
+
+fn get_manhattan_distance(source_cell: &Cell, goal_cell: &Cell) -> i32 {
+    ((source_cell.row - goal_cell.row).abs() + (source_cell.column - goal_cell.column).abs()).into()
+}
+
+pub fn a_star_shortest_path(maze: &Maze) -> Vec<Cell> {
+    let Maze { entry, exit, row_len, col_len, .. } = *maze;
+    let directions = [Directions::NORTH, Directions::SOUTH, Directions::WEST, Directions::EAST];
+
+    let mut g_cost = vec![vec![-1; col_len]; row_len];
+    let mut f_cost = vec![vec![-1; col_len]; row_len];
+
+    let mut previous_path: Vec<Vec<Cell>> =
+        vec![vec![Cell { row: -1, column: -1 }; col_len]; row_len];
+    let mut visited_points: Vec<Vec<bool>> = vec![vec![false; col_len]; row_len];
+
+    let start_row = entry.row as usize;
+    let start_column = entry.column as usize;
+
+    g_cost[start_row][start_column] = 0;
+    f_cost[start_row][start_column] = get_manhattan_distance(&entry, &exit);
+
+    let mut open = PriorityQueue::new();
+
+    open.enqueue(Node { priority_f: f_cost[start_row][start_column], cell: entry });
+
+    while !open.is_empty() {
+        let Node { cell: curr_cell, .. } = open.dequeue();
+
+        let curr_row = curr_cell.row as usize;
+        let curr_col = curr_cell.column as usize;
+
+        visited_points[curr_row][curr_col] = true;
+
+        if curr_cell.row == maze.exit.row && curr_cell.column == maze.exit.column {
+            return reconstruct_shortest_path(maze, previous_path);
+        }
+
+        for direction in directions.iter() {
+            let neighbour_cell: Cell = curr_cell + *direction;
+
+            if maze.is_cell_out_of_bound(&neighbour_cell)
+                || !maze.is_cell_walkable(&neighbour_cell)
+                || visited_points[neighbour_cell.row as usize][neighbour_cell.column as usize]
+            {
+                continue;
+            }
+
+            let neighbour_g_score = g_cost[curr_row][curr_col] + 1;
+
+            if neighbour_g_score
+                < g_cost[neighbour_cell.row as usize][neighbour_cell.column as usize]
+                || g_cost[neighbour_cell.row as usize][neighbour_cell.column as usize] < 0
+            {
+                if open.contains(&neighbour_cell) {
+                    continue;
+                }
+                let neighbour_h_score = get_manhattan_distance(&neighbour_cell, &exit);
+                let neighbour_f_score = neighbour_g_score + neighbour_h_score;
+
+                previous_path[neighbour_cell.row as usize][neighbour_cell.column as usize] =
+                    curr_cell;
+                g_cost[neighbour_cell.row as usize][neighbour_cell.column as usize] =
+                    neighbour_g_score;
+                f_cost[neighbour_cell.row as usize][neighbour_cell.column as usize] =
+                    neighbour_f_score;
+                open.enqueue(Node { priority_f: neighbour_f_score, cell: neighbour_cell });
+            }
+        }
+    }
+    vec![]
 }
 
 #[cfg(test)]
@@ -69,7 +139,6 @@ mod tests {
     use shared::maze_generator::sidewinder;
 
     use super::*;
-
     #[test]
     fn test_bfs_exit_finder() {
         let maze_map = vec![
@@ -143,6 +212,81 @@ mod tests {
         ];
 
         assert_eq!(bfs_shortest_path(&maze, false), shortest_path);
+    }
+
+    #[test]
+    fn test_a_star_exit_finder() {
+        let maze_map = vec![
+            vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            vec![1, 0, 1, 0, 2, 0, 1, 0, 0, 0, 1],
+            vec![1, 3, 1, 1, 1, 0, 1, 0, 1, 1, 1],
+            vec![1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            vec![1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1],
+            vec![1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1],
+            vec![1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1],
+            vec![1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
+            vec![1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+            vec![1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1],
+            vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        ];
+        let maze = Maze::new(maze_map, Cell { row: 1, column: 4 }, Cell { row: 2, column: 1 });
+
+        let shortest_path = vec![
+            Cell { row: 1, column: 4 },
+            Cell { row: 1, column: 5 },
+            Cell { row: 2, column: 5 },
+            Cell { row: 3, column: 5 },
+            Cell { row: 4, column: 5 },
+            Cell { row: 5, column: 5 },
+            Cell { row: 5, column: 4 },
+            Cell { row: 5, column: 3 },
+            Cell { row: 6, column: 3 },
+            Cell { row: 7, column: 3 },
+            Cell { row: 7, column: 2 },
+            Cell { row: 7, column: 1 },
+            Cell { row: 6, column: 1 },
+            Cell { row: 5, column: 1 },
+            Cell { row: 4, column: 1 },
+            Cell { row: 3, column: 1 },
+            Cell { row: 2, column: 1 },
+        ];
+
+        assert_eq!(a_star_shortest_path(&maze), shortest_path);
+
+        let maze_map = vec![
+            vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            vec![1, 3, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1],
+            vec![1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            vec![1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+            vec![1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+            vec![1, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1],
+            vec![1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+            vec![1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 2, 0, 1],
+            vec![1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1],
+            vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        ];
+        let maze = Maze::new(maze_map, Cell { row: 7, column: 10 }, Cell { row: 1, column: 1 });
+
+        let shortest_path = vec![
+            Cell { row: 7, column: 10 },
+            Cell { row: 7, column: 9 },
+            Cell { row: 7, column: 8 },
+            Cell { row: 7, column: 7 },
+            Cell { row: 6, column: 7 },
+            Cell { row: 6, column: 6 },
+            Cell { row: 6, column: 5 },
+            Cell { row: 6, column: 4 },
+            Cell { row: 5, column: 4 },
+            Cell { row: 4, column: 4 },
+            Cell { row: 4, column: 3 },
+            Cell { row: 3, column: 3 },
+            Cell { row: 2, column: 3 },
+            Cell { row: 1, column: 3 },
+            Cell { row: 1, column: 2 },
+            Cell { row: 1, column: 1 },
+        ];
+
+        assert_eq!(a_star_shortest_path(&maze), shortest_path);
     }
 
     #[test]
