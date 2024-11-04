@@ -6,21 +6,32 @@ use std::collections::HashMap;
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 
+#[derive(Debug, Clone)]
+pub struct ServerConfig {
+    pub host: String,
+    pub port: u16,
+    pub seed: u64,
+}
+
 pub struct GameServer {
     clients: Arc<Mutex<HashMap<String, Client>>>,
     teams: Arc<Mutex<HashMap<String, Teams>>>,
+    config: ServerConfig,
 }
 
 impl GameServer {
-    pub fn new() -> Self {
+    pub fn new(config: ServerConfig) -> Self {
         Self {
             clients: Arc::new(Mutex::new(HashMap::new())),
             teams: Arc::new(Mutex::new(HashMap::new())),
+            config: config.clone(),
         }
     }
 
-    pub fn run(&self, address: &str) {
-        let listener = std::net::TcpListener::bind(address).expect("Failed to bind to address");
+    pub fn run(&self) {
+        let address = format!("{}:{}", self.config.host, self.config.port);
+        let listener =
+            std::net::TcpListener::bind(address.clone()).expect("Failed to bind to address");
         print_log(&format!("Server started on {}", address), Color::Reset);
 
         for stream in listener.incoming() {
@@ -28,8 +39,9 @@ impl GameServer {
                 Ok(stream) => {
                     let clients = Arc::clone(&self.clients);
                     let teams = Arc::clone(&self.teams);
+                    let config = self.config.clone();
                     std::thread::spawn(move || {
-                        Self::handle_connection(&GameServer { clients, teams }, stream)
+                        Self::handle_connection(&GameServer { clients, teams, config }, stream)
                     });
                 }
                 Err(e) => eprintln!("Failed to establish connection: {}", e),
@@ -101,7 +113,7 @@ impl GameServer {
 
 impl Default for GameServer {
     fn default() -> Self {
-        Self::new()
+        Self::new(ServerConfig { host: "127.0.0.1".to_string(), port: 8080, seed: 0 })
     }
 }
 
@@ -121,7 +133,8 @@ mod tests {
 
     #[test]
     fn test_register_client() {
-        let server = GameServer::new();
+        let config = ServerConfig { host: "127.0.0.1".to_string(), port: 8080, seed: 0 };
+        let server = GameServer::new(config);
         let player = create_test_client("Player1", "Team1");
 
         assert!(matches!(server.register_client(player.clone()), SubscribeResult::Ok));
@@ -136,7 +149,8 @@ mod tests {
 
     #[test]
     fn test_register_duplicate_client() {
-        let server = GameServer::new();
+        let config = ServerConfig { host: "127.0.0.1".to_string(), port: 8080, seed: 0 };
+        let server = GameServer::new(config);
         let player = create_test_client("Player1", "Team1");
 
         assert!(matches!(server.register_client(player.clone()), SubscribeResult::Ok));
@@ -148,7 +162,8 @@ mod tests {
 
     #[test]
     fn test_register_invalid_name() {
-        let server = GameServer::new();
+        let config = ServerConfig { host: "127.0.0.1".to_string(), port: 8080, seed: 0 };
+        let server = GameServer::new(config);
         let player = create_test_client("", "Team1");
 
         assert!(matches!(
@@ -159,7 +174,8 @@ mod tests {
 
     #[test]
     fn test_multiple_players_same_team() {
-        let server = GameServer::new();
+        let config = ServerConfig { host: "127.0.0.1".to_string(), port: 8080, seed: 0 };
+        let server = GameServer::new(config);
         let player1 = create_test_client("Player1", "Team1");
         let player2 = create_test_client("Player2", "Team1");
 
@@ -175,7 +191,8 @@ mod tests {
 
     #[test]
     fn test_players_different_teams() {
-        let server = GameServer::new();
+        let config = ServerConfig { host: "127.0.0.1".to_string(), port: 8080, seed: 0 };
+        let server = GameServer::new(config);
         let player1 = create_test_client("Player1", "Team1");
         let player2 = create_test_client("Player2", "Team2");
 
