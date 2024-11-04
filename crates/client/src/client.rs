@@ -19,7 +19,7 @@ impl GameClient {
         Self { config, score: 0 }
     }
 
-    pub fn run(&self, max_retries: u32) {
+    pub fn run(&self, max_retries: u8) {
         let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries);
 
         send_message(&mut stream, Message::Hello);
@@ -28,7 +28,7 @@ impl GameClient {
         }
     }
 
-    fn connect_to_server(address: &str, mut max_retries: u32) -> TcpStream {
+    fn connect_to_server(address: &str, mut max_retries: u8) -> TcpStream {
         loop {
             match TcpStream::connect(address) {
                 Ok(stream) => return stream,
