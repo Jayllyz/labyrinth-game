@@ -16,6 +16,9 @@ struct Args {
         help = "Address allowed to connect to."
     )]
     host: String,
+
+    #[arg(short, long, help = "Seed for the maze generation.")]
+    seed: u64,
 }
 
 fn main() {

@@ -1,3 +1,4 @@
+use rand::random;
 use shared::messages::{
     receive_message, send_message, Client, Message, SubscribeError, SubscribeResult, Teams, Welcome,
 };
@@ -9,6 +10,8 @@ use std::sync::{Arc, Mutex};
 pub struct GameServer {
     clients: Arc<Mutex<HashMap<String, Client>>>,
     teams: Arc<Mutex<HashMap<String, Teams>>>,
+    #[allow(dead_code)]
+    seed: u64,
 }
 
 impl GameServer {
@@ -16,6 +19,7 @@ impl GameServer {
         Self {
             clients: Arc::new(Mutex::new(HashMap::new())),
             teams: Arc::new(Mutex::new(HashMap::new())),
+            seed: 0,
         }
     }
 
@@ -23,13 +27,14 @@ impl GameServer {
         let listener = std::net::TcpListener::bind(address).expect("Failed to bind to address");
         print_log(&format!("Server started on {}", address), Color::Reset);
 
+        let seed = random();
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
                     let clients = Arc::clone(&self.clients);
                     let teams = Arc::clone(&self.teams);
                     std::thread::spawn(move || {
-                        Self::handle_connection(&GameServer { clients, teams }, stream)
+                        Self::handle_connection(&GameServer { clients, teams, seed }, stream)
                     });
                 }
                 Err(e) => eprintln!("Failed to establish connection: {}", e),

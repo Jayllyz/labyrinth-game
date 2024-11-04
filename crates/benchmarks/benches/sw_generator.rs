@@ -7,11 +7,11 @@ fn bench_sidewinder_generator(c: &mut Criterion) {
     let mut group = c.benchmark_group("sidewinder_generator");
     group.warm_up_time(Duration::from_secs(3));
 
-    group.bench_function("maze1", |b| b.iter(|| sidewinder(10, 10, false)));
-    group.bench_function("maze2", |b| b.iter(|| sidewinder(20, 20, false)));
-    group.bench_function("maze3", |b| b.iter(|| sidewinder(30, 30, false)));
-    group.bench_function("maze4", |b| b.iter(|| sidewinder(40, 40, false)));
-    group.bench_function("maze5", |b| b.iter(|| sidewinder(50, 50, false)));
+    group.bench_function("maze1", |b| b.iter(|| sidewinder(10, 10, false, 5849)));
+    group.bench_function("maze2", |b| b.iter(|| sidewinder(20, 20, false, 5849)));
+    group.bench_function("maze3", |b| b.iter(|| sidewinder(30, 30, false, 5849)));
+    group.bench_function("maze4", |b| b.iter(|| sidewinder(40, 40, false, 5849)));
+    group.bench_function("maze5", |b| b.iter(|| sidewinder(50, 50, false, 5849)));
 
     group.finish();
 }
