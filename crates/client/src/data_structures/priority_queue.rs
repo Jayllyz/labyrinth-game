@@ -60,7 +60,7 @@ mod test {
     fn test_priority_queue_empty() {
         let priority_queue = PriorityQueue::new();
 
-        assert_eq!(priority_queue.is_empty(), true);
+        assert!(priority_queue.is_empty());
     }
 
     #[test]
@@ -71,7 +71,7 @@ mod test {
 
         priority_queue.enqueue(node);
 
-        assert_eq!(priority_queue.is_empty(), false);
+        assert!(!priority_queue.is_empty());
 
         let dequeued_node = priority_queue.dequeue();
         assert_eq!(dequeued_node.priority_f, 1);
@@ -98,7 +98,7 @@ mod test {
         let dequeued_node = priority_queue.dequeue();
         assert_eq!(dequeued_node.priority_f, 3);
 
-        assert_eq!(priority_queue.is_empty(), true);
+        assert!(priority_queue.is_empty());
     }
 
     #[test]
@@ -120,7 +120,7 @@ mod test {
         let dequeued_node = priority_queue.dequeue();
         assert_eq!(dequeued_node.priority_f, 3);
 
-        assert_eq!(priority_queue.is_empty(), true);
+        assert!(priority_queue.is_empty());
     }
 
     #[test]
@@ -138,12 +138,12 @@ mod test {
         let node1 = Node { priority_f: 3, cell: Cell { row: 43, column: 12 } };
         priority_queue.enqueue(node1);
 
-        assert_eq!(priority_queue.contains(&Cell { row: 43, column: 12 }), true);
+        assert!(priority_queue.contains(&Cell { row: 43, column: 12 }));
 
         priority_queue.dequeue();
 
-        assert_eq!(priority_queue.contains(&Cell { row: 43, column: 12 }), false);
+        assert!(!priority_queue.contains(&Cell { row: 43, column: 12 }));
 
-        assert_eq!(priority_queue.contains(&Cell { row: 4, column: 4 }), false);
+        assert!(!priority_queue.contains(&Cell { row: 4, column: 4 }));
     }
 }
