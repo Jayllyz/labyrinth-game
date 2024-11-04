@@ -6,11 +6,15 @@ use server::server::GameServer;
 #[command(version = "1.0")]
 #[command(about = "Server for the Labyrinth game", long_about = None)]
 struct Args {
-    #[arg(short, long, default_value = "7878")]
+    #[arg(short, long, default_value = "8778", help = "Port to listen to.")]
     #[arg(value_parser = clap::value_parser!(u16).range(1024..=65535))]
     port: u16,
 
-    #[arg(long, default_value = "127.0.0.1")]
+    #[arg(
+        long = "host-address",
+        default_value = "127.0.0.1",
+        help = "Address allowed to connect to."
+    )]
     host: String,
 }
 
@@ -29,7 +33,7 @@ mod tests {
     #[test]
     fn test_default_values() {
         let args = Args::try_parse_from(["test"]).unwrap();
-        assert_eq!(args.port, 7878);
+        assert_eq!(args.port, 8778);
         assert_eq!(args.host, "127.0.0.1");
     }
 
