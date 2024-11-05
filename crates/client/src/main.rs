@@ -43,6 +43,7 @@ fn main() {
         player_name: args.name,
         team_name: args.team,
     };
+
     if args.offline {
         println!("Running in offline mode (no connection to the server)");
         println!("Not implemented yet, exiting...");

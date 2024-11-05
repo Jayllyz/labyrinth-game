@@ -1,6 +1,26 @@
 use crate::maze::{Cell, Maze, PositionType};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 
+/// Generates a maze using the Sidewinder algorithm.
+///
+/// # Arguments
+///
+/// * `width` - The width of the maze.
+/// * `height` - The height of the maze.
+/// * `print` - A boolean indicating whether to print the maze generation process.
+/// * `seed` - A seed for the random number generator.
+///
+/// # Returns
+///
+/// A `Maze` object representing the generated maze.
+///
+/// # Example
+///
+/// ```
+/// use shared::maze_generator::sidewinder;
+///
+/// let maze = sidewinder(10, 10, false, 42);
+/// ```
 pub fn sidewinder(width: usize, height: usize, print: bool, seed: u64) -> Maze {
     let mut rng = StdRng::seed_from_u64(seed);
     let mut maze = Maze::new(
@@ -37,8 +57,8 @@ pub fn sidewinder(width: usize, height: usize, print: bool, seed: u64) -> Maze {
         }
     }
     (maze.entry, maze.exit) = generate_random_entry_exit(width, height, seed);
-    maze.map[maze.entry.row as usize][maze.entry.column as usize] = PositionType::SPACE;
-    maze.map[maze.exit.row as usize][maze.exit.column as usize] = PositionType::SPACE;
+    maze.map[maze.entry.row as usize][maze.entry.column as usize] = PositionType::ENTRY;
+    maze.map[maze.exit.row as usize][maze.exit.column as usize] = PositionType::EXIT;
     maze
 }
 
