@@ -2,19 +2,34 @@ use crate::data_structures::priority_queue::{Node, PriorityQueue};
 use shared::maze::{Cell, Directions, Maze};
 use std::collections::VecDeque;
 
-/// Algorithme du breadth-first search (BFS) pour trouver le chemin le plus court
+pub enum PrintPathMode {
+    None = 0,
+    Visited = 1,
+    VisitedNumber = 2,
+}
+
+/// Finds the shortest path in a maze using the Breadth-First Search (BFS) algorithm.
 ///
-/// ## Arguments
+/// # Arguments
 ///
-/// * `maze` - La structure de données du labyrinthe
-/// * `print` - Un u8 pour afficher le labyrinthe
-///     * 0 - Ne pas afficher
-///     * 1 - Afficher les points visités
-///     * 2 - Afficher les points visités numérotés
-pub fn bfs_shortest_path(maze: &Maze, print: u8) -> Vec<Cell> {
-    if (print != 0) && (print != 1) && (print != 2) {
-        panic!("Invalid print value");
-    }
+/// * `maze` - A reference to the `Maze` structure.
+/// * `print` - A `PrintPathMode` enum value indicating whether to print the visited cells or not.
+///
+/// # Returns
+///
+/// A vector of `Cell` representing the shortest path from the entry to the exit of the maze.
+///
+/// # Examples
+///
+/// ```rust
+/// use client::maze_solver::bfs_shortest_path;
+/// use shared::maze::{Cell, Maze};
+/// use client::maze_solver::PrintPathMode;
+///
+/// let maze = Maze::new(vec![vec![1, 1, 1], vec![1, 0, 1], vec![1, 1, 1] ], Cell { row: 0, column: 0 }, Cell { row: 2, column: 2 });
+/// let shortest_path = bfs_shortest_path(&maze, PrintPathMode::None);
+/// ```
+pub fn bfs_shortest_path(maze: &Maze, print: PrintPathMode) -> Vec<Cell> {
     let mut queue: VecDeque<Cell> = VecDeque::new();
 
     let Maze { entry, exit, row_len, col_len, .. } = *maze;
@@ -33,13 +48,16 @@ pub fn bfs_shortest_path(maze: &Maze, print: u8) -> Vec<Cell> {
         let curr: Cell = queue.pop_front().unwrap();
 
         if curr == exit {
-            if print == 1 {
-                maze.print_visited(&visited_points);
-                println!("Number of steps: {}", index);
-            }
-            if print == 2 {
-                maze.print_visited_number(&visited_points);
-                println!("Number of steps: {}", index);
+            match print {
+                PrintPathMode::Visited => {
+                    maze.print_visited(&visited_points);
+                    println!("Number of steps: {}", index);
+                }
+                PrintPathMode::VisitedNumber => {
+                    maze.print_visited_number(&visited_points);
+                    println!("Number of steps: {}", index);
+                }
+                _ => {}
             }
             return reconstruct_shortest_path(maze, previous_path);
         }
@@ -86,10 +104,7 @@ fn get_manhattan_distance(source_cell: &Cell, goal_cell: &Cell) -> i32 {
     ((source_cell.row - goal_cell.row).abs() + (source_cell.column - goal_cell.column).abs()).into()
 }
 
-pub fn a_star_shortest_path(maze: &Maze, print: u8) -> Vec<Cell> {
-    if (print != 0) && (print != 1) && (print != 2) {
-        panic!("Invalid print value");
-    }
+pub fn a_star_shortest_path(maze: &Maze, print: PrintPathMode) -> Vec<Cell> {
     let Maze { entry, exit, row_len, col_len, .. } = *maze;
     let directions = [Directions::NORTH, Directions::SOUTH, Directions::WEST, Directions::EAST];
 
@@ -120,13 +135,16 @@ pub fn a_star_shortest_path(maze: &Maze, print: u8) -> Vec<Cell> {
         visited_points[curr_row][curr_col] = index;
 
         if curr_cell.row == maze.exit.row && curr_cell.column == maze.exit.column {
-            if print == 1 {
-                maze.print_visited(&visited_points);
-                println!("Number of steps: {}", index);
-            }
-            if print == 2 {
-                maze.print_visited_number(&visited_points);
-                println!("Number of steps: {}", index);
+            match print {
+                PrintPathMode::Visited => {
+                    maze.print_visited(&visited_points);
+                    println!("Number of steps: {}", index);
+                }
+                PrintPathMode::VisitedNumber => {
+                    maze.print_visited_number(&visited_points);
+                    println!("Number of steps: {}", index);
+                }
+                _ => {}
             }
             return reconstruct_shortest_path(maze, previous_path);
         }
@@ -209,7 +227,7 @@ mod tests {
             Cell { row: 2, column: 1 },
         ];
 
-        assert_eq!(bfs_shortest_path(&maze, 1), shortest_path);
+        assert_eq!(bfs_shortest_path(&maze, PrintPathMode::Visited), shortest_path);
 
         let maze_map = vec![
             vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -244,7 +262,7 @@ mod tests {
             Cell { row: 1, column: 1 },
         ];
 
-        assert_eq!(bfs_shortest_path(&maze, 0), shortest_path);
+        assert_eq!(bfs_shortest_path(&maze, PrintPathMode::VisitedNumber), shortest_path);
     }
 
     #[test]
@@ -284,7 +302,7 @@ mod tests {
             Cell { row: 2, column: 1 },
         ];
 
-        assert_eq!(a_star_shortest_path(&maze, 0), shortest_path);
+        assert_eq!(a_star_shortest_path(&maze, PrintPathMode::None), shortest_path);
 
         let maze_map = vec![
             vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -319,13 +337,13 @@ mod tests {
             Cell { row: 1, column: 1 },
         ];
 
-        assert_eq!(a_star_shortest_path(&maze, 0), shortest_path);
+        assert_eq!(a_star_shortest_path(&maze, PrintPathMode::None), shortest_path);
     }
 
     #[test]
     fn test_random_generated() {
         let maze = sidewinder(10, 10, false, 5849);
-        let shortest_path = bfs_shortest_path(&maze, 0);
+        let shortest_path = bfs_shortest_path(&maze, PrintPathMode::None);
         assert!(!shortest_path.is_empty());
     }
 }

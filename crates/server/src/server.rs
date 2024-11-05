@@ -1,7 +1,7 @@
 use shared::messages::{
     receive_message, send_message, Client, Message, SubscribeError, SubscribeResult, Teams, Welcome,
 };
-use shared::utils::{print_log, Color};
+use shared::utils::{print_error, print_log, Color};
 use std::collections::HashMap;
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
@@ -44,7 +44,7 @@ impl GameServer {
                         Self::handle_connection(&GameServer { clients, teams, config }, stream)
                     });
                 }
-                Err(e) => eprintln!("Failed to establish connection: {}", e),
+                Err(e) => print_error(&format!("Failed to accept connection: {}", e)),
             }
         }
     }
