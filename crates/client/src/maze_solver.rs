@@ -227,7 +227,7 @@ mod tests {
             Cell { row: 2, column: 1 },
         ];
 
-        assert_eq!(bfs_shortest_path(&maze, PrintPathMode::None), shortest_path);
+        assert_eq!(bfs_shortest_path(&maze, PrintPathMode::Visited), shortest_path);
 
         let maze_map = vec![
             vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -262,7 +262,7 @@ mod tests {
             Cell { row: 1, column: 1 },
         ];
 
-        assert_eq!(bfs_shortest_path(&maze, PrintPathMode::None), shortest_path);
+        assert_eq!(bfs_shortest_path(&maze, PrintPathMode::VisitedNumber), shortest_path);
     }
 
     #[test]
