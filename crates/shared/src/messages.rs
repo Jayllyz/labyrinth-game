@@ -127,8 +127,13 @@ pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
 }
 
 pub fn send_message(stream: &mut TcpStream, msg: &Message) {
-    let json =
-        serde_json::to_string(&msg).expect(&format!("Failed to serialize message: {:?}", msg));
+    let json = match serde_json::to_string(&msg) {
+        Ok(json) => json,
+        Err(e) => {
+            print_log(&format!("Failed to serialize message: {}", e), Color::Red);
+            return;
+        }
+    };
     let json_size = json.len() as u32;
 
     stream.write_all(&json_size.to_le_bytes()).expect("Failed to write JSON size");
