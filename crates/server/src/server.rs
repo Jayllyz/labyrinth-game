@@ -1,5 +1,5 @@
 use shared::messages::{
-    receive_message, send_message, Client, Message, SubscribeError, SubscribeResult, Teams, Welcome,
+    receive_message, send_message, Client, Message, SubscribeError, SubscribePlayerResult, Teams,
 };
 use shared::utils::{print_error, print_log, Color};
 use std::collections::HashMap;
@@ -49,15 +49,15 @@ impl GameServer {
         }
     }
 
-    fn register_client(&self, player: Client) -> SubscribeResult {
+    fn register_client(&self, player: Client) -> SubscribePlayerResult {
         if player.player_name.is_empty() {
-            return SubscribeResult::Err(SubscribeError::InvalidName);
+            return SubscribePlayerResult::Err(SubscribeError::InvalidName);
         }
 
         let mut clients = self.clients.lock().expect("Failed to lock clients");
 
         if clients.contains_key(player.player_name.as_str()) {
-            return SubscribeResult::Err(SubscribeError::AlreadyRegistered);
+            return SubscribePlayerResult::Err(SubscribeError::AlreadyRegistered);
         }
 
         let client = Client {
@@ -83,23 +83,21 @@ impl GameServer {
             &format!("{} registered successfully on team {}", player.player_name, player.team_name),
             Color::Green,
         );
-        SubscribeResult::Ok
+        SubscribePlayerResult::Ok
     }
 
     fn handle_connection(&self, mut stream: TcpStream) {
         while let Ok(message) = receive_message(&mut stream) {
             let response = match message {
-                Message::Hello => Message::Welcome(Welcome { version: 1 }),
-
-                Message::Subscribe(subscribe) => {
+                Message::SubscribePlayer(subscribe) => {
                     let player = Client {
                         player_name: subscribe.name,
-                        team_name: subscribe.team,
+                        team_name: "Team1".to_string(),
                         address: stream.peer_addr().expect("Failed to get peer address"),
                         moves_count: 0,
                         score: 0,
                     };
-                    Message::SubscribeResult(self.register_client(player))
+                    Message::SubscribePlayerResult(self.register_client(player))
                 }
 
                 _ => Message::MessageError(shared::messages::MessageError {
@@ -125,7 +123,7 @@ mod tests {
         Client {
             player_name: name.to_string(),
             team_name: team.to_string(),
-            address: "localhost:8080".parse().unwrap(),
+            address: "127.0.0.1:8080".parse().unwrap(),
             moves_count: 0,
             score: 0,
         }
@@ -137,7 +135,7 @@ mod tests {
         let server = GameServer::new(config);
         let player = create_test_client("Player1", "Team1");
 
-        assert!(matches!(server.register_client(player.clone()), SubscribeResult::Ok));
+        assert!(matches!(server.register_client(player.clone()), SubscribePlayerResult::Ok));
 
         let clients = server.clients.lock().unwrap();
         assert!(clients.contains_key(&player.player_name));
@@ -153,10 +151,10 @@ mod tests {
         let server = GameServer::new(config);
         let player = create_test_client("Player1", "Team1");
 
-        assert!(matches!(server.register_client(player.clone()), SubscribeResult::Ok));
+        assert!(matches!(server.register_client(player.clone()), SubscribePlayerResult::Ok));
         assert!(matches!(
             server.register_client(player.clone()),
-            SubscribeResult::Err(SubscribeError::AlreadyRegistered)
+            SubscribePlayerResult::Err(SubscribeError::AlreadyRegistered)
         ));
     }
 
@@ -168,7 +166,7 @@ mod tests {
 
         assert!(matches!(
             server.register_client(player),
-            SubscribeResult::Err(SubscribeError::InvalidName)
+            SubscribePlayerResult::Err(SubscribeError::InvalidName)
         ));
     }
 
@@ -179,8 +177,8 @@ mod tests {
         let player1 = create_test_client("Player1", "Team1");
         let player2 = create_test_client("Player2", "Team1");
 
-        assert!(matches!(server.register_client(player1.clone()), SubscribeResult::Ok));
-        assert!(matches!(server.register_client(player2.clone()), SubscribeResult::Ok));
+        assert!(matches!(server.register_client(player1.clone()), SubscribePlayerResult::Ok));
+        assert!(matches!(server.register_client(player2.clone()), SubscribePlayerResult::Ok));
 
         let teams = server.teams.lock().unwrap();
         let team = teams.get("Team1").unwrap();
@@ -196,8 +194,8 @@ mod tests {
         let player1 = create_test_client("Player1", "Team1");
         let player2 = create_test_client("Player2", "Team2");
 
-        assert!(matches!(server.register_client(player1.clone()), SubscribeResult::Ok));
-        assert!(matches!(server.register_client(player2.clone()), SubscribeResult::Ok));
+        assert!(matches!(server.register_client(player1.clone()), SubscribePlayerResult::Ok));
+        assert!(matches!(server.register_client(player2.clone()), SubscribePlayerResult::Ok));
 
         let teams = server.teams.lock().unwrap();
         assert_eq!(teams.len(), 2);
