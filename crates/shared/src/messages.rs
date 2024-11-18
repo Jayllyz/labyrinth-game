@@ -97,18 +97,12 @@ pub struct Teams {
 
 pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
     let mut buf_len = [0u8; 4];
-    match stream.read_exact(&mut buf_len) {
-        Ok(_) => (),
-        Err(e) => Err(format!("Failed to read message length: {}", e))?,
-    }
+    stream.read_exact(&mut buf_len).map_err(|e| format!("Failed to read message size: {}", e))?;
 
     let len = u32::from_le_bytes(buf_len) as usize;
 
     let mut buf = vec![0u8; len];
-    match stream.read_exact(&mut buf) {
-        Ok(_) => (),
-        Err(e) => Err(format!("Failed to read message body: {}", e))?,
-    };
+    stream.read_exact(&mut buf).map_err(|e| format!("Failed to read message content: {}", e))?;
 
     let str = String::from_utf8_lossy(&buf);
     let json: Message = match serde_json::from_str(&str) {
