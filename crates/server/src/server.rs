@@ -106,14 +106,14 @@ impl GameServer {
                     message: "Invalid message".to_string(),
                 }),
             };
-            send_message(&mut stream, response)
+            send_message(&mut stream, &response);
         }
     }
 }
 
 impl Default for GameServer {
     fn default() -> Self {
-        Self::new(ServerConfig { host: "127.0.0.1".to_string(), port: 8080, seed: 0 })
+        Self::new(ServerConfig { host: "localhost".to_string(), port: 8080, seed: 0 })
     }
 }
 
@@ -125,7 +125,7 @@ mod tests {
         Client {
             player_name: name.to_string(),
             team_name: team.to_string(),
-            address: "127.0.0.1:8080".parse().unwrap(),
+            address: "localhost:8080".parse().unwrap(),
             moves_count: 0,
             score: 0,
         }
@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn test_register_client() {
-        let config = ServerConfig { host: "127.0.0.1".to_string(), port: 8080, seed: 0 };
+        let config = ServerConfig { host: "localhost".to_string(), port: 8080, seed: 0 };
         let server = GameServer::new(config);
         let player = create_test_client("Player1", "Team1");
 
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn test_register_duplicate_client() {
-        let config = ServerConfig { host: "127.0.0.1".to_string(), port: 8080, seed: 0 };
+        let config = ServerConfig { host: "localhost".to_string(), port: 8080, seed: 0 };
         let server = GameServer::new(config);
         let player = create_test_client("Player1", "Team1");
 
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn test_register_invalid_name() {
-        let config = ServerConfig { host: "127.0.0.1".to_string(), port: 8080, seed: 0 };
+        let config = ServerConfig { host: "localhost".to_string(), port: 8080, seed: 0 };
         let server = GameServer::new(config);
         let player = create_test_client("", "Team1");
 
@@ -174,7 +174,7 @@ mod tests {
 
     #[test]
     fn test_multiple_players_same_team() {
-        let config = ServerConfig { host: "127.0.0.1".to_string(), port: 8080, seed: 0 };
+        let config = ServerConfig { host: "localhost".to_string(), port: 8080, seed: 0 };
         let server = GameServer::new(config);
         let player1 = create_test_client("Player1", "Team1");
         let player2 = create_test_client("Player2", "Team1");
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn test_players_different_teams() {
-        let config = ServerConfig { host: "127.0.0.1".to_string(), port: 8080, seed: 0 };
+        let config = ServerConfig { host: "localhost".to_string(), port: 8080, seed: 0 };
         let server = GameServer::new(config);
         let player1 = create_test_client("Player1", "Team1");
         let player2 = create_test_client("Player2", "Team2");

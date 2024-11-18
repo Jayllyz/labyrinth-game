@@ -22,7 +22,7 @@ impl GameClient {
     pub fn run(&self, max_retries: u8) {
         let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries);
 
-        send_message(&mut stream, Message::Hello);
+        send_message(&mut stream, &Message::Hello);
         while let Ok(message) = receive_message(&mut stream) {
             Self::handle_server_message(self.config.clone(), &mut stream, message);
         }
@@ -50,7 +50,7 @@ impl GameClient {
         match message {
             Message::Welcome(..) => {
                 let subscribe = Subscribe { name: config.player_name, team: config.team_name };
-                send_message(stream, Message::Subscribe(subscribe));
+                send_message(stream, &Message::Subscribe(subscribe));
             }
             Message::SubscribeResult(result) => match result {
                 SubscribeResult::Ok => {

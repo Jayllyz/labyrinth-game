@@ -111,7 +111,7 @@ pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
         Err(e) => Err(format!("Failed to read message length: {}", e))?,
     }
 
-    let len = u32::from_be_bytes(buf_len) as usize;
+    let len = u32::from_le_bytes(buf_len) as usize;
 
     let mut buf = vec![0u8; len];
     match stream.read_exact(&mut buf) {
@@ -135,19 +135,19 @@ pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
     Ok(json)
 }
 
-pub fn send_message(stream: &mut TcpStream, msg: Message) {
-    let json = serde_json::to_string(&msg).expect("Failed to serialize message");
-    let len = json.len() as u32;
+pub fn send_message(stream: &mut TcpStream, msg: &Message) {
+    let json =
+        serde_json::to_string(&msg).expect(&format!("Failed to serialize message: {:?}", msg));
+    let json_size = json.len() as u32;
 
-    stream.write_all(&len.to_be_bytes()).expect("Failed to write to stream");
-    stream.write_all(json.as_bytes()).expect("Failed to write to stream");
+    stream.write_all(&json_size.to_le_bytes()).expect("Failed to write JSON size");
+    stream.write_all(json.as_bytes()).expect("Failed to write JSON content");
     stream.flush().expect("Failed to flush stream");
 
     let receiver = match stream.peer_addr() {
         Ok(addr) => format!("{}:{}", addr.ip(), addr.port()),
         Err(_) => String::from("unknown address"),
     };
-
     print_log(&format!("Sent: {:?} to ({})", msg, receiver), Color::Blue);
 }
 
