@@ -13,7 +13,7 @@ struct Args {
 
     #[arg(
         long = "host-address",
-        default_value = "127.0.0.1",
+        default_value = "localhost",
         help = "Address allowed to connect to."
     )]
     host: String,
@@ -40,13 +40,13 @@ mod tests {
     fn test_default_values() {
         let args = Args::try_parse_from(["test"]).unwrap();
         assert_eq!(args.port, 8778);
-        assert_eq!(args.host, "127.0.0.1");
+        assert_eq!(args.host, "localhost");
     }
 
     #[test]
     fn test_custom_port() {
         let args = Args::try_parse_from(["test", "--port", "8080"]).unwrap();
         assert_eq!(args.port, 8080);
-        assert_eq!(args.host, "127.0.0.1");
+        assert_eq!(args.host, "localhost");
     }
 }

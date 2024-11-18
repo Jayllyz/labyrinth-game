@@ -7,22 +7,18 @@ use std::{
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Message {
-    Hello,
-    Welcome(Welcome),
-    Subscribe(Subscribe),
-    SubscribeResult(SubscribeResult),
-    View(View),
+    RegisterTeam(RegisterTeam),
+    SubscribePlayer(SubscribePlayer),
+    SubscribePlayerResult(SubscribePlayerResult),
+    RadarView(RadarView),
     Action(Action),
     ActionResult(ActionResult),
     MessageError(MessageError),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Hello;
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Welcome {
-    pub version: u8,
+pub struct RegisterTeam {
+    pub name: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,13 +27,13 @@ pub struct MessageError {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Subscribe {
+pub struct SubscribePlayer {
     pub name: String,
-    pub team: String,
+    pub registration_token: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum SubscribeResult {
+pub enum SubscribePlayerResult {
     Ok,
     Err(SubscribeError),
 }
@@ -49,13 +45,8 @@ pub enum SubscribeError {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct View {
+pub struct RadarView {
     pub view: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ViewModel {
-    pub view: View,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -106,18 +97,12 @@ pub struct Teams {
 
 pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
     let mut buf_len = [0u8; 4];
-    match stream.read_exact(&mut buf_len) {
-        Ok(_) => (),
-        Err(e) => Err(format!("Failed to read message length: {}", e))?,
-    }
+    stream.read_exact(&mut buf_len).map_err(|e| format!("Failed to read message size: {}", e))?;
 
-    let len = u32::from_be_bytes(buf_len) as usize;
+    let len = u32::from_le_bytes(buf_len) as usize;
 
     let mut buf = vec![0u8; len];
-    match stream.read_exact(&mut buf) {
-        Ok(_) => (),
-        Err(e) => Err(format!("Failed to read message body: {}", e))?,
-    };
+    stream.read_exact(&mut buf).map_err(|e| format!("Failed to read message content: {}", e))?;
 
     let str = String::from_utf8_lossy(&buf);
     let json: Message = match serde_json::from_str(&str) {
@@ -135,19 +120,24 @@ pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
     Ok(json)
 }
 
-pub fn send_message(stream: &mut TcpStream, msg: Message) {
-    let json = serde_json::to_string(&msg).expect("Failed to serialize message");
-    let len = json.len() as u32;
+pub fn send_message(stream: &mut TcpStream, msg: &Message) {
+    let json = match serde_json::to_string(&msg) {
+        Ok(json) => json,
+        Err(e) => {
+            print_log(&format!("Failed to serialize message: {}", e), Color::Red);
+            return;
+        }
+    };
+    let json_size = json.len() as u32;
 
-    stream.write_all(&len.to_be_bytes()).expect("Failed to write to stream");
-    stream.write_all(json.as_bytes()).expect("Failed to write to stream");
+    stream.write_all(&json_size.to_le_bytes()).expect("Failed to write JSON size");
+    stream.write_all(json.as_bytes()).expect("Failed to write JSON content");
     stream.flush().expect("Failed to flush stream");
 
     let receiver = match stream.peer_addr() {
         Ok(addr) => format!("{}:{}", addr.ip(), addr.port()),
         Err(_) => String::from("unknown address"),
     };
-
     print_log(&format!("Sent: {:?} to ({})", msg, receiver), Color::Blue);
 }
 
@@ -157,45 +147,36 @@ mod tests {
     use serde_json;
 
     #[test]
-    fn test_hello_message() {
-        let msg = Message::Hello;
-        let serialized = serde_json::to_string(&msg).unwrap();
-        assert_eq!(serialized, r#""Hello""#);
-
-        let deserialized: Message = serde_json::from_str(&serialized).unwrap();
-        matches!(deserialized, Message::Hello);
-    }
-
-    #[test]
     fn test_all_messages() {
         let messages = vec![
-            Message::Hello,
-            Message::Welcome(Welcome { version: 1 }),
-            Message::Subscribe(Subscribe {
-                name: "Player1".to_string(),
-                team: "Team1".to_string(),
+            Message::RegisterTeam(RegisterTeam { name: "team1".to_string() }),
+            Message::SubscribePlayer(SubscribePlayer {
+                name: "player1".to_string(),
+                registration_token: "token".to_string(),
             }),
-            Message::SubscribeResult(SubscribeResult::Ok),
-            Message::View(View { view: "Initial state".to_string() }),
+            Message::SubscribePlayerResult(SubscribePlayerResult::Ok),
+            Message::SubscribePlayerResult(SubscribePlayerResult::Err(
+                SubscribeError::AlreadyRegistered,
+            )),
+            Message::RadarView(RadarView { view: "view".to_string() }),
             Message::Action(Action::MoveTo(Direction::Right)),
             Message::ActionResult(ActionResult::Ok),
-            Message::MessageError(MessageError { message: "Error".to_string() }),
+            Message::ActionResult(ActionResult::Completed),
+            Message::ActionResult(ActionResult::Err(ActionError::InvalidMove)),
+            Message::ActionResult(ActionResult::Err(ActionError::OutOfMap)),
+            Message::ActionResult(ActionResult::Err(ActionError::Blocked)),
+            Message::MessageError(MessageError { message: "error".to_string() }),
         ];
 
         for msg in messages {
             let serialized = serde_json::to_string(&msg).unwrap();
             let deserialized: Message = serde_json::from_str(&serialized).unwrap();
-            matches!(
-                deserialized,
-                Message::Hello
-                    | Message::Welcome(_)
-                    | Message::Subscribe(_)
-                    | Message::SubscribeResult(_)
-                    | Message::View(_)
-                    | Message::Action(_)
-                    | Message::ActionResult(_)
-                    | Message::MessageError(_)
-            );
+            matches!(deserialized, |Message::RegisterTeam(_)| Message::SubscribePlayer(_)
+                | Message::SubscribePlayerResult(_)
+                | Message::RadarView(_)
+                | Message::Action(_)
+                | Message::ActionResult(_)
+                | Message::MessageError(_));
         }
     }
 }

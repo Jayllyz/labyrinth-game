@@ -8,7 +8,7 @@ use client::client::{ClientConfig, GameClient};
 struct Args {
     #[arg(
         long = "host-address",
-        default_value = "127.0.0.1",
+        default_value = "localhost",
         help = "Server address to connect to."
     )]
     #[arg(help_heading = "SERVER OPTIONS")]
