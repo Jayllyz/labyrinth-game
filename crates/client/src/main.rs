@@ -1,5 +1,6 @@
 use clap::Parser;
 use client::client::{ClientConfig, GameClient};
+use shared::utils::print_error;
 
 #[derive(Parser, Debug)]
 #[command(name = "Labyrinth-client")]
@@ -27,9 +28,13 @@ struct Args {
     #[arg(help_heading = "PLAYER OPTIONS")]
     name: String,
 
-    #[arg(short, long, default_value = "Team1", help = "Team name.")]
+    #[arg(short, long, default_value = "Groupe1", help = "Team name.")]
     #[arg(help_heading = "PLAYER OPTIONS")]
     team: String,
+
+    #[arg(long, help = "Token to register the player.")]
+    #[arg(help_heading = "PLAYER OPTIONS")]
+    token: Option<String>,
 
     #[arg(long, help = "Run the client in offline mode.")]
     offline: bool,
@@ -42,6 +47,7 @@ fn main() {
         server_addr: format!("{}:{}", args.host, args.port),
         player_name: args.name,
         team_name: args.team,
+        token: args.token,
     };
 
     if args.offline {
@@ -51,5 +57,10 @@ fn main() {
     }
 
     let client = GameClient::new(config);
-    client.run(args.retries);
+    match client.run(args.retries) {
+        Ok(_) => println!("Client existed successfully"),
+        Err(e) => {
+            print_error(&format!("{}", e));
+        }
+    }
 }
