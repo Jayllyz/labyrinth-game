@@ -8,6 +8,7 @@ use std::{
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Message {
     RegisterTeam(RegisterTeam),
+    RegisterTeamResult(RegisterTeamResult),
     SubscribePlayer(SubscribePlayer),
     SubscribePlayerResult(SubscribePlayerResult),
     RadarView(RadarView),
@@ -19,6 +20,17 @@ pub enum Message {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RegisterTeam {
     pub name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum RegistrationError {
+    InvalidName,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum RegisterTeamResult {
+    Ok { expected_players: u8, registration_token: String },
+    Err(RegistrationError),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
