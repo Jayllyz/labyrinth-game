@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn test_handle_server_message_register_success() {
         let config = ClientConfig {
-            server_addr: "".to_string(),
+            server_addr: String::new(),
             player_name: "player".to_string(),
             team_name: "team".to_string(),
             token: None,
@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn test_handle_server_message_subscribe_success() {
         let config = ClientConfig {
-            server_addr: "".to_string(),
+            server_addr: String::new(),
             player_name: "player".to_string(),
             team_name: "team".to_string(),
             token: Some("token".to_string()),
