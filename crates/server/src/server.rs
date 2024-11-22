@@ -104,7 +104,13 @@ impl GameServer {
                     message: "Invalid message".to_string(),
                 }),
             };
-            send_message(&mut stream, &response);
+
+            match send_message(&mut stream, &response) {
+                Ok(_) => {}
+                Err(e) => {
+                    print_log(&format!("[warning] - Failed to send message: {}", e), Color::Orange);
+                }
+            }
         }
     }
 }
