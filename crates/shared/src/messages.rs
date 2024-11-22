@@ -1,8 +1,9 @@
 use crate::utils::{print_log, Color};
 use serde::{Deserialize, Serialize};
 use std::{
-    io::{Read, Write},
+    io::{self, Read, Write},
     net::{SocketAddr, TcpStream},
+    time::Duration,
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -107,50 +108,55 @@ pub struct Teams {
     pub score: i32,
 }
 
-pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
+pub fn receive_message(stream: &mut TcpStream) -> io::Result<Message> {
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+
     let mut buf_len = [0u8; 4];
-    stream.read_exact(&mut buf_len).map_err(|e| format!("Failed to read message size: {}", e))?;
+    stream.read_exact(&mut buf_len)?;
 
     let len = u32::from_le_bytes(buf_len) as usize;
+    const MAX_MESSAGE_SIZE: usize = 1024 * 1024; // 1MB
+    if len > MAX_MESSAGE_SIZE {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "message too large"));
+    }
 
     let mut buf = vec![0u8; len];
-    stream.read_exact(&mut buf).map_err(|e| format!("Failed to read message content: {}", e))?;
+    stream.read_exact(&mut buf)?;
 
     let str = String::from_utf8_lossy(&buf);
-    let json: Message = match serde_json::from_str(&str) {
-        Ok(msg) => msg,
-        Err(e) => return Err(format!("Failed to parse JSON: {}", e)),
-    };
+    let json: Message =
+        serde_json::from_str(&str).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-    let sender = match stream.peer_addr() {
-        Ok(addr) => format!("{}:{}", addr.ip(), addr.port()),
-        Err(_) => String::from("unknown address"),
-    };
-
-    print_log(&format!("Received: {:?} from ({})", json, sender,), Color::Green);
+    if let Ok(addr) = stream.peer_addr() {
+        print_log(
+            &format!("Received: {:?} from ({}:{})", json, addr.ip(), addr.port()),
+            Color::Green,
+        );
+    }
 
     Ok(json)
 }
 
-pub fn send_message(stream: &mut TcpStream, msg: &Message) {
-    let json = match serde_json::to_string(&msg) {
-        Ok(json) => json,
-        Err(e) => {
-            print_log(&format!("Failed to serialize message: {}", e), Color::Red);
-            return;
-        }
-    };
+pub fn send_message(stream: &mut TcpStream, msg: &Message) -> io::Result<()> {
+    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+
+    let json =
+        serde_json::to_string(msg).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
     let json_size = json.len() as u32;
 
-    stream.write_all(&json_size.to_le_bytes()).expect("Failed to write JSON size");
-    stream.write_all(json.as_bytes()).expect("Failed to write JSON content");
-    stream.flush().expect("Failed to flush stream");
+    let mut buffer = Vec::with_capacity(4 + json.len());
+    buffer.extend_from_slice(&json_size.to_le_bytes());
+    buffer.extend_from_slice(json.as_bytes());
 
-    let receiver = match stream.peer_addr() {
-        Ok(addr) => format!("{}:{}", addr.ip(), addr.port()),
-        Err(_) => String::from("unknown address"),
-    };
-    print_log(&format!("Sent: {:?} to ({})", msg, receiver), Color::Blue);
+    stream.write_all(&buffer)?;
+    stream.flush()?;
+
+    if let Ok(addr) = stream.peer_addr() {
+        print_log(&format!("Sent: {:?} to ({}:{})", msg, addr.ip(), addr.port()), Color::Blue);
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

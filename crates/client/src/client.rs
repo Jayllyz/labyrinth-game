@@ -5,7 +5,7 @@ use shared::{
     },
     utils::{print_error, print_log, Color},
 };
-use std::{error::Error, io, net::TcpStream};
+use std::{error::Error, net::TcpStream};
 
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
@@ -27,7 +27,7 @@ impl GameClient {
     }
 
     pub fn run(&self, max_retries: u8) -> Result<(), Box<dyn Error>> {
-        let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries)?;
+        let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries);
 
         let init_message = if let Some(token) = &self.config.token {
             Message::SubscribePlayer(SubscribePlayer {
@@ -38,7 +38,12 @@ impl GameClient {
             Message::RegisterTeam(RegisterTeam { name: self.config.team_name.clone() })
         };
 
-        send_message(&mut stream, &init_message);
+        match send_message(&mut stream, &init_message) {
+            Ok(_) => {}
+            Err(e) => {
+                print_log(&format!("[warning] - Failed to send message: {}", e), Color::Orange);
+            }
+        }
 
         loop {
             match receive_message(&mut stream) {
@@ -52,15 +57,15 @@ impl GameClient {
         }
     }
 
-    fn connect_to_server(address: &str, mut max_retries: u8) -> io::Result<TcpStream> {
+    fn connect_to_server(address: &str, mut max_retries: u8) -> TcpStream {
         loop {
             match TcpStream::connect(address) {
-                Ok(stream) => return Ok(stream),
+                Ok(stream) => return stream,
                 Err(e) => {
                     print_error(&format!("Failed to connect to server: {}", e));
-                    if max_retries == 0 {
-                        print_error("Max retries reached, exiting...");
-                        return Err(e);
+                    if max_retries == 1 {
+                        println!("Max retries reached, exiting...");
+                        std::process::exit(1);
                     }
                     max_retries -= 1;
                     std::thread::sleep(std::time::Duration::from_secs(2));
@@ -94,6 +99,7 @@ impl GameClient {
             Message::SubscribePlayerResult(result) => match result {
                 SubscribePlayerResult::Ok => {
                     print_log("Successfully subscribed to game", Color::Green);
+                    std::process::exit(1);
                 }
                 SubscribePlayerResult::Err(err) => {
                     print_error(&format!("Subscribe error: {:?}", err));
@@ -109,7 +115,6 @@ impl GameClient {
                 std::process::exit(1);
             }
         }
-        Ok(())
     }
 }
 
@@ -133,7 +138,7 @@ mod tests {
             listener.accept().unwrap();
         });
 
-        let result = GameClient::connect_to_server(&addr, 1);
+        let result = std::panic::catch_unwind(|| GameClient::connect_to_server(&addr, 1));
         assert!(result.is_ok());
     }
 
