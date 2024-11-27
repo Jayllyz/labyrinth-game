@@ -94,20 +94,20 @@ pub fn extract_data(input: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
     let splitted_octet = split_into_chunks(&binary, 8);
 
     let mut horizontal_octet = Vec::<String>::new();
-    for i in 0..3 {
-        horizontal_octet.push(splitted_octet[i].clone());
+    for octet in splitted_octet.iter().take(3) {
+        horizontal_octet.push(octet.clone());
     }
     horizontal_octet.reverse();
 
     let mut vertical_octet = Vec::<String>::new();
-    for i in 3..6 {
-        vertical_octet.push(splitted_octet[i].clone());
+    for octet in splitted_octet.iter().take(6).skip(3) {
+        vertical_octet.push(octet.clone());
     }
     vertical_octet.reverse();
 
     let mut cell_octet = String::new();
-    for i in 6..11 {
-        cell_octet += splitted_octet[i].as_str();
+    for octet in splitted_octet.iter().take(11).skip(6) {
+        cell_octet += octet;
     }
 
     let cell = retrieve_cell(&cell_octet);
