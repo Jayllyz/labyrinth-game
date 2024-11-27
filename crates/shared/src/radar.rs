@@ -292,15 +292,46 @@ mod tests {
         assert_eq!(cells.len(), 9);
 
         for passage in &horizontal {
-            assert!(["open", "wall", "undefined", "undefined", "open", "wall", "undefined", "open", "open", "undefined", "wall", "open"].contains(&passage.as_str()));
+            assert!([
+                "open",
+                "wall",
+                "undefined",
+                "undefined",
+                "open",
+                "wall",
+                "undefined",
+                "open",
+                "open",
+                "undefined",
+                "wall",
+                "open"
+            ]
+            .contains(&passage.as_str()));
         }
 
         for passage in &vertical {
-            assert!(["wall", "open", "wall", "undefined", "undefined", "wall", "open", "wall", "undefined", "wall", "wall", "wall"].contains(&passage.as_str()));
+            assert!([
+                "wall",
+                "open",
+                "wall",
+                "undefined",
+                "undefined",
+                "wall",
+                "open",
+                "wall",
+                "undefined",
+                "wall",
+                "wall",
+                "wall"
+            ]
+            .contains(&passage.as_str()));
         }
 
         for cell in &cells {
-            assert!(["nothing", "nothing", "invalid", "invalid", "nothing", "nothing", "invalid", "nothing", "nothing"]
+            assert!([
+                "nothing", "nothing", "invalid", "invalid", "nothing", "nothing", "invalid",
+                "nothing", "nothing"
+            ]
             .contains(&cell.as_str()));
         }
     }
