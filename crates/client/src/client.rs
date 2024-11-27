@@ -3,10 +3,11 @@ use shared::{
         receive_message, send_message, Message, RegisterTeam, RegisterTeamResult, SubscribePlayer,
         SubscribePlayerResult,
     },
-    radar,
     utils::{print_error, print_log, Color},
 };
 use std::{error::Error, net::TcpStream};
+
+use crate::instructions;
 
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
@@ -103,55 +104,8 @@ impl GameClient {
                 }
             },
             Message::RadarView(view) => {
-                let decoded = radar::decode(&view.0);
-                let (horizontal, vertical, _cells) = radar::extract_data(&decoded);
-
-                if let Some(vertical) = vertical.get(6) {
-                    if vertical == "open" {
-                        let _ = send_message(
-                            stream,
-                            &Message::Action(shared::messages::Action::MoveTo(
-                                shared::messages::Direction::Right,
-                            )),
-                        );
-                        return;
-                    }
-                }
-
-                if let Some(horizontal) = horizontal.get(4) {
-                    if horizontal == "open" {
-                        let _ = send_message(
-                            stream,
-                            &Message::Action(shared::messages::Action::MoveTo(
-                                shared::messages::Direction::Front,
-                            )),
-                        );
-                        return;
-                    }
-                }
-
-                if let Some(vertical) = vertical.get(5) {
-                    if vertical == "open" {
-                        let _ = send_message(
-                            stream,
-                            &Message::Action(shared::messages::Action::MoveTo(
-                                shared::messages::Direction::Left,
-                            )),
-                        );
-                        return;
-                    }
-                }
-
-                if let Some(horizontal) = horizontal.get(7) {
-                    if horizontal == "open" {
-                        let _ = send_message(
-                            stream,
-                            &Message::Action(shared::messages::Action::MoveTo(
-                                shared::messages::Direction::Back,
-                            )),
-                        );
-                    }
-                }
+                let action = instructions::right_hand_solver(view);
+                let _ = send_message(stream, &Message::Action(action));
             }
             Message::Hint(_hint) => {
                 print_log("Hint received", Color::Green);
