@@ -1,5 +1,6 @@
 use clap::Parser;
 use client::client::{ClientConfig, GameClient};
+use shared::radar;
 use shared::utils::print_error;
 
 #[derive(Parser, Debug)]
@@ -53,6 +54,11 @@ fn main() {
     if args.offline {
         println!("Running in offline mode (no connection to the server)");
         println!("Not implemented yet, exiting...");
+        let decoded = radar::decode("swfGkIAyap8a8aa");
+        let data = radar::extract_data(&decoded);
+        println!("{:?}", data.0);
+        println!("{:?}", data.1);
+        println!("{:?}", data.2);
         return;
     }
 
