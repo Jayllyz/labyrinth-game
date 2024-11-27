@@ -3,6 +3,7 @@ use shared::{
         receive_message, send_message, Message, RegisterTeam, RegisterTeamResult, SubscribePlayer,
         SubscribePlayerResult,
     },
+    radar::{decode, extract_data},
     utils::{print_error, print_log, Color},
 };
 use std::{error::Error, net::TcpStream};
@@ -104,8 +105,23 @@ impl GameClient {
                 }
             },
             Message::RadarView(view) => {
-                let action = instructions::right_hand_solver(view);
-                let _ = send_message(stream, &Message::Action(action));
+                let (horizontal, vertical, cells) = extract_data(&decode(&view.0));
+                let action = instructions::right_hand_solver(horizontal, vertical);
+                let is_win = instructions::check_win_condition(cells, action.clone());
+                match send_message(stream, &Message::Action(action)) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        print_log(
+                            &format!("[warning] - Failed to send message: {}", e),
+                            Color::Orange,
+                        );
+                    }
+                }
+
+                if is_win {
+                    print_log("Exit found!", Color::Green);
+                    std::process::exit(0);
+                }
             }
             Message::Hint(_hint) => {
                 print_log("Hint received", Color::Green);
