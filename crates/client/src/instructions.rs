@@ -38,3 +38,15 @@ pub fn right_hand_solver(view: RadarView) -> messages::Action {
 
     messages::Action::MoveTo(messages::Direction::Right)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_right_hand_solver() {
+        let view = RadarView("swfGkIAyap8a8aa".to_owned());
+        let result = right_hand_solver(view);
+        assert!(matches!(result, messages::Action::MoveTo(messages::Direction::Right)));
+    }
+}
