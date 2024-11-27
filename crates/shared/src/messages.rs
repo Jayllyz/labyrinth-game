@@ -59,7 +59,7 @@ pub enum SubscribePlayerResult {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RadarView(pub String);
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Direction {
     Right,
     Left,
@@ -67,7 +67,7 @@ pub enum Direction {
     Back,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Action {
     #[serde(rename = "MoveTo")]
     MoveTo(Direction),
