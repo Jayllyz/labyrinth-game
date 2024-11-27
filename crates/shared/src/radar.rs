@@ -1,8 +1,10 @@
 use core::str;
 use std::char;
 use std::fmt::Write;
+use std::collections::HashMap;
 
-const BASE62_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
+const BASE64_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
+
 pub trait ToBinary {
     fn to_binary(&self) -> String;
 }
@@ -56,7 +58,7 @@ pub fn encode<T: ToBinary>(input: T) -> String {
     let mut encoded = String::new();
     for sub in subs {
         let decimal = isize::from_str_radix(&sub, 2).unwrap();
-        encoded += &BASE62_CHARS.chars().nth(decimal as usize).unwrap().to_string();
+        encoded += &BASE64_CHARS.chars().nth(decimal as usize).unwrap().to_string();
     }
 
     encoded
@@ -67,7 +69,7 @@ pub fn decode(input: &str) -> String {
 
     let mut binary: String = String::new();
     for char in input.chars() {
-        let index = BASE62_CHARS.find(char).map(|pos| pos as u8);
+        let index = BASE64_CHARS.find(char).map(|pos| pos as u8);
         if index.is_none() {
             continue;
         }
@@ -81,6 +83,96 @@ pub fn decode(input: &str) -> String {
     }
 
     decoded
+}
+
+pub fn extract_data(input: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let mut binary = String::new();
+    for char in input.chars() {
+        binary += format! {"{:08b}", char as u8}.as_str();
+    }
+
+    let splitted_octet = split_into_chunks(&binary, 8);
+
+    let mut horizontal_octet = Vec::<String>::new();
+    for i in 0..3 {
+        horizontal_octet.push(splitted_octet[i].clone());
+    }
+    horizontal_octet.reverse();
+
+    let mut vertical_octet = Vec::<String>::new();
+    for i in 3..6 {
+        vertical_octet.push(splitted_octet[i].clone());
+    }
+    vertical_octet.reverse();
+
+    let mut cell_octet = String::new();
+    for i in 6..11 {
+        cell_octet += splitted_octet[i].as_str();
+    }
+
+    let cell = retrieve_cell(&cell_octet);
+    let passages = retrieve_passage(&horizontal_octet.join(""), &vertical_octet.join(""));
+
+    (passages.0, passages.1, cell)
+}
+
+pub fn retrieve_cell(octet: &str) ->  Vec<String>{
+    let splitted_4bits = split_into_chunks(&octet, 4);
+    let splitted_4bits = &splitted_4bits[0..splitted_4bits.len() - 1];
+
+    let map= HashMap::from([
+        ("0000", "nothing"),
+        ("0001", "ally"),
+        ("0010", "enemy"),
+        ("0011", "monster"),
+        ("0100", "help"),
+        ("1000", "objective"),
+        ("1011", "objective_monster"),
+        ("1111", "invalid")
+    ]);
+
+    let mut data = Vec::<String>::new();
+
+    for bits in splitted_4bits {
+        let value = map.get(bits.as_str());
+        if value.is_none() {
+            continue;
+        }
+        data.push(value.unwrap().to_string());
+    }
+
+    data
+}
+
+pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<String>, Vec<String>) {
+    let horizontal_2bits = split_into_chunks(&horizontal, 2);
+    let vertical_2bits = split_into_chunks(&vertical, 2);
+
+    let map = HashMap::from([
+        ("00", "undefined"),
+        ("01", "open"),
+        ("10", "wall")
+    ]);
+
+    let mut horizontal_data = Vec::<String>::new();
+    for bits in horizontal_2bits {
+        let value = map.get(bits.as_str());
+        if value.is_none() {
+            continue;
+        }
+        horizontal_data.push(value.unwrap().to_string());
+    }
+
+    let mut vertical_data = Vec::<String>::new();
+    for bits in vertical_2bits {
+        let value = map.get(bits.as_str());
+        if value.is_none() {
+            continue;
+        }
+        vertical_data.push(value.unwrap().to_string());
+    }
+
+    return (horizontal_data, vertical_data);
 }
 
 #[cfg(test)]
