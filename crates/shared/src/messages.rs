@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::{
     io::{self, Read, Write},
     net::{SocketAddr, TcpStream},
-    time::Duration,
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -16,6 +15,7 @@ pub enum Message {
     Action(Action),
     ActionResult(ActionResult),
     MessageError(MessageError),
+    Hint(Hint),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -57,16 +57,14 @@ pub enum SubscribePlayerResult {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RadarView {
-    pub view: String,
-}
+pub struct RadarView(pub String);
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Direction {
     Right,
     Left,
-    Up,
-    Down,
+    Front,
+    Back,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -87,6 +85,12 @@ pub enum ActionResult {
     Ok,
     Completed,
     Err(ActionError),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Hint {
+    RelativeCompass { angle: f32 },
+    GridSize { columns: u32, rows: u32 },
 }
 
 #[derive(Debug, Clone)]
@@ -110,8 +114,6 @@ pub struct Teams {
 }
 
 pub fn receive_message(stream: &mut TcpStream) -> io::Result<Message> {
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-
     let mut buf_len = [0u8; 4];
     stream.read_exact(&mut buf_len)?;
 
@@ -139,8 +141,6 @@ pub fn receive_message(stream: &mut TcpStream) -> io::Result<Message> {
 }
 
 pub fn send_message(stream: &mut TcpStream, msg: &Message) -> io::Result<()> {
-    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
-
     let json =
         serde_json::to_string(msg).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
@@ -177,7 +177,7 @@ mod tests {
             Message::SubscribePlayerResult(SubscribePlayerResult::Err(
                 RegistrationError::AlreadyRegistered,
             )),
-            Message::RadarView(RadarView { view: "view".to_string() }),
+            Message::RadarView(RadarView("radar".to_string())),
             Message::Action(Action::MoveTo(Direction::Right)),
             Message::ActionResult(ActionResult::Ok),
             Message::ActionResult(ActionResult::Completed),
