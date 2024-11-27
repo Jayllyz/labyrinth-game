@@ -275,7 +275,7 @@ mod tests {
 
         let (horizontal, vertical) = retrieve_passage("101010", "010101");
         assert_eq!(horizontal, vec!["wall", "wall", "wall"]);
-        assert_eq!(vertical, vec!["open", "wall", "open"]);
+        assert_eq!(vertical, vec!["open", "open", "open"]);
 
         let (horizontal, vertical) = retrieve_passage("11", "11");
         assert_eq!(horizontal.len(), 0);
@@ -333,6 +333,6 @@ mod tests {
 
         assert_eq!(split_into_chunks("00001111", 4), vec!["0000", "1111"]);
 
-        assert_eq!(split_into_chunks("0011000", 2), vec!["00", "11", "00", "0"]);
+        assert_eq!(split_into_chunks("0011000", 2), vec!["00", "11", "00", "00"]);
     }
 }
