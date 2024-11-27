@@ -7,6 +7,8 @@ use shared::{
 };
 use std::{error::Error, net::TcpStream};
 
+use crate::instructions;
+
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
     pub server_addr: String,
@@ -48,7 +50,7 @@ impl GameClient {
         loop {
             match receive_message(&mut stream) {
                 Ok(message) => {
-                    Self::handle_server_message(self.config.clone(), &mut stream, message)?;
+                    Self::handle_server_message(self.config.clone(), &mut stream, message);
                 }
                 Err(e) => {
                     return Err(e.into());
@@ -74,11 +76,7 @@ impl GameClient {
         }
     }
 
-    fn handle_server_message(
-        config: ClientConfig,
-        _stream: &mut TcpStream,
-        message: Message,
-    ) -> Result<(), Box<dyn Error>> {
+    fn handle_server_message(config: ClientConfig, stream: &mut TcpStream, message: Message) {
         match message {
             Message::RegisterTeamResult(result) => match result {
                 RegisterTeamResult::Ok { registration_token, .. } => {
@@ -99,13 +97,19 @@ impl GameClient {
             Message::SubscribePlayerResult(result) => match result {
                 SubscribePlayerResult::Ok => {
                     print_log("Successfully subscribed to game", Color::Green);
-                    std::process::exit(1);
                 }
                 SubscribePlayerResult::Err(err) => {
                     print_error(&format!("Subscribe error: {:?}", err));
                     std::process::exit(1);
                 }
             },
+            Message::RadarView(view) => {
+                let action = instructions::right_hand_solver(view);
+                let _ = send_message(stream, &Message::Action(action));
+            }
+            Message::Hint(_hint) => {
+                print_log("Hint received", Color::Green);
+            }
             Message::MessageError(err) => {
                 print_error(&format!("Server error: {}", err.message));
                 std::process::exit(1);
@@ -160,8 +164,7 @@ mod tests {
             registration_token: "token123".to_string(),
         });
 
-        let result = GameClient::handle_server_message(config, &mut stream, message);
-        assert!(result.is_ok());
+        GameClient::handle_server_message(config, &mut stream, message);
     }
 
     #[test]
@@ -179,8 +182,7 @@ mod tests {
 
         let message = Message::SubscribePlayerResult(SubscribePlayerResult::Ok);
 
-        let result = GameClient::handle_server_message(config, &mut stream, message);
-        assert!(result.is_ok());
+        GameClient::handle_server_message(config, &mut stream, message);
     }
 
     #[test]
