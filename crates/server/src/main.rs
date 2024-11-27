@@ -25,7 +25,7 @@ struct Args {
 fn main() {
     let args = Args::parse();
     let seed = args.seed.unwrap_or_else(rand::random);
-    let config = ServerConfig { host: args.host, port: args.port, seed };
+    let config = ServerConfig { host: args.host, port: args.port, seed, max_players_per_team: 3 };
     print_log(&format!("seed {}", seed), Color::Blue);
 
     let server = GameServer::new(config);
