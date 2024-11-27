@@ -1,16 +1,20 @@
+use rand::Rng;
 use shared::messages::{
-    receive_message, send_message, Client, Message, SubscribeError, SubscribePlayerResult, Teams,
+    receive_message, send_message, Client, Message, RegisterTeamResult, RegistrationError,
+    SubscribePlayerResult, Teams,
 };
 use shared::utils::{print_error, print_log, Color};
 use std::collections::HashMap;
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
     pub seed: u64,
+    pub max_players_per_team: u8,
 }
 
 pub struct GameServer {
@@ -51,51 +55,130 @@ impl GameServer {
 
     fn register_client(&self, player: Client) -> SubscribePlayerResult {
         if player.player_name.is_empty() {
-            return SubscribePlayerResult::Err(SubscribeError::InvalidName);
+            return SubscribePlayerResult::Err(RegistrationError::InvalidName);
         }
 
-        let mut clients = self.clients.lock().expect("Failed to lock clients");
-
-        if clients.contains_key(player.player_name.as_str()) {
-            return SubscribePlayerResult::Err(SubscribeError::AlreadyRegistered);
+        if player.registration_token.is_empty() {
+            return SubscribePlayerResult::Err(RegistrationError::InvalidRegistrationToken);
         }
 
-        let client = Client {
-            player_name: player.player_name.clone(),
-            team_name: player.team_name.clone(),
-            address: player.address,
-            moves_count: 0,
-            score: 0,
+        let mut clients = match self.clients.lock() {
+            Ok(clients) => clients,
+            Err(_) => return SubscribePlayerResult::Err(RegistrationError::ServerError),
+        };
+        let mut teams = match self.teams.lock() {
+            Ok(teams) => teams,
+            Err(_) => return SubscribePlayerResult::Err(RegistrationError::ServerError),
         };
 
-        clients.insert(player.player_name.clone(), client);
+        if clients.contains_key(player.player_name.as_str()) {
+            return SubscribePlayerResult::Err(RegistrationError::AlreadyRegistered);
+        }
 
-        let mut teams = self.teams.lock().expect("Failed to lock teams");
-        let team = teams.entry(player.team_name.clone()).or_insert_with(|| Teams {
-            team_name: player.team_name.clone(),
+        let team_name = match teams
+            .iter()
+            .find(|(_, team)| team.registration_token == player.registration_token)
+        {
+            Some((name, _)) => name.clone(),
+            None => {
+                return SubscribePlayerResult::Err(RegistrationError::InvalidRegistrationToken);
+            }
+        };
+
+        if let Some(team) = teams.get_mut(&team_name) {
+            if team.players.len() >= self.config.max_players_per_team as usize {
+                return SubscribePlayerResult::Err(RegistrationError::TooManyPlayers);
+            }
+
+            team.players.push(player.clone());
+
+            let client = Client {
+                player_name: player.player_name.clone(),
+                team_name: player.team_name.clone(),
+                address: player.address,
+                moves_count: 0,
+                score: 0,
+                registration_token: player.registration_token.clone(),
+            };
+
+            clients.insert(player.player_name.clone(), client);
+
+            print_log(
+                &format!(
+                    "{} registered successfully on team {}",
+                    player.player_name, player.team_name
+                ),
+                Color::Green,
+            );
+
+            SubscribePlayerResult::Ok
+        } else {
+            SubscribePlayerResult::Err(RegistrationError::ServerError)
+        }
+    }
+
+    fn register_team(&self, team: Teams) -> Result<String, RegistrationError> {
+        let mut teams = match self.teams.lock() {
+            Ok(teams) => teams,
+            Err(_) => return Err(RegistrationError::ServerError),
+        };
+
+        if teams.contains_key(&team.team_name) {
+            return Err(RegistrationError::TeamAlreadyRegistered);
+        }
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Failed to get timestamp")
+            .as_secs()
+            .to_string();
+        let random_part: String = rand::thread_rng()
+            .sample_iter(&rand::distributions::Alphanumeric)
+            .take(16)
+            .map(char::from)
+            .collect();
+
+        let token = format!("{}{}", timestamp, random_part);
+
+        let team = Teams {
+            team_name: team.team_name,
             players: Vec::new(),
             score: 0,
-        });
+            registration_token: token.clone(),
+        };
 
-        team.players.push(player.clone());
+        teams.insert(team.team_name.clone(), team);
 
-        print_log(
-            &format!("{} registered successfully on team {}", player.player_name, player.team_name),
-            Color::Green,
-        );
-        SubscribePlayerResult::Ok
+        Ok(token)
     }
 
     fn handle_connection(&self, mut stream: TcpStream) {
         while let Ok(message) = receive_message(&mut stream) {
             let response = match message {
+                Message::RegisterTeam(team) => {
+                    let team = Teams {
+                        team_name: team.name,
+                        players: Vec::new(),
+                        score: 0,
+                        registration_token: String::new(),
+                    };
+
+                    match self.register_team(team) {
+                        Ok(token) => Message::RegisterTeamResult(RegisterTeamResult::Ok {
+                            expected_players: self.config.max_players_per_team,
+                            registration_token: token,
+                        }),
+                        Err(e) => Message::RegisterTeamResult(RegisterTeamResult::Err(e)),
+                    }
+                }
                 Message::SubscribePlayer(subscribe) => {
                     let player = Client {
                         player_name: subscribe.name,
-                        team_name: "Team1".to_string(),
+                        team_name: String::new(),
                         address: stream.peer_addr().expect("Failed to get peer address"),
                         moves_count: 0,
                         score: 0,
+                        registration_token: subscribe.registration_token,
                     };
                     Message::SubscribePlayerResult(self.register_client(player))
                 }
@@ -111,101 +194,191 @@ impl GameServer {
                     print_log(&format!("[warning] - Failed to send message: {}", e), Color::Orange);
                 }
             }
+
+            if matches!(response, Message::RegisterTeamResult(RegisterTeamResult::Ok { .. })) {
+                // If the team registration was successful, we can break the connection.
+                break;
+            }
         }
     }
 }
 
 impl Default for GameServer {
     fn default() -> Self {
-        Self::new(ServerConfig { host: "localhost".to_string(), port: 8080, seed: 0 })
+        Self::new(ServerConfig {
+            host: "localhost".to_string(),
+            port: 8080,
+            seed: 0,
+            max_players_per_team: 3,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::SocketAddr;
+    use std::str::FromStr;
 
-    fn create_test_client(name: &str, team: &str) -> Client {
-        Client {
-            player_name: name.to_string(),
-            team_name: team.to_string(),
-            address: "127.0.0.1:8080".parse().unwrap(),
+    fn setup_server() -> GameServer {
+        GameServer::new(ServerConfig {
+            host: "localhost".to_string(),
+            port: 8080,
+            seed: 0,
+            max_players_per_team: 3,
+        })
+    }
+
+    #[test]
+    fn test_register_team_success() {
+        let server = setup_server();
+        let team = Teams {
+            team_name: "Test Team".to_string(),
+            players: Vec::new(),
+            score: 0,
+            registration_token: String::new(),
+        };
+
+        let result = server.register_team(team);
+        assert!(result.is_ok());
+
+        let teams = server.teams.lock().unwrap();
+        assert!(teams.contains_key("Test Team"));
+    }
+
+    #[test]
+    fn test_register_team_duplicate() {
+        let server = setup_server();
+        let team = Teams {
+            team_name: "Test Team".to_string(),
+            players: Vec::new(),
+            score: 0,
+            registration_token: String::new(),
+        };
+
+        let _ = server.register_team(team);
+
+        let team = Teams {
+            team_name: "Test Team".to_string(),
+            players: Vec::new(),
+            score: 0,
+            registration_token: String::new(),
+        };
+
+        let result = server.register_team(team);
+
+        assert!(matches!(result, Err(RegistrationError::TeamAlreadyRegistered)));
+    }
+
+    #[test]
+    fn test_register_client_success() {
+        let server = setup_server();
+        let team = Teams {
+            team_name: "Test Team".to_string(),
+            players: Vec::new(),
+            score: 0,
+            registration_token: String::new(),
+        };
+
+        let token = server.register_team(team).unwrap();
+        println!("{:?}", token);
+
+        let client = Client {
+            player_name: "Test Player".to_string(),
+            team_name: "Test Team".to_string(),
+            address: SocketAddr::from_str("127.0.0.1:8080").unwrap(),
             moves_count: 0,
             score: 0,
-        }
-    }
+            registration_token: token,
+        };
 
-    #[test]
-    fn test_register_client() {
-        let config = ServerConfig { host: "localhost".to_string(), port: 8080, seed: 0 };
-        let server = GameServer::new(config);
-        let player = create_test_client("Player1", "Team1");
-
-        assert!(matches!(server.register_client(player.clone()), SubscribePlayerResult::Ok));
+        let result = server.register_client(client);
+        assert!(matches!(result, SubscribePlayerResult::Ok));
 
         let clients = server.clients.lock().unwrap();
-        assert!(clients.contains_key(&player.player_name));
-
-        let teams = server.teams.lock().unwrap();
-        assert!(teams.contains_key(&player.team_name));
-        assert_eq!(teams[&player.team_name].players.len(), 1);
+        assert!(clients.contains_key("Test Player"));
     }
 
     #[test]
-    fn test_register_duplicate_client() {
-        let config = ServerConfig { host: "localhost".to_string(), port: 8080, seed: 0 };
-        let server = GameServer::new(config);
-        let player = create_test_client("Player1", "Team1");
+    fn test_register_client_invalid_token() {
+        let server = setup_server();
+        let client = Client {
+            player_name: "Test Player".to_string(),
+            team_name: "Test Team".to_string(),
+            address: SocketAddr::from_str("127.0.0.1:8080").unwrap(),
+            moves_count: 0,
+            score: 0,
+            registration_token: "invalid_token".to_string(),
+        };
 
-        assert!(matches!(server.register_client(player.clone()), SubscribePlayerResult::Ok));
+        let result = server.register_client(client);
         assert!(matches!(
-            server.register_client(player.clone()),
-            SubscribePlayerResult::Err(SubscribeError::AlreadyRegistered)
+            result,
+            SubscribePlayerResult::Err(RegistrationError::InvalidRegistrationToken)
         ));
     }
 
     #[test]
-    fn test_register_invalid_name() {
-        let config = ServerConfig { host: "localhost".to_string(), port: 8080, seed: 0 };
-        let server = GameServer::new(config);
-        let player = create_test_client("", "Team1");
+    fn test_register_client_team_full() {
+        let server = setup_server();
 
-        assert!(matches!(
-            server.register_client(player),
-            SubscribePlayerResult::Err(SubscribeError::InvalidName)
-        ));
+        let team = Teams {
+            team_name: "Test Team".to_string(),
+            players: Vec::new(),
+            score: 0,
+            registration_token: String::new(),
+        };
+
+        let token = server.register_team(team).unwrap();
+
+        let base_client = Client {
+            team_name: "Test Team".to_string(),
+            address: SocketAddr::from_str("127.0.0.1:8080").unwrap(),
+            moves_count: 0,
+            score: 0,
+            registration_token: token.clone(),
+            player_name: String::new(),
+        };
+
+        for i in 1..=3 {
+            let mut client = base_client.clone();
+            client.player_name = format!("Player{}", i);
+            let result = server.register_client(client);
+            assert!(matches!(result, SubscribePlayerResult::Ok));
+        }
+
+        let mut client = base_client.clone();
+        client.player_name = "Player4".to_string();
+        let result = server.register_client(client);
+
+        assert!(matches!(result, SubscribePlayerResult::Err(RegistrationError::TooManyPlayers)));
     }
 
     #[test]
-    fn test_multiple_players_same_team() {
-        let config = ServerConfig { host: "localhost".to_string(), port: 8080, seed: 0 };
-        let server = GameServer::new(config);
-        let player1 = create_test_client("Player1", "Team1");
-        let player2 = create_test_client("Player2", "Team1");
+    fn test_register_client_duplicate_name() {
+        let server = setup_server();
 
-        assert!(matches!(server.register_client(player1.clone()), SubscribePlayerResult::Ok));
-        assert!(matches!(server.register_client(player2.clone()), SubscribePlayerResult::Ok));
+        let team = Teams {
+            team_name: "Test Team".to_string(),
+            players: Vec::new(),
+            score: 0,
+            registration_token: String::new(),
+        };
 
-        let teams = server.teams.lock().unwrap();
-        let team = teams.get("Team1").unwrap();
-        assert_eq!(team.players.len(), 2);
-        assert!(team.players.iter().any(|p| p.player_name == "Player1"));
-        assert!(team.players.iter().any(|p| p.player_name == "Player2"));
-    }
+        let token = server.register_team(team).unwrap();
 
-    #[test]
-    fn test_players_different_teams() {
-        let config = ServerConfig { host: "localhost".to_string(), port: 8080, seed: 0 };
-        let server = GameServer::new(config);
-        let player1 = create_test_client("Player1", "Team1");
-        let player2 = create_test_client("Player2", "Team2");
+        let client = Client {
+            player_name: "Test Player".to_string(),
+            team_name: "Test Team".to_string(),
+            address: SocketAddr::from_str("127.0.0.1:8080").unwrap(),
+            moves_count: 0,
+            score: 0,
+            registration_token: token.clone(),
+        };
 
-        assert!(matches!(server.register_client(player1.clone()), SubscribePlayerResult::Ok));
-        assert!(matches!(server.register_client(player2.clone()), SubscribePlayerResult::Ok));
+        let _ = server.register_client(client.clone());
+        let result = server.register_client(client);
 
-        let teams = server.teams.lock().unwrap();
-        assert_eq!(teams.len(), 2);
-        assert_eq!(teams["Team1"].players.len(), 1);
-        assert_eq!(teams["Team2"].players.len(), 1);
+        assert!(matches!(result, SubscribePlayerResult::Err(RegistrationError::AlreadyRegistered)));
     }
 }

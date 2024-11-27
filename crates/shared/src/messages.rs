@@ -26,6 +26,11 @@ pub struct RegisterTeam {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum RegistrationError {
     InvalidName,
+    TeamAlreadyRegistered,
+    AlreadyRegistered,
+    TooManyPlayers,
+    InvalidRegistrationToken,
+    ServerError,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -48,13 +53,7 @@ pub struct SubscribePlayer {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SubscribePlayerResult {
     Ok,
-    Err(SubscribeError),
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub enum SubscribeError {
-    AlreadyRegistered,
-    InvalidName,
+    Err(RegistrationError),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -95,6 +94,7 @@ pub struct Client {
     pub player_name: String,
     pub team_name: String,
     pub address: SocketAddr,
+    pub registration_token: String,
     #[allow(dead_code)]
     pub moves_count: u32,
     #[allow(dead_code)]
@@ -106,6 +106,7 @@ pub struct Teams {
     pub team_name: String,
     pub players: Vec<Client>,
     pub score: i32,
+    pub registration_token: String,
 }
 
 pub fn receive_message(stream: &mut TcpStream) -> io::Result<Message> {
@@ -174,7 +175,7 @@ mod tests {
             }),
             Message::SubscribePlayerResult(SubscribePlayerResult::Ok),
             Message::SubscribePlayerResult(SubscribePlayerResult::Err(
-                SubscribeError::AlreadyRegistered,
+                RegistrationError::AlreadyRegistered,
             )),
             Message::RadarView(RadarView { view: "view".to_string() }),
             Message::Action(Action::MoveTo(Direction::Right)),
