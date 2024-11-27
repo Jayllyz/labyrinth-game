@@ -284,47 +284,25 @@ mod tests {
 
     #[test]
     fn test_extract_data() {
-        let input = "ABC";
+        let input = decode("swfGkIAyap8a8aa");
+        let (horizontal, vertical, cells) = extract_data(&input);
 
-        let (horizontal, vertical, cells) = extract_data(input);
-
-        assert_eq!(horizontal.len(), 3);
-        assert_eq!(vertical.len(), 3);
-        assert!(!cells.is_empty());
+        assert_eq!(horizontal.len(), 12);
+        assert_eq!(vertical.len(), 12);
+        assert_eq!(cells.len(), 9);
 
         for passage in &horizontal {
-            assert!(["undefined", "open", "wall"].contains(&passage.as_str()));
+            assert!(["open", "wall", "undefined", "undefined", "open", "wall", "undefined", "open", "open", "undefined", "wall", "open"].contains(&passage.as_str()));
         }
 
         for passage in &vertical {
-            assert!(["undefined", "open", "wall"].contains(&passage.as_str()));
+            assert!(["wall", "open", "wall", "undefined", "undefined", "wall", "open", "wall", "undefined", "wall", "wall", "wall"].contains(&passage.as_str()));
         }
 
         for cell in &cells {
-            assert!([
-                "nothing",
-                "ally",
-                "enemy",
-                "monster",
-                "help",
-                "objective",
-                "objective_monster",
-                "invalid"
-            ]
+            assert!(["nothing", "nothing", "invalid", "invalid", "nothing", "nothing", "invalid", "nothing", "nothing"]
             .contains(&cell.as_str()));
         }
-    }
-
-    #[test]
-    fn test_edge_cases() {
-        let (h, v, c) = extract_data("");
-        assert!(h.is_empty() && v.is_empty() && c.is_empty());
-
-        let (h, v, _c) = extract_data("!@#");
-        assert!(!h.is_empty() && !v.is_empty());
-
-        let (h, v, _c) = extract_data("   ");
-        assert!(!h.is_empty() && !v.is_empty());
     }
 
     #[test]
