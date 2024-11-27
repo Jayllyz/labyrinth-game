@@ -7,6 +7,7 @@ use shared::utils::{print_error, print_log, Color};
 use std::collections::HashMap;
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
@@ -126,11 +127,18 @@ impl GameServer {
             return Err(RegistrationError::TeamAlreadyRegistered);
         }
 
-        let token: String = rand::thread_rng()
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Failed to get timestamp")
+            .as_secs()
+            .to_string();
+        let random_part: String = rand::thread_rng()
             .sample_iter(&rand::distributions::Alphanumeric)
-            .take(10)
+            .take(16)
             .map(char::from)
             .collect();
+
+        let token = format!("{}{}", timestamp, random_part);
 
         let team = Teams {
             team_name: team.team_name,
@@ -233,7 +241,6 @@ mod tests {
 
         let result = server.register_team(team);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 10);
 
         let teams = server.teams.lock().unwrap();
         assert!(teams.contains_key("Test Team"));
