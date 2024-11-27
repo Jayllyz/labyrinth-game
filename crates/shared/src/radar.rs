@@ -1,7 +1,7 @@
 use core::str;
 use std::char;
-use std::fmt::Write;
 use std::collections::HashMap;
+use std::fmt::Write;
 
 const BASE64_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
 
@@ -116,11 +116,11 @@ pub fn extract_data(input: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
     (passages.0, passages.1, cell)
 }
 
-pub fn retrieve_cell(octet: &str) ->  Vec<String>{
-    let splitted_4bits = split_into_chunks(&octet, 4);
+pub fn retrieve_cell(octet: &str) -> Vec<String> {
+    let splitted_4bits = split_into_chunks(octet, 4);
     let splitted_4bits = &splitted_4bits[0..splitted_4bits.len() - 1];
 
-    let map= HashMap::from([
+    let map = HashMap::from([
         ("0000", "nothing"),
         ("0001", "ally"),
         ("0010", "enemy"),
@@ -128,7 +128,7 @@ pub fn retrieve_cell(octet: &str) ->  Vec<String>{
         ("0100", "help"),
         ("1000", "objective"),
         ("1011", "objective_monster"),
-        ("1111", "invalid")
+        ("1111", "invalid"),
     ]);
 
     let mut data = Vec::<String>::new();
@@ -138,21 +138,17 @@ pub fn retrieve_cell(octet: &str) ->  Vec<String>{
         if value.is_none() {
             continue;
         }
-        data.push(value.unwrap().to_string());
+        data.push((*value.unwrap()).to_string());
     }
 
     data
 }
 
 pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<String>, Vec<String>) {
-    let horizontal_2bits = split_into_chunks(&horizontal, 2);
-    let vertical_2bits = split_into_chunks(&vertical, 2);
+    let horizontal_2bits = split_into_chunks(horizontal, 2);
+    let vertical_2bits = split_into_chunks(vertical, 2);
 
-    let map = HashMap::from([
-        ("00", "undefined"),
-        ("01", "open"),
-        ("10", "wall")
-    ]);
+    let map = HashMap::from([("00", "undefined"), ("01", "open"), ("10", "wall")]);
 
     let mut horizontal_data = Vec::<String>::new();
     for bits in horizontal_2bits {
@@ -160,7 +156,7 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<String>, Vec<S
         if value.is_none() {
             continue;
         }
-        horizontal_data.push(value.unwrap().to_string());
+        horizontal_data.push((*value.unwrap()).to_string());
     }
 
     let mut vertical_data = Vec::<String>::new();
@@ -169,10 +165,10 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<String>, Vec<S
         if value.is_none() {
             continue;
         }
-        vertical_data.push(value.unwrap().to_string());
+        vertical_data.push((*value.unwrap()).to_string());
     }
 
-    return (horizontal_data, vertical_data);
+    (horizontal_data, vertical_data)
 }
 
 #[cfg(test)]
@@ -255,5 +251,88 @@ mod tests {
         assert_eq!(decode(&encode(test3)), test3.to_string() + "\0");
         let test4 = "qwekasdjladfljadljk";
         assert_eq!(decode(&encode(test4)), test4.to_string() + "\0");
+    }
+
+    // Tests for the `retrieve_cell` function
+    #[test]
+    fn test_retrieve_cell() {
+        assert_eq!(retrieve_cell("00000000"), vec!["nothing"]);
+
+        assert_eq!(retrieve_cell("000100100000"), vec!["ally", "enemy"]);
+
+        assert_eq!(retrieve_cell("0011010010000000"), vec!["monster", "help", "objective"]);
+
+        assert_eq!(retrieve_cell("111100000000"), vec!["invalid", "nothing"]);
+
+        assert_eq!(retrieve_cell("011100010000"), vec!["ally"]);
+    }
+
+    #[test]
+    fn test_retrieve_passage() {
+        let (horizontal, vertical) = retrieve_passage("000110", "010110");
+        assert_eq!(horizontal, vec!["undefined", "open", "wall"]);
+        assert_eq!(vertical, vec!["open", "open", "wall"]);
+
+        let (horizontal, vertical) = retrieve_passage("101010", "010101");
+        assert_eq!(horizontal, vec!["wall", "wall", "wall"]);
+        assert_eq!(vertical, vec!["open", "wall", "open"]);
+
+        let (horizontal, vertical) = retrieve_passage("11", "11");
+        assert_eq!(horizontal.len(), 0);
+        assert_eq!(vertical.len(), 0);
+    }
+
+    #[test]
+    fn test_extract_data() {
+        let input = "ABC";
+
+        let (horizontal, vertical, cells) = extract_data(input);
+
+        assert_eq!(horizontal.len(), 3);
+        assert_eq!(vertical.len(), 3);
+        assert!(!cells.is_empty());
+
+        for passage in &horizontal {
+            assert!(["undefined", "open", "wall"].contains(&passage.as_str()));
+        }
+
+        for passage in &vertical {
+            assert!(["undefined", "open", "wall"].contains(&passage.as_str()));
+        }
+
+        for cell in &cells {
+            assert!([
+                "nothing",
+                "ally",
+                "enemy",
+                "monster",
+                "help",
+                "objective",
+                "objective_monster",
+                "invalid"
+            ]
+            .contains(&cell.as_str()));
+        }
+    }
+
+    #[test]
+    fn test_edge_cases() {
+        let (h, v, c) = extract_data("");
+        assert!(h.is_empty() && v.is_empty() && c.is_empty());
+
+        let (h, v, _c) = extract_data("!@#");
+        assert!(!h.is_empty() && !v.is_empty());
+
+        let (h, v, _c) = extract_data("   ");
+        assert!(!h.is_empty() && !v.is_empty());
+    }
+
+    #[test]
+    fn test_split_into_chunks() {
+        assert_eq!(split_into_chunks("001100", 2), vec!["00", "11", "00"]);
+
+        assert_eq!(split_into_chunks("00001111", 4), vec!["0000", "1111"]);
+
+        assert_eq!(split_into_chunks("0011000", 2), vec!["00", "11", "00", "0"]);
     }
 }
