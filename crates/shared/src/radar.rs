@@ -133,7 +133,7 @@ pub fn extract_data(input: &str) -> (Vec<Passages>, Vec<Passages>, Vec<Cells>) {
     let (horizontal, vertical) =
         retrieve_passage(&horizontal_octet.join(""), &vertical_octet.join(""));
 
-    (vertical, horizontal, cell)
+    (horizontal, vertical, cell)
 }
 
 pub fn retrieve_cell(octet: &str) -> Vec<Cells> {
