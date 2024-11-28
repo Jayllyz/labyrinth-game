@@ -317,24 +317,6 @@ mod tests {
 
         assert_eq!(
             vec![
-                Passages::WALL,
-                Passages::UNDEFINED,
-                Passages::UNDEFINED,
-                Passages::UNDEFINED,
-                Passages::WALL,
-                Passages::OPEN,
-                Passages::WALL,
-                Passages::UNDEFINED,
-                Passages::WALL,
-                Passages::WALL,
-                Passages::WALL,
-                Passages::UNDEFINED,
-            ],
-            horizontal
-        );
-
-        assert_eq!(
-            vec![
                 Passages::OPEN,
                 Passages::UNDEFINED,
                 Passages::UNDEFINED,
@@ -347,6 +329,24 @@ mod tests {
                 Passages::WALL,
                 Passages::OPEN,
                 Passages::UNDEFINED
+            ],
+            horizontal
+        );
+
+        assert_eq!(
+            vec![
+                Passages::WALL,
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::WALL,
+                Passages::OPEN,
+                Passages::WALL,
+                Passages::UNDEFINED,
+                Passages::WALL,
+                Passages::WALL,
+                Passages::WALL,
+                Passages::UNDEFINED,
             ],
             vertical
         );
