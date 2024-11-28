@@ -5,6 +5,25 @@ use std::fmt::Write;
 
 const BASE64_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum Passages {
+    UNDEFINED = 0,
+    OPEN = 1,
+    WALL = 2,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Cells {
+    NOTHING = 0,
+    ALLY = 1,
+    ENEMY = 2,
+    MONSTER = 3,
+    HELP = 4,
+    OBJECTIVE = 8,
+    ObjectiveMonster = 11,
+    INVALID = 15,
+}
+
 pub trait ToBinary {
     fn to_binary(&self) -> String;
 }
@@ -85,7 +104,7 @@ pub fn decode(input: &str) -> String {
     decoded
 }
 
-pub fn extract_data(input: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+pub fn extract_data(input: &str) -> (Vec<Passages>, Vec<Passages>, Vec<Cells>) {
     let mut binary = String::new();
     for char in input.chars() {
         binary += format! {"{:08b}", char as u8}.as_str();
@@ -111,61 +130,63 @@ pub fn extract_data(input: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
     }
 
     let cell = retrieve_cell(&cell_octet);
-    let passages = retrieve_passage(&horizontal_octet.join(""), &vertical_octet.join(""));
+    let (horizontal, vertical) =
+        retrieve_passage(&horizontal_octet.join(""), &vertical_octet.join(""));
 
-    (passages.0, passages.1, cell)
+    (vertical, horizontal, cell)
 }
 
-pub fn retrieve_cell(octet: &str) -> Vec<String> {
+pub fn retrieve_cell(octet: &str) -> Vec<Cells> {
     let splitted_4bits = split_into_chunks(octet, 4);
     let splitted_4bits = &splitted_4bits[0..splitted_4bits.len() - 1];
 
     let map = HashMap::from([
-        ("0000", "nothing"),
-        ("0001", "ally"),
-        ("0010", "enemy"),
-        ("0011", "monster"),
-        ("0100", "help"),
-        ("1000", "objective"),
-        ("1011", "objective_monster"),
-        ("1111", "invalid"),
+        ("0000", Cells::NOTHING),
+        ("0001", Cells::ALLY),
+        ("0010", Cells::ENEMY),
+        ("0011", Cells::MONSTER),
+        ("0100", Cells::HELP),
+        ("1000", Cells::OBJECTIVE),
+        ("1011", Cells::ObjectiveMonster),
+        ("1111", Cells::INVALID),
     ]);
 
-    let mut data = Vec::<String>::new();
+    let mut data = Vec::new();
 
     for bits in splitted_4bits {
         let value = map.get(bits.as_str());
-        if value.is_none() {
-            continue;
+        if let Some(value) = value {
+            data.push(value.clone());
         }
-        data.push((*value.unwrap()).to_string());
     }
 
     data
 }
 
-pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<String>, Vec<String>) {
+pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec<Passages>) {
     let horizontal_2bits = split_into_chunks(horizontal, 2);
     let vertical_2bits = split_into_chunks(vertical, 2);
 
-    let map = HashMap::from([("00", "undefined"), ("01", "open"), ("10", "wall")]);
+    let map = HashMap::from([
+        ("00", Passages::UNDEFINED),
+        ("01", Passages::OPEN),
+        ("10", Passages::WALL),
+    ]);
 
-    let mut horizontal_data = Vec::<String>::new();
+    let mut horizontal_data = Vec::new();
     for bits in horizontal_2bits {
         let value = map.get(bits.as_str());
-        if value.is_none() {
-            continue;
+        if let Some(v) = value {
+            horizontal_data.push(v.clone());
         }
-        horizontal_data.push((*value.unwrap()).to_string());
     }
 
-    let mut vertical_data = Vec::<String>::new();
+    let mut vertical_data = Vec::new();
     for bits in vertical_2bits {
         let value = map.get(bits.as_str());
-        if value.is_none() {
-            continue;
+        if let Some(v) = value {
+            vertical_data.push(v.clone());
         }
-        vertical_data.push((*value.unwrap()).to_string());
     }
 
     (horizontal_data, vertical_data)
@@ -256,26 +277,29 @@ mod tests {
     // Tests for the `retrieve_cell` function
     #[test]
     fn test_retrieve_cell() {
-        assert_eq!(retrieve_cell("00000000"), vec!["nothing"]);
+        assert_eq!(retrieve_cell("00000000"), vec![Cells::NOTHING]);
 
-        assert_eq!(retrieve_cell("000100100000"), vec!["ally", "enemy"]);
+        assert_eq!(retrieve_cell("000100100000"), vec![Cells::ALLY, Cells::ENEMY]);
 
-        assert_eq!(retrieve_cell("0011010010000000"), vec!["monster", "help", "objective"]);
+        assert_eq!(
+            retrieve_cell("0011010010000000"),
+            vec![Cells::MONSTER, Cells::HELP, Cells::OBJECTIVE]
+        );
 
-        assert_eq!(retrieve_cell("111100000000"), vec!["invalid", "nothing"]);
+        assert_eq!(retrieve_cell("111100000000"), vec![Cells::INVALID, Cells::NOTHING]);
 
-        assert_eq!(retrieve_cell("011100010000"), vec!["ally"]);
+        assert_eq!(retrieve_cell("011100010000"), vec![Cells::ALLY]);
     }
 
     #[test]
     fn test_retrieve_passage() {
         let (horizontal, vertical) = retrieve_passage("000110", "010110");
-        assert_eq!(horizontal, vec!["undefined", "open", "wall"]);
-        assert_eq!(vertical, vec!["open", "open", "wall"]);
+        assert_eq!(horizontal, vec![Passages::UNDEFINED, Passages::OPEN, Passages::WALL]);
+        assert_eq!(vertical, vec![Passages::OPEN, Passages::OPEN, Passages::WALL]);
 
         let (horizontal, vertical) = retrieve_passage("101010", "010101");
-        assert_eq!(horizontal, vec!["wall", "wall", "wall"]);
-        assert_eq!(vertical, vec!["open", "open", "open"]);
+        assert_eq!(horizontal, vec![Passages::WALL, Passages::WALL, Passages::WALL]);
+        assert_eq!(vertical, vec![Passages::OPEN, Passages::OPEN, Passages::OPEN]);
 
         let (horizontal, vertical) = retrieve_passage("11", "11");
         assert_eq!(horizontal.len(), 0);
@@ -284,56 +308,63 @@ mod tests {
 
     #[test]
     fn test_extract_data() {
-        let input = decode("swfGkIAyap8a8aa");
+        let input = decode("jivbQjIad/apapa");
         let (horizontal, vertical, cells) = extract_data(&input);
 
         assert_eq!(horizontal.len(), 12);
         assert_eq!(vertical.len(), 12);
         assert_eq!(cells.len(), 9);
 
-        for passage in &horizontal {
-            assert!([
-                "open",
-                "wall",
-                "undefined",
-                "undefined",
-                "open",
-                "wall",
-                "undefined",
-                "open",
-                "open",
-                "undefined",
-                "wall",
-                "open"
-            ]
-            .contains(&passage.as_str()));
-        }
+        assert_eq!(
+            vec![
+                Passages::WALL,
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::WALL,
+                Passages::OPEN,
+                Passages::WALL,
+                Passages::UNDEFINED,
+                Passages::WALL,
+                Passages::WALL,
+                Passages::WALL,
+                Passages::UNDEFINED,
+            ],
+            horizontal
+        );
 
-        for passage in &vertical {
-            assert!([
-                "wall",
-                "open",
-                "wall",
-                "undefined",
-                "undefined",
-                "wall",
-                "open",
-                "wall",
-                "undefined",
-                "wall",
-                "wall",
-                "wall"
-            ]
-            .contains(&passage.as_str()));
-        }
+        assert_eq!(
+            vec![
+                Passages::OPEN,
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::OPEN,
+                Passages::WALL,
+                Passages::UNDEFINED,
+                Passages::OPEN,
+                Passages::OPEN,
+                Passages::UNDEFINED,
+                Passages::WALL,
+                Passages::OPEN,
+                Passages::UNDEFINED
+            ],
+            vertical
+        );
 
-        for cell in &cells {
-            assert!([
-                "nothing", "nothing", "invalid", "invalid", "nothing", "nothing", "invalid",
-                "nothing", "nothing"
-            ]
-            .contains(&cell.as_str()));
-        }
+        assert_eq!(
+            vec![
+                Cells::NOTHING,
+                Cells::INVALID,
+                Cells::INVALID,
+                Cells::NOTHING,
+                Cells::NOTHING,
+                Cells::INVALID,
+                Cells::NOTHING,
+                Cells::NOTHING,
+                Cells::INVALID
+            ],
+            cells
+        );
     }
 
     #[test]
