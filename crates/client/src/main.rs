@@ -64,7 +64,7 @@ fn main() {
     let client = GameClient::new(config);
     let agents_count = args.players.unwrap_or(3);
     match client.run(args.retries, agents_count) {
-        Ok(_) => println!("Client existed successfully"),
+        Ok(_) => println!("All agents have found the exit!"),
         Err(e) => {
             print_error(&format!("{}", e));
         }
