@@ -281,7 +281,6 @@ mod tests {
         };
 
         let token = server.register_team(team).unwrap();
-        println!("{:?}", token);
 
         let client = Client {
             player_name: "Test Player".to_string(),

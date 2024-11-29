@@ -348,7 +348,6 @@ mod tests {
     fn test_extract_data() {
         let input = decode_base64("jivbQjIad/apapa");
         let (horizontal, vertical, cells) = extract_data(&input);
-        println!(" {:?}", horizontal);
         assert_eq!(horizontal.len(), 12);
         assert_eq!(vertical.len(), 12);
         assert_eq!(cells.len(), 9);
