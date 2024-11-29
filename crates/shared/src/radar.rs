@@ -141,13 +141,15 @@ pub fn decode_base64(input: &str) -> String {
 }
 
 pub fn retrieve_cell(octet: &str) -> Vec<Cells> {
-    let mut data = Vec::with_capacity(octet.len() / 4);
-    let mut i = 0;
+    let num_cells = (octet.len() - 4) / 4; // 4 bits per cell, remove the last 4 bits (padding)
+    let mut data = Vec::with_capacity(num_cells);
 
-    // octet.len() - 3  because the last 4 bits are padding
-    while i + 3 < octet.len() - 3 {
+    for i in (0..num_cells).map(|x| x * 4) {
         let bits = &octet[i..i + 4];
-        let value = u8::from_str_radix(bits, 2).unwrap_or(0);
+        let value = match u8::from_str_radix(bits, 2) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
 
         let cell = match value {
             0 => Cells::NOTHING,
@@ -161,20 +163,24 @@ pub fn retrieve_cell(octet: &str) -> Vec<Cells> {
             _ => continue,
         };
         data.push(cell);
-        i += 4;
     }
 
     data
 }
 
 pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec<Passages>) {
-    let mut horizontal_data = Vec::with_capacity(horizontal.len() / 2);
-    let mut vertical_data = Vec::with_capacity(vertical.len() / 2);
+    let num_horizontal = horizontal.len() / 2;
+    let num_vertical = vertical.len() / 2;
 
-    let mut i = 0;
-    while i + 1 < horizontal.len() {
+    let mut horizontal_data = Vec::with_capacity(num_horizontal);
+    let mut vertical_data = Vec::with_capacity(num_vertical);
+
+    for i in (0..num_horizontal).map(|x| x * 2) {
         let bits = &horizontal[i..i + 2];
-        let value = u8::from_str_radix(bits, 2).unwrap_or(0);
+        let value = match u8::from_str_radix(bits, 2) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
 
         let passage = match value {
             0 => Passages::UNDEFINED,
@@ -183,13 +189,14 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec
             _ => continue,
         };
         horizontal_data.push(passage);
-        i += 2;
     }
 
-    let mut i = 0;
-    while i + 1 < vertical.len() {
+    for i in (0..num_vertical).map(|x| x * 2) {
         let bits = &vertical[i..i + 2];
-        let value = u8::from_str_radix(bits, 2).unwrap_or(0);
+        let value = match u8::from_str_radix(bits, 2) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
 
         let passage = match value {
             0 => Passages::UNDEFINED,
@@ -198,7 +205,6 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec
             _ => continue,
         };
         vertical_data.push(passage);
-        i += 2;
     }
 
     (horizontal_data, vertical_data)
