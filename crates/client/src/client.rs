@@ -6,14 +6,13 @@ use shared::{
     radar::{decode_base64, extract_data},
     utils::{print_error, print_log, Color},
 };
-use std::{error::Error, net::TcpStream};
+use std::{error::Error, net::TcpStream, sync::mpsc, thread};
 
 use crate::instructions;
 
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
     pub server_addr: String,
-    pub player_name: String,
     pub team_name: String,
     pub token: Option<String>,
 }
@@ -29,35 +28,61 @@ impl GameClient {
         Self { config, score: 0 }
     }
 
-    pub fn run(&self, max_retries: u8) -> Result<(), Box<dyn Error>> {
-        let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries);
+    pub fn run(&self, max_retries: u8, num_agents: u8) -> Result<(), Box<dyn Error>> {
+        let (token_tx, token_rx) = mpsc::channel();
 
-        let init_message = if let Some(token) = &self.config.token {
-            Message::SubscribePlayer(SubscribePlayer {
-                name: self.config.player_name.clone(),
-                registration_token: token.clone(),
-            })
-        } else {
-            Message::RegisterTeam(RegisterTeam { name: self.config.team_name.clone() })
+        let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries);
+        let register_msg =
+            Message::RegisterTeam(RegisterTeam { name: self.config.team_name.clone() });
+
+        send_message(&mut stream, &register_msg)?;
+
+        match receive_message(&mut stream)? {
+            Message::RegisterTeamResult(RegisterTeamResult::Ok { registration_token, .. }) => {
+                token_tx.send(registration_token)?;
+            }
+            _ => return Err("Failed to register team".into()),
+        }
+
+        let mut handles = vec![];
+        let token = match token_rx.recv() {
+            Ok(token) => token,
+            Err(e) => return Err(format!("Failed to receive token: {:?}", e).into()),
         };
 
-        match send_message(&mut stream, &init_message) {
-            Ok(_) => {}
-            Err(e) => {
-                print_log(&format!("[warning] - Failed to send message: {}", e), Color::Orange);
-            }
+        for i in 0..num_agents {
+            let config = self.config.clone();
+            let agent_token = token.clone();
+            let agent_name = format!("Player{}", i + 1);
+
+            let handle = thread::Builder::new()
+                .name(agent_name.clone())
+                .spawn(move || {
+                    let mut stream = Self::connect_to_server(&config.server_addr, max_retries);
+                    let subscribe_msg = Message::SubscribePlayer(SubscribePlayer {
+                        name: agent_name,
+                        registration_token: agent_token,
+                    });
+
+                    match send_message(&mut stream, &subscribe_msg) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            print_error(&format!("Failed to subscribe player: {}", e));
+                        }
+                    }
+
+                    while let Ok(msg) = receive_message(&mut stream) {
+                        Self::handle_server_message(&mut stream, msg);
+                    }
+                })
+                .map_err(|e| format!("Failed to spawn thread: {}", e))?;
+            handles.push(handle);
         }
 
-        loop {
-            match receive_message(&mut stream) {
-                Ok(message) => {
-                    Self::handle_server_message(self.config.clone(), &mut stream, message);
-                }
-                Err(e) => {
-                    return Err(e.into());
-                }
-            }
+        for handle in handles {
+            handle.join().map_err(|e| format!("Thread panicked: {:?}", e))?;
         }
+        Ok(())
     }
 
     fn connect_to_server(address: &str, mut max_retries: u8) -> TcpStream {
@@ -77,24 +102,8 @@ impl GameClient {
         }
     }
 
-    fn handle_server_message(config: ClientConfig, stream: &mut TcpStream, message: Message) {
+    fn handle_server_message(stream: &mut TcpStream, message: Message) {
         match message {
-            Message::RegisterTeamResult(result) => match result {
-                RegisterTeamResult::Ok { registration_token, .. } => {
-                    print_log(
-                        &format!(
-                            "Team {} registered successfully, token: {}",
-                            config.team_name, registration_token
-                        ),
-                        Color::Reset,
-                    );
-                    std::process::exit(0);
-                }
-                RegisterTeamResult::Err(err) => {
-                    print_error(&format!("Failed to register team: {:?}", err));
-                    std::process::exit(1);
-                }
-            },
             Message::SubscribePlayerResult(result) => match result {
                 SubscribePlayerResult::Ok => {
                     print_log("Successfully subscribed to game", Color::Green);
@@ -119,8 +128,14 @@ impl GameClient {
                 }
 
                 if is_win {
-                    print_log("Exit found!", Color::Green);
-                    std::process::exit(0);
+                    let thread = std::thread::current();
+                    if let Some(name) = thread.name() {
+                        print_log(
+                            &format!("Thread {} has won the game with score {}", name, 0),
+                            Color::Green,
+                        );
+                    }
+                    thread.unpark();
                 }
             }
             Message::Hint(_hint) => {
@@ -160,59 +175,34 @@ mod tests {
 
         let result = std::panic::catch_unwind(|| GameClient::connect_to_server(&addr, 1));
         assert!(result.is_ok());
-    }
 
-    #[test]
-    fn test_handle_server_message_register_success() {
-        let config = ClientConfig {
-            server_addr: String::new(),
-            player_name: "player".to_string(),
-            team_name: "team".to_string(),
-            token: None,
-        };
+        let register_msg = Message::RegisterTeam(RegisterTeam { name: "team".to_string() });
 
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
         let mut stream = TcpStream::connect(addr).unwrap();
-
-        let message = Message::RegisterTeamResult(RegisterTeamResult::Ok {
-            expected_players: 1,
-            registration_token: "token123".to_string(),
-        });
-
-        GameClient::handle_server_message(config, &mut stream, message);
+        send_message(&mut stream, &register_msg).unwrap();
     }
 
     #[test]
     fn test_handle_server_message_subscribe_success() {
-        let config = ClientConfig {
-            server_addr: String::new(),
-            player_name: "player".to_string(),
-            team_name: "team".to_string(),
-            token: Some("token".to_string()),
-        };
-
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let mut stream = TcpStream::connect(addr).unwrap();
 
         let message = Message::SubscribePlayerResult(SubscribePlayerResult::Ok);
 
-        GameClient::handle_server_message(config, &mut stream, message);
+        GameClient::handle_server_message(&mut stream, message);
     }
 
     #[test]
     fn test_new_client() {
         let config = ClientConfig {
             server_addr: "addr".to_string(),
-            player_name: "player".to_string(),
             team_name: "team".to_string(),
             token: None,
         };
 
         let client = GameClient::new(config.clone());
         assert_eq!(client.config.server_addr, config.server_addr);
-        assert_eq!(client.config.player_name, config.player_name);
         assert_eq!(client.config.team_name, config.team_name);
         assert_eq!(client.score, 0);
     }

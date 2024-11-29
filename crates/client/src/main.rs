@@ -25,13 +25,13 @@ struct Args {
     #[arg(help_heading = "SERVER OPTIONS")]
     retries: u8,
 
-    #[arg(short, long, default_value = "Player1", help = "Player name.")]
-    #[arg(help_heading = "PLAYER OPTIONS")]
-    name: String,
-
     #[arg(short, long, default_value = "Groupe1", help = "Team name.")]
     #[arg(help_heading = "PLAYER OPTIONS")]
     team: String,
+
+    #[arg(long, help = "Number of players in the team.")]
+    #[arg(help_heading = "PLAYER OPTIONS")]
+    players: Option<u8>,
 
     #[arg(long, help = "Token to register the player.")]
     #[arg(help_heading = "PLAYER OPTIONS")]
@@ -46,7 +46,6 @@ fn main() {
 
     let config = ClientConfig {
         server_addr: format!("{}:{}", args.host, args.port),
-        player_name: args.name,
         team_name: args.team,
         token: args.token,
     };
@@ -63,8 +62,9 @@ fn main() {
     }
 
     let client = GameClient::new(config);
-    match client.run(args.retries) {
-        Ok(_) => println!("Client existed successfully"),
+    let agents_count = args.players.unwrap_or(3);
+    match client.run(args.retries, agents_count) {
+        Ok(_) => println!("All agents have found the exit!"),
         Err(e) => {
             print_error(&format!("{}", e));
         }
