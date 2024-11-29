@@ -141,7 +141,8 @@ pub fn decode_base64(input: &str) -> String {
 }
 
 pub fn retrieve_cell(octet: &str) -> Vec<Cells> {
-    let num_cells = (octet.len() - 4) / 4; // 4 bits per cell, remove the last 4 bits (padding)
+    let num_cells: usize = 9; // 4 bits per cell, remove the last 4 bits (padding)
+    println!("num_cells: {}", num_cells);
     let mut data = Vec::with_capacity(num_cells);
 
     for i in (0..num_cells).map(|x| x * 4) {
