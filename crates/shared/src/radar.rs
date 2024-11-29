@@ -1,6 +1,5 @@
 use core::str;
 use std::char;
-use std::collections::HashMap;
 use std::fmt::Write;
 
 const BASE64_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
@@ -69,7 +68,7 @@ pub fn split_into_chunks(text: &str, chunk_size: usize) -> Vec<String> {
     subs
 }
 
-pub fn encode<T: ToBinary>(input: T) -> String {
+pub fn encode_base64<T: ToBinary>(input: T) -> String {
     let binary_text = input.to_binary();
 
     let subs = split_into_chunks(&binary_text, 6);
@@ -83,113 +82,159 @@ pub fn encode<T: ToBinary>(input: T) -> String {
     encoded
 }
 
-pub fn decode(input: &str) -> String {
+/// Decodes a base64-encoded string into its original form.
+///
+/// # Algorithm
+/// The function processes input character by character:
+/// 1. Each base64 character represents 6 bits of data
+/// 2. Bits are accumulated in a buffer until there are enough (8 bits) to form a byte
+/// 3. Bytes are extracted and converted to characters
+///
+/// # Parameters
+/// * `input` - A string slice containing base64-encoded data using the alphabet:
+///   - a-z (0-25)
+///   - A-Z (26-51)
+///   - 0-9 (52-61)
+///   - +/ (62-63)
+///
+/// # Returns
+/// A `String` containing the decoded data.
+///
+/// # Examples
+/// ```
+/// use shared::radar::{encode_base64, decode_base64};
+/// let encoded = encode_base64("Hello");
+/// let decoded = decode_base64(&encoded);
+/// assert_eq!(decoded, "Hello");
+///
+/// // Single byte values
+/// assert_eq!(decode_base64("aa"), "\0");
+/// assert_eq!(decode_base64("gq"), "\x19");
+/// ```
+///
+/// # Bit Processing
+/// ```text
+/// Input:    |  S     |  G     |  V     |  s     |
+/// Base64:   |010010  |010000  |010111  |100011  |
+/// Output:   |01001001|00000101|11100011|
+/// Chars:    |   I    |   E    |   š    |
+/// ```
+pub fn decode_base64(input: &str) -> String {
     let mut decoded = String::new();
+    let mut buffer: u32 = 0;
+    let mut bits: u32 = 0;
 
-    let mut binary: String = String::new();
     for char in input.chars() {
-        let index = BASE64_CHARS.find(char).map(|pos| pos as u8);
-        if index.is_none() {
-            continue;
-        }
-        binary += format! {"{:06b}", index.unwrap()}.as_str();
-    }
+        if let Some(value) = BASE64_CHARS.find(char) {
+            buffer = (buffer << 6) | (value as u32); // Shift buffer 6 bits to the left and add the value
+            bits += 6;
 
-    let splitted = split_into_chunks(&binary, 8);
-    for sub in splitted {
-        let decimal = isize::from_str_radix(&sub, 2).unwrap();
-        decoded += &char::from_u32(decimal as u32).unwrap().to_string();
+            while bits >= 8 {
+                bits -= 8;
+                let byte = ((buffer >> bits) & 0xFF) as u8; // Shift buffer to the right by bits and pad with 0s
+                decoded.push(byte as char);
+            }
+        }
     }
 
     decoded
 }
 
-pub fn extract_data(input: &str) -> (Vec<Passages>, Vec<Passages>, Vec<Cells>) {
-    let mut binary = String::new();
-    for char in input.chars() {
-        binary += format! {"{:08b}", char as u8}.as_str();
-    }
-
-    let splitted_octet = split_into_chunks(&binary, 8);
-
-    let mut horizontal_octet = Vec::<String>::new();
-    for octet in splitted_octet.iter().take(3) {
-        horizontal_octet.push(octet.clone());
-    }
-    horizontal_octet.reverse();
-
-    let mut vertical_octet = Vec::<String>::new();
-    for octet in splitted_octet.iter().take(6).skip(3) {
-        vertical_octet.push(octet.clone());
-    }
-    vertical_octet.reverse();
-
-    let mut cell_octet = String::new();
-    for octet in splitted_octet.iter().take(11).skip(6) {
-        cell_octet += octet;
-    }
-
-    let cell = retrieve_cell(&cell_octet);
-    let (horizontal, vertical) =
-        retrieve_passage(&horizontal_octet.join(""), &vertical_octet.join(""));
-
-    (horizontal, vertical, cell)
-}
-
 pub fn retrieve_cell(octet: &str) -> Vec<Cells> {
-    let splitted_4bits = split_into_chunks(octet, 4);
-    let splitted_4bits = &splitted_4bits[0..splitted_4bits.len() - 1];
+    let num_cells: usize = (octet.len() - 4) / 4; // 4 bits per cell, remove the last 4 bits (padding)
+    println!("num_cells: {}", num_cells);
+    let mut data = Vec::with_capacity(num_cells);
 
-    let map = HashMap::from([
-        ("0000", Cells::NOTHING),
-        ("0001", Cells::ALLY),
-        ("0010", Cells::ENEMY),
-        ("0011", Cells::MONSTER),
-        ("0100", Cells::HELP),
-        ("1000", Cells::OBJECTIVE),
-        ("1011", Cells::ObjectiveMonster),
-        ("1111", Cells::INVALID),
-    ]);
+    for i in (0..num_cells).map(|x| x * 4) {
+        let bits = &octet[i..i + 4];
+        let value = match u8::from_str_radix(bits, 2) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
 
-    let mut data = Vec::new();
-
-    for bits in splitted_4bits {
-        let value = map.get(bits.as_str());
-        if let Some(value) = value {
-            data.push(value.clone());
-        }
+        let cell = match value {
+            0 => Cells::NOTHING,
+            1 => Cells::ALLY,
+            2 => Cells::ENEMY,
+            3 => Cells::MONSTER,
+            4 => Cells::HELP,
+            8 => Cells::OBJECTIVE,
+            11 => Cells::ObjectiveMonster,
+            15 => Cells::INVALID,
+            _ => continue,
+        };
+        data.push(cell);
     }
 
     data
 }
 
 pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec<Passages>) {
-    let horizontal_2bits = split_into_chunks(horizontal, 2);
-    let vertical_2bits = split_into_chunks(vertical, 2);
+    let num_horizontal = horizontal.len() / 2;
+    let num_vertical = vertical.len() / 2;
 
-    let map = HashMap::from([
-        ("00", Passages::UNDEFINED),
-        ("01", Passages::OPEN),
-        ("10", Passages::WALL),
-    ]);
+    let mut horizontal_data = Vec::with_capacity(num_horizontal);
+    let mut vertical_data = Vec::with_capacity(num_vertical);
 
-    let mut horizontal_data = Vec::new();
-    for bits in horizontal_2bits {
-        let value = map.get(bits.as_str());
-        if let Some(v) = value {
-            horizontal_data.push(v.clone());
-        }
+    for i in (0..num_horizontal).map(|x| x * 2) {
+        let bits = &horizontal[i..i + 2];
+        let value = match u8::from_str_radix(bits, 2) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let passage = match value {
+            0 => Passages::UNDEFINED,
+            1 => Passages::OPEN,
+            2 => Passages::WALL,
+            _ => continue,
+        };
+        horizontal_data.push(passage);
     }
 
-    let mut vertical_data = Vec::new();
-    for bits in vertical_2bits {
-        let value = map.get(bits.as_str());
-        if let Some(v) = value {
-            vertical_data.push(v.clone());
-        }
+    for i in (0..num_vertical).map(|x| x * 2) {
+        let bits = &vertical[i..i + 2];
+        let value = match u8::from_str_radix(bits, 2) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let passage = match value {
+            0 => Passages::UNDEFINED,
+            1 => Passages::OPEN,
+            2 => Passages::WALL,
+            _ => continue,
+        };
+        vertical_data.push(passage);
     }
 
     (horizontal_data, vertical_data)
+}
+
+pub fn extract_data(input: &str) -> (Vec<Passages>, Vec<Passages>, Vec<Cells>) {
+    let binary = input.chars().fold(String::with_capacity(input.len() * 8), |mut acc, c| {
+        write!(acc, "{:08b}", c as u8).unwrap();
+        acc
+    });
+
+    if binary.len() < 88 {
+        return (Vec::new(), Vec::new(), Vec::new());
+    }
+
+    // 3 first octets are for horizontal, 3 next for vertical, and the last 5 for cells
+    // Horizontal and vertical are in little-endian order so we need to reverse them
+    let mut horizontal_bits = String::with_capacity(24);
+    write!(horizontal_bits, "{}{}{}", &binary[16..24], &binary[8..16], &binary[0..8]).unwrap();
+
+    let mut vertical_bits = String::with_capacity(24);
+    write!(vertical_bits, "{}{}{}", &binary[40..48], &binary[32..40], &binary[24..32]).unwrap();
+
+    let cell_bits = &binary[48..88];
+
+    let (horizontal, vertical) = retrieve_passage(&horizontal_bits, &vertical_bits);
+    let cells = retrieve_cell(cell_bits);
+
+    (horizontal, vertical, cells)
 }
 
 #[cfg(test)]
@@ -249,29 +294,29 @@ mod tests {
     // Tests for the `encode` function
     #[test]
     fn test_encode_prof() {
-        assert_eq!(encode(&[0]), "aa");
-        assert_eq!(encode(&[25]), "gq");
-        assert_eq!(encode(&[26]), "gG");
-        assert_eq!(encode(&[51]), "mW");
-        assert_eq!(encode(&[52]), "na");
-        assert_eq!(encode(&[61]), "pq");
-        assert_eq!(encode(&[62]), "pG");
-        assert_eq!(encode(&[63]), "pW");
-        assert_eq!(encode("Hello, World!"), "sgvSBg8SifDVCMXKiq");
+        assert_eq!(encode_base64(&[0]), "aa");
+        assert_eq!(encode_base64(&[25]), "gq");
+        assert_eq!(encode_base64(&[26]), "gG");
+        assert_eq!(encode_base64(&[51]), "mW");
+        assert_eq!(encode_base64(&[52]), "na");
+        assert_eq!(encode_base64(&[61]), "pq");
+        assert_eq!(encode_base64(&[62]), "pG");
+        assert_eq!(encode_base64(&[63]), "pW");
+        assert_eq!(encode_base64("Hello, World!"), "sgvSBg8SifDVCMXKiq");
         let numbers: Vec<i32> = (0..=255).collect();
-        assert_eq!(encode(&numbers[..]), "aaecaWqfbGCicqOlda0odXareHmufryxgbKAgXWDhH8GisiJjcuMjYGPkISSls4VmdeYmZq1nJC4otO7pd0+p0bbqKneruzhseLks0XntK9quvjtvfvwv1HzwLTCxv5FygfIy2rLzMDOAwPRBg1UB3bXCNn0Dxz3EhL6E3X9FN+aGykdHiwgH4IjIOUmJy6pKjgsK5svLPEyMzQBNj2EN6cHOQoKPAANQkMQQ6YTRQ+WSBkZTlw2T7I5URU8VB6/WmhcW8tfXSFiYCRlZm3oZ9dr0Tpu1DBx2nNA29ZD3T/G4ElJ5oxM5+JP6UVS7E7V8phY8/t19VF4+FR7/p3+/W");
+        assert_eq!(encode_base64(&numbers[..]), "aaecaWqfbGCicqOlda0odXareHmufryxgbKAgXWDhH8GisiJjcuMjYGPkISSls4VmdeYmZq1nJC4otO7pd0+p0bbqKneruzhseLks0XntK9quvjtvfvwv1HzwLTCxv5FygfIy2rLzMDOAwPRBg1UB3bXCNn0Dxz3EhL6E3X9FN+aGykdHiwgH4IjIOUmJy6pKjgsK5svLPEyMzQBNj2EN6cHOQoKPAANQkMQQ6YTRQ+WSBkZTlw2T7I5URU8VB6/WmhcW8tfXSFiYCRlZm3oZ9dr0Tpu1DBx2nNA29ZD3T/G4ElJ5oxM5+JP6UVS7E7V8phY8/t19VF4+FR7/p3+/W");
     }
 
     #[test]
     fn test_decode_prof() {
         let test1 = "Hello, World!";
-        assert_eq!(decode(&encode(test1)), test1.to_string() + "\0");
+        assert_eq!(decode_base64(&encode_base64(test1)), test1);
         let test2 = "#123";
-        assert_eq!(decode(&encode(test2)), test2.to_string() + "\0");
+        assert_eq!(decode_base64(&encode_base64(test2)), test2);
         let test3 = "Hier, je suis rentré chez moi vers 18h, j'ai manger du poulet avec du riz et ainsi que fait mon exercice de Schooding.";
-        assert_eq!(decode(&encode(test3)), test3.to_string() + "\0");
+        assert_eq!(decode_base64(&encode_base64(test3)), test3);
         let test4 = "qwekasdjladfljadljk";
-        assert_eq!(decode(&encode(test4)), test4.to_string() + "\0");
+        assert_eq!(decode_base64(&encode_base64(test4)), test4);
     }
 
     // Tests for the `retrieve_cell` function
@@ -308,9 +353,8 @@ mod tests {
 
     #[test]
     fn test_extract_data() {
-        let input = decode("jivbQjIad/apapa");
+        let input = decode_base64("jivbQjIad/apapa");
         let (horizontal, vertical, cells) = extract_data(&input);
-
         assert_eq!(horizontal.len(), 12);
         assert_eq!(vertical.len(), 12);
         assert_eq!(cells.len(), 9);

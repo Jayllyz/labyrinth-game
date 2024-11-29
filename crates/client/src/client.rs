@@ -3,7 +3,7 @@ use shared::{
         receive_message, send_message, Message, RegisterTeam, RegisterTeamResult, SubscribePlayer,
         SubscribePlayerResult,
     },
-    radar::{decode, extract_data},
+    radar::{decode_base64, extract_data},
     utils::{print_error, print_log, Color},
 };
 use std::{error::Error, net::TcpStream};
@@ -105,7 +105,7 @@ impl GameClient {
                 }
             },
             Message::RadarView(view) => {
-                let (horizontal, vertical, cells) = extract_data(&decode(&view.0));
+                let (horizontal, vertical, cells) = extract_data(&decode_base64(&view.0));
                 let action = instructions::right_hand_solver(horizontal, vertical);
                 let is_win = instructions::check_win_condition(cells, action.clone());
                 match send_message(stream, &Message::Action(action)) {

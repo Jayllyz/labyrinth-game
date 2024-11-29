@@ -56,12 +56,12 @@ pub fn check_win_condition(cells: Vec<Cells>, direction: messages::Action) -> bo
 mod tests {
     use super::*;
     use messages::RadarView;
-    use shared::radar::{decode, extract_data};
+    use shared::radar::{decode_base64, extract_data};
 
     #[test]
     fn test_right_hand_solver() {
         let view = RadarView("swfGkIAyap8a8aa".to_owned());
-        let (horizontal, vertical, _cells) = extract_data(&decode(&view.0));
+        let (horizontal, vertical, _cells) = extract_data(&decode_base64(&view.0));
         let result = right_hand_solver(horizontal, vertical);
         assert!(matches!(result, messages::Action::MoveTo(messages::Direction::Right)));
     }
