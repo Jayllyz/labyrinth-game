@@ -71,10 +71,8 @@ impl GameClient {
                         }
                     }
 
-                    loop {
-                        if let Ok(msg) = receive_message(&mut stream) {
-                            Self::handle_server_message(config.clone(), &mut stream, msg);
-                        }
+                    while let Ok(msg) = receive_message(&mut stream) {
+                        Self::handle_server_message(config.clone(), &mut stream, msg);
                     }
                 })
                 .map_err(|e| format!("Failed to spawn thread: {}", e))?;
@@ -153,6 +151,7 @@ impl GameClient {
                             Color::Green,
                         );
                     }
+                    thread.unpark();
                 }
             }
             Message::Hint(_hint) => {
