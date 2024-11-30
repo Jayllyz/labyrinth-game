@@ -195,8 +195,11 @@ mod tests {
 
     #[test]
     fn test_handle_server_message_subscribe_success() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
+        let (listener, addr) = setup_mock_server();
+
+        thread::spawn(move || {
+            listener.accept().unwrap();
+        });
         let mut stream = TcpStream::connect(addr).unwrap();
 
         let message = Message::SubscribePlayerResult(SubscribePlayerResult::Ok);
