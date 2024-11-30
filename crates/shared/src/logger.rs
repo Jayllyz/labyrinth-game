@@ -67,7 +67,7 @@ mod tests {
         logger.warn("Warning message");
         logger.error("Error message");
         if logger.is_debug_enabled() {
-            assert_eq!(logger.is_debug_enabled(), true);
+            assert!(logger.is_debug_enabled());
         }
     }
 }

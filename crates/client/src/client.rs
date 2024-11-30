@@ -170,6 +170,7 @@ mod tests {
     use std::thread;
 
     fn setup_mock_server() -> (TcpListener, String) {
+        let _ = Logger::init(true);
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         (listener, format!("127.0.0.1:{}", addr.port()))
