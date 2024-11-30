@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
     libgl1-mesa-dri \
     libgl1-mesa-glx \
     mesa-utils \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=base /app/target/release/client /usr/local/bin
