@@ -1,4 +1,3 @@
-use crate::utils::{print_log, Color};
 use serde::{Deserialize, Serialize};
 use std::{
     io::{self, Read, Write},
@@ -130,13 +129,6 @@ pub fn receive_message(stream: &mut TcpStream) -> io::Result<Message> {
     let json: Message =
         serde_json::from_str(&str).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-    if let Ok(addr) = stream.peer_addr() {
-        print_log(
-            &format!("Received: {:?} from ({}:{})", json, addr.ip(), addr.port()),
-            Color::Green,
-        );
-    }
-
     Ok(json)
 }
 
@@ -152,10 +144,6 @@ pub fn send_message(stream: &mut TcpStream, msg: &Message) -> io::Result<()> {
 
     stream.write_all(&buffer)?;
     stream.flush()?;
-
-    if let Ok(addr) = stream.peer_addr() {
-        print_log(&format!("Sent: {:?} to ({}:{})", msg, addr.ip(), addr.port()), Color::Blue);
-    }
 
     Ok(())
 }
