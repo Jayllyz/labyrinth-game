@@ -15,6 +15,7 @@ pub enum Message {
     ActionResult(ActionResult),
     MessageError(MessageError),
     Hint(Hint),
+    Challenge(Challenge),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -70,6 +71,9 @@ pub enum Direction {
 pub enum Action {
     #[serde(rename = "MoveTo")]
     MoveTo(Direction),
+    SolveChallenge {
+        answer: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -90,6 +94,14 @@ pub enum ActionResult {
 pub enum Hint {
     RelativeCompass { angle: f32 },
     GridSize { columns: u32, rows: u32 },
+    Secret(u64),
+    SOS,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Challenge {
+    #[serde(rename = "SecretSumModulo")]
+    SecretSumModulo(u64),
 }
 
 #[derive(Debug, Clone)]
@@ -98,10 +110,6 @@ pub struct Client {
     pub team_name: String,
     pub address: SocketAddr,
     pub registration_token: String,
-    #[allow(dead_code)]
-    pub moves_count: u32,
-    #[allow(dead_code)]
-    pub score: u32,
 }
 
 #[derive(Debug)]

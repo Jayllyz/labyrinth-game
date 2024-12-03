@@ -19,13 +19,11 @@ pub struct ClientConfig {
 
 pub struct GameClient {
     config: ClientConfig,
-    #[allow(dead_code)]
-    score: u32,
 }
 
 impl GameClient {
     pub fn new(config: ClientConfig) -> Self {
-        Self { config, score: 0 }
+        Self { config }
     }
 
     pub fn run(&self, max_retries: u8, num_agents: u8) -> Result<(), Box<dyn Error>> {
@@ -141,7 +139,7 @@ impl GameClient {
 
                 if is_win {
                     if let Some(name) = thread.name() {
-                        logger.info(&format!("{} has won the game with score {}", name, 0));
+                        logger.info(&format!("{} has found the exit!", name));
                     }
                     thread.unpark();
                 }
@@ -149,6 +147,11 @@ impl GameClient {
             Message::Hint(hint) => {
                 if let Some(name) = thread.name() {
                     logger.debug(&format!("{} received hint: {:?}", name, hint));
+                }
+            }
+            Message::Challenge(challenge) => {
+                if let Some(name) = thread.name() {
+                    logger.debug(&format!("{} received challenge: {:?}", name, challenge));
                 }
             }
             Message::MessageError(err) => {
@@ -218,6 +221,5 @@ mod tests {
         let client = GameClient::new(config.clone());
         assert_eq!(client.config.server_addr, config.server_addr);
         assert_eq!(client.config.team_name, config.team_name);
-        assert_eq!(client.score, 0);
     }
 }
