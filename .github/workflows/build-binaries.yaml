@@ -26,8 +26,6 @@ jobs:
           os: macos-latest
         - target: x86_64-unknown-linux-gnu
           os: ubuntu-latest
-        - target: x86_64-apple-darwin
-          os: macos-latest
         - target: x86_64-pc-windows-msvc
           os: windows-latest
     runs-on: ${{ matrix.os }}
@@ -42,7 +40,19 @@ jobs:
 
     - uses: taiki-e/upload-rust-binary-action@v1
       with:
-        bin: client,server
+        bin: client
+        target: ${{ matrix.target }}
+        ref: refs/tags/${{ inputs.publish-tag }}
+        tar: all
+        zip: windows
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1
+        CARGO_PROFILE_RELEASE_LTO: true
+
+    - uses: taiki-e/upload-rust-binary-action@v1
+      with:
+        bin: server
         target: ${{ matrix.target }}
         ref: refs/tags/${{ inputs.publish-tag }}
         tar: all
