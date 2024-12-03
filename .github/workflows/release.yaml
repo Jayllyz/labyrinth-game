@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  workflow_call:
+    inputs:
+      publish-tag:
+        required: true
+        type: string
+
+concurrency:
+  group: release
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    name: Create release
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: true
+
+    - name: Install Rust toolchain
+      uses: moonrepo/setup-rust@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Check and Test
+      run: cargo check --all-targets --all-features && cargo test
+
+    - name: Tag the version
+      run: |
+        git tag "${{ inputs.publish-tag }}"
+        git push origin "${{ inputs.publish-tag }}"
+
+    - name: Create github release
+      uses: taiki-e/create-gh-release-action@v1
+      with:
+        branch: main
+        ref: refs/tags/${{ inputs.publish-tag }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  upload-binary:
+    name: Run the build-binaries workflow
+    needs:
+    - create-release
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/build-binaries.yaml
+    with:
+      publish-tag: ${{ inputs.publish-tag }}
