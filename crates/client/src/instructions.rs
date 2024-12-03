@@ -41,6 +41,7 @@ pub fn check_win_condition(cells: Vec<Cells>, direction: messages::Action) -> bo
         messages::Action::MoveTo(messages::Direction::Left) => 3,
         messages::Action::MoveTo(messages::Direction::Front) => 1,
         messages::Action::MoveTo(messages::Direction::Back) => 7,
+        _ => return false,
     };
 
     if let Some(cell) = cells.get(index) {

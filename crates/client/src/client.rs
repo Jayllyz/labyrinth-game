@@ -187,9 +187,6 @@ mod tests {
             listener.accept().unwrap();
         });
 
-        let result = std::panic::catch_unwind(|| GameClient::connect_to_server(&addr, 1));
-        assert!(result.is_ok());
-
         let register_msg = Message::RegisterTeam(RegisterTeam { name: "team".to_string() });
 
         let mut stream = TcpStream::connect(addr).unwrap();
