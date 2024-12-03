@@ -2,7 +2,7 @@ extern crate client;
 extern crate criterion as criterion2;
 extern crate shared;
 use client::maze_parser::maze_parser;
-use client::maze_solver::bfs_shortest_path;
+use client::maze_solver::{bfs_shortest_path, PrintPathMode};
 use criterion2::{black_box, criterion_group, criterion_main, Criterion};
 use shared::maze::Maze;
 use std::time::Duration;
@@ -52,19 +52,19 @@ fn bench_bfs_solver(c: &mut Criterion) {
     group.warm_up_time(Duration::from_secs(3));
 
     group.bench_function("maze1", |b| {
-        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze1), false))
+        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze1), PrintPathMode::None))
     });
     group.bench_function("maze2", |b| {
-        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze2), false))
+        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze2), PrintPathMode::None))
     });
     group.bench_function("maze3", |b| {
-        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze3), false))
+        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze3), PrintPathMode::None))
     });
     group.bench_function("maze4", |b| {
-        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze4), false))
+        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze4), PrintPathMode::None))
     });
     group.bench_function("maze5", |b| {
-        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze5), false))
+        b.iter(|| bfs_shortest_path(black_box(&parsed_mazes.maze5), PrintPathMode::None))
     });
 
     group.finish();

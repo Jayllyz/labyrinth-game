@@ -5,7 +5,12 @@ pub fn maze_parser(input: &str) -> Maze {
         return Maze::new(Vec::new(), Cell { row: 0, column: 0 }, Cell { row: 0, column: 0 });
     }
 
-    let lines: Vec<&str> = input.lines().collect();
+    let mut untrimmed_lines: Vec<&str> = input.lines().collect();
+    untrimmed_lines =
+        untrimmed_lines.into_iter().skip_while(|line| line.trim().is_empty()).collect();
+    untrimmed_lines = untrimmed_lines.into_iter().map(|line| line.trim_start()).collect();
+
+    let lines: Vec<&str> = untrimmed_lines;
     let (height, width) = (lines.len(), lines[0].len());
 
     let map = vec![vec![0u16; width]; height];
@@ -49,7 +54,7 @@ mod tests {
         let expected = vec![vec![1, 1, 1], vec![1, 0, 1], vec![1, 1, 1]];
         assert_eq!(maze_parser(input).map, expected);
 
-        let input = "#### \n#  #|\n#### ";
+        let input = "#### \n#  ##\n#### ";
         let expected = vec![vec![1, 1, 1, 1, 0], vec![1, 0, 0, 1, 1], vec![1, 1, 1, 1, 0]];
         assert_eq!(maze_parser(input).map, expected);
 
@@ -59,8 +64,8 @@ mod tests {
 
         /*
             # # # # # # # # # # #
-            #   #   3   #       #
-            # 2 # # #   #   # # #
+            #   #   2   #       #
+            # 3 # # #   #   # # #
             #   #       #       #
             #   # # #   #   # # #
             #   #               #
@@ -70,7 +75,7 @@ mod tests {
             #       #       #   #
             # # # # # # # # # # #
         */
-        let input = "###########\n# # 2 #   #\n#3### # ###\n# #   #   #\n# ### # ###\n# #       #\n# # ### ###\n#     #   #\n### # # # #\n#   #   # #\n###########\n";
+        let input = "###########\n# # 2 #   #\n#3### # ###\n# #   #   #\n# ### # ###\n# #       #\n# # ### ###\n#     #   #\n### # # # #\n#   #   # #\n###########";
         let expected = vec![
             vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
             vec![1, 0, 1, 0, 2, 0, 1, 0, 0, 0, 1],
@@ -86,6 +91,7 @@ mod tests {
         ];
         assert_eq!(maze_parser(input).map, expected);
 
+        // Test with empty input
         assert_eq!(maze_parser("").map, Vec::<Vec<u16>>::new());
     }
 }

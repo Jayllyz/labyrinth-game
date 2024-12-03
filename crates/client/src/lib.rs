@@ -4,3 +4,4 @@ pub mod maze_solver;
 pub mod data_structures {
     pub mod priority_queue;
 }
+pub mod instructions;

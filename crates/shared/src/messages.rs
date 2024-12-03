@@ -1,28 +1,41 @@
-use crate::utils::{print_log, Color};
 use serde::{Deserialize, Serialize};
 use std::{
-    io::{Read, Write},
+    io::{self, Read, Write},
     net::{SocketAddr, TcpStream},
 };
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Message {
-    Hello,
-    Welcome(Welcome),
-    Subscribe(Subscribe),
-    SubscribeResult(SubscribeResult),
-    View(View),
+    RegisterTeam(RegisterTeam),
+    RegisterTeamResult(RegisterTeamResult),
+    SubscribePlayer(SubscribePlayer),
+    SubscribePlayerResult(SubscribePlayerResult),
+    RadarView(RadarView),
     Action(Action),
     ActionResult(ActionResult),
     MessageError(MessageError),
+    Hint(Hint),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Hello;
+pub struct RegisterTeam {
+    pub name: String,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Welcome {
-    pub version: u8,
+pub enum RegistrationError {
+    InvalidName,
+    TeamAlreadyRegistered,
+    AlreadyRegistered,
+    TooManyPlayers,
+    InvalidRegistrationToken,
+    ServerError,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum RegisterTeamResult {
+    Ok { expected_players: u8, registration_token: String },
+    Err(RegistrationError),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,42 +44,29 @@ pub struct MessageError {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Subscribe {
+pub struct SubscribePlayer {
     pub name: String,
-    pub team: String,
+    pub registration_token: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum SubscribeResult {
+pub enum SubscribePlayerResult {
     Ok,
-    Err(SubscribeError),
+    Err(RegistrationError),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum SubscribeError {
-    AlreadyRegistered,
-    InvalidName,
-}
+pub struct RadarView(pub String);
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct View {
-    pub view: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ViewModel {
-    pub view: View,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Direction {
     Right,
     Left,
-    Up,
-    Down,
+    Front,
+    Back,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Action {
     #[serde(rename = "MoveTo")]
     MoveTo(Direction),
@@ -86,11 +86,18 @@ pub enum ActionResult {
     Err(ActionError),
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Hint {
+    RelativeCompass { angle: f32 },
+    GridSize { columns: u32, rows: u32 },
+}
+
 #[derive(Debug, Clone)]
 pub struct Client {
     pub player_name: String,
     pub team_name: String,
     pub address: SocketAddr,
+    pub registration_token: String,
     #[allow(dead_code)]
     pub moves_count: u32,
     #[allow(dead_code)]
@@ -102,53 +109,43 @@ pub struct Teams {
     pub team_name: String,
     pub players: Vec<Client>,
     pub score: i32,
+    pub registration_token: String,
 }
 
-pub fn receive_message(stream: &mut TcpStream) -> Result<Message, String> {
+pub fn receive_message(stream: &mut TcpStream) -> io::Result<Message> {
     let mut buf_len = [0u8; 4];
-    match stream.read_exact(&mut buf_len) {
-        Ok(_) => (),
-        Err(e) => Err(format!("Failed to read message length: {}", e))?,
+    stream.read_exact(&mut buf_len)?;
+
+    let len = u32::from_le_bytes(buf_len) as usize;
+    const MAX_MESSAGE_SIZE: usize = 1024 * 1024; // 1MB
+    if len > MAX_MESSAGE_SIZE {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "message too large"));
     }
 
-    let len = u32::from_be_bytes(buf_len) as usize;
-
     let mut buf = vec![0u8; len];
-    match stream.read_exact(&mut buf) {
-        Ok(_) => (),
-        Err(e) => Err(format!("Failed to read message body: {}", e))?,
-    };
+    stream.read_exact(&mut buf)?;
 
     let str = String::from_utf8_lossy(&buf);
-    let json: Message = match serde_json::from_str(&str) {
-        Ok(msg) => msg,
-        Err(e) => return Err(format!("Failed to parse JSON: {}", e)),
-    };
-
-    let sender = match stream.peer_addr() {
-        Ok(addr) => format!("{}:{}", addr.ip(), addr.port()),
-        Err(_) => String::from("unknown address"),
-    };
-
-    print_log(&format!("Received: {:?} from ({})", json, sender,), Color::Green);
+    let json: Message =
+        serde_json::from_str(&str).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
     Ok(json)
 }
 
-pub fn send_message(stream: &mut TcpStream, msg: Message) {
-    let json = serde_json::to_string(&msg).expect("Failed to serialize message");
-    let len = json.len() as u32;
+pub fn send_message(stream: &mut TcpStream, msg: &Message) -> io::Result<()> {
+    let json =
+        serde_json::to_string(msg).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-    stream.write_all(&len.to_be_bytes()).expect("Failed to write to stream");
-    stream.write_all(json.as_bytes()).expect("Failed to write to stream");
-    stream.flush().expect("Failed to flush stream");
+    let json_size = json.len() as u32;
 
-    let receiver = match stream.peer_addr() {
-        Ok(addr) => format!("{}:{}", addr.ip(), addr.port()),
-        Err(_) => String::from("unknown address"),
-    };
+    let mut buffer = Vec::with_capacity(4 + json.len());
+    buffer.extend_from_slice(&json_size.to_le_bytes());
+    buffer.extend_from_slice(json.as_bytes());
 
-    print_log(&format!("Sent: {:?} to ({})", msg, receiver), Color::Blue);
+    stream.write_all(&buffer)?;
+    stream.flush()?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -157,45 +154,36 @@ mod tests {
     use serde_json;
 
     #[test]
-    fn test_hello_message() {
-        let msg = Message::Hello;
-        let serialized = serde_json::to_string(&msg).unwrap();
-        assert_eq!(serialized, r#""Hello""#);
-
-        let deserialized: Message = serde_json::from_str(&serialized).unwrap();
-        matches!(deserialized, Message::Hello);
-    }
-
-    #[test]
     fn test_all_messages() {
         let messages = vec![
-            Message::Hello,
-            Message::Welcome(Welcome { version: 1 }),
-            Message::Subscribe(Subscribe {
-                name: "Player1".to_string(),
-                team: "Team1".to_string(),
+            Message::RegisterTeam(RegisterTeam { name: "team1".to_string() }),
+            Message::SubscribePlayer(SubscribePlayer {
+                name: "player1".to_string(),
+                registration_token: "token".to_string(),
             }),
-            Message::SubscribeResult(SubscribeResult::Ok),
-            Message::View(View { view: "Initial state".to_string() }),
+            Message::SubscribePlayerResult(SubscribePlayerResult::Ok),
+            Message::SubscribePlayerResult(SubscribePlayerResult::Err(
+                RegistrationError::AlreadyRegistered,
+            )),
+            Message::RadarView(RadarView("radar".to_string())),
             Message::Action(Action::MoveTo(Direction::Right)),
             Message::ActionResult(ActionResult::Ok),
-            Message::MessageError(MessageError { message: "Error".to_string() }),
+            Message::ActionResult(ActionResult::Completed),
+            Message::ActionResult(ActionResult::Err(ActionError::InvalidMove)),
+            Message::ActionResult(ActionResult::Err(ActionError::OutOfMap)),
+            Message::ActionResult(ActionResult::Err(ActionError::Blocked)),
+            Message::MessageError(MessageError { message: "error".to_string() }),
         ];
 
         for msg in messages {
             let serialized = serde_json::to_string(&msg).unwrap();
             let deserialized: Message = serde_json::from_str(&serialized).unwrap();
-            matches!(
-                deserialized,
-                Message::Hello
-                    | Message::Welcome(_)
-                    | Message::Subscribe(_)
-                    | Message::SubscribeResult(_)
-                    | Message::View(_)
-                    | Message::Action(_)
-                    | Message::ActionResult(_)
-                    | Message::MessageError(_)
-            );
+            matches!(deserialized, |Message::RegisterTeam(_)| Message::SubscribePlayer(_)
+                | Message::SubscribePlayerResult(_)
+                | Message::RadarView(_)
+                | Message::Action(_)
+                | Message::ActionResult(_)
+                | Message::MessageError(_));
         }
     }
 }
