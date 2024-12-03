@@ -96,8 +96,6 @@ impl GameServer {
                 player_name: player.player_name.clone(),
                 team_name: player.team_name.clone(),
                 address: player.address,
-                moves_count: 0,
-                score: 0,
                 registration_token: player.registration_token.clone(),
             };
 
@@ -176,8 +174,6 @@ impl GameServer {
                         player_name: subscribe.name,
                         team_name: String::new(),
                         address: stream.peer_addr().expect("Failed to get peer address"),
-                        moves_count: 0,
-                        score: 0,
                         registration_token: subscribe.registration_token,
                     };
                     Message::SubscribePlayerResult(self.register_client(player))
@@ -286,8 +282,6 @@ mod tests {
             player_name: "Test Player".to_string(),
             team_name: "Test Team".to_string(),
             address: SocketAddr::from_str("127.0.0.1:8080").unwrap(),
-            moves_count: 0,
-            score: 0,
             registration_token: token,
         };
 
@@ -305,8 +299,6 @@ mod tests {
             player_name: "Test Player".to_string(),
             team_name: "Test Team".to_string(),
             address: SocketAddr::from_str("127.0.0.1:8080").unwrap(),
-            moves_count: 0,
-            score: 0,
             registration_token: "invalid_token".to_string(),
         };
 
@@ -333,8 +325,6 @@ mod tests {
         let base_client = Client {
             team_name: "Test Team".to_string(),
             address: SocketAddr::from_str("127.0.0.1:8080").unwrap(),
-            moves_count: 0,
-            score: 0,
             registration_token: token.clone(),
             player_name: String::new(),
         };
@@ -370,8 +360,6 @@ mod tests {
             player_name: "Test Player".to_string(),
             team_name: "Test Team".to_string(),
             address: SocketAddr::from_str("127.0.0.1:8080").unwrap(),
-            moves_count: 0,
-            score: 0,
             registration_token: token.clone(),
         };
 
