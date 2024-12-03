@@ -1,14 +1,14 @@
+use crate::instructions;
 use shared::{
+    logger::Logger,
     messages::{
         receive_message, send_message, Message, RegisterTeam, RegisterTeamResult, SubscribePlayer,
         SubscribePlayerResult,
     },
     radar::{decode_base64, extract_data},
-    utils::{print_error, print_log, Color},
+    utils::print_error,
 };
 use std::{error::Error, net::TcpStream, sync::mpsc, thread};
-
-use crate::instructions;
 
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
@@ -29,6 +29,7 @@ impl GameClient {
     }
 
     pub fn run(&self, max_retries: u8, num_agents: u8) -> Result<(), Box<dyn Error>> {
+        let logger = Logger::get_instance();
         let (token_tx, token_rx) = mpsc::channel();
 
         let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries);
@@ -67,7 +68,7 @@ impl GameClient {
                     match send_message(&mut stream, &subscribe_msg) {
                         Ok(_) => {}
                         Err(e) => {
-                            print_error(&format!("Failed to subscribe player: {}", e));
+                            logger.error(&format!("Failed to send message: {}", e));
                         }
                     }
 
@@ -76,6 +77,7 @@ impl GameClient {
                     }
                 })
                 .map_err(|e| format!("Failed to spawn thread: {}", e))?;
+
             handles.push(handle);
         }
 
@@ -103,14 +105,27 @@ impl GameClient {
     }
 
     fn handle_server_message(stream: &mut TcpStream, message: Message) {
+        let logger = Logger::get_instance();
+        let thread = std::thread::current();
+
+        if logger.is_debug_enabled() {
+            if let Some(name) = thread.name() {
+                logger.debug(&format!("{} received message: {:?}", name, message));
+            }
+        }
+
         match message {
             Message::SubscribePlayerResult(result) => match result {
                 SubscribePlayerResult::Ok => {
-                    print_log("Successfully subscribed to game", Color::Green);
+                    if let Some(name) = thread.name() {
+                        logger.info(&format!("{} has successfully subscribed to game", name));
+                    }
                 }
                 SubscribePlayerResult::Err(err) => {
-                    print_error(&format!("Subscribe error: {:?}", err));
-                    std::process::exit(1);
+                    if let Some(name) = thread.name() {
+                        logger.error(&format!("{} failed to subscribe: {:?}", name, err));
+                    }
+                    thread::park();
                 }
             },
             Message::RadarView(view) => {
@@ -120,34 +135,29 @@ impl GameClient {
                 match send_message(stream, &Message::Action(action)) {
                     Ok(_) => {}
                     Err(e) => {
-                        print_log(
-                            &format!("[warning] - Failed to send message: {}", e),
-                            Color::Orange,
-                        );
+                        logger.error(&format!("Failed to send action: {}", e));
                     }
                 }
 
                 if is_win {
-                    let thread = std::thread::current();
                     if let Some(name) = thread.name() {
-                        print_log(
-                            &format!("Thread {} has won the game with score {}", name, 0),
-                            Color::Green,
-                        );
+                        logger.info(&format!("{} has won the game with score {}", name, 0));
                     }
                     thread.unpark();
                 }
             }
-            Message::Hint(_hint) => {
-                print_log("Hint received", Color::Green);
+            Message::Hint(hint) => {
+                if let Some(name) = thread.name() {
+                    logger.debug(&format!("{} received hint: {:?}", name, hint));
+                }
             }
             Message::MessageError(err) => {
-                print_error(&format!("Server error: {}", err.message));
-                std::process::exit(1);
+                logger.error(&format!("Server error: {}", err.message));
+                thread::park();
             }
             _ => {
-                print_error("Unexpected message from server");
-                std::process::exit(1);
+                logger.warn(&format!("Unhandled message: {:?}", message));
+                thread::park();
             }
         }
     }
@@ -160,6 +170,7 @@ mod tests {
     use std::thread;
 
     fn setup_mock_server() -> (TcpListener, String) {
+        Logger::init(true);
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         (listener, format!("127.0.0.1:{}", addr.port()))
@@ -184,8 +195,11 @@ mod tests {
 
     #[test]
     fn test_handle_server_message_subscribe_success() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
+        let (listener, addr) = setup_mock_server();
+
+        thread::spawn(move || {
+            listener.accept().unwrap();
+        });
         let mut stream = TcpStream::connect(addr).unwrap();
 
         let message = Message::SubscribePlayerResult(SubscribePlayerResult::Ok);

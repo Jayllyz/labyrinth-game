@@ -1,7 +1,7 @@
 use clap::Parser;
 use client::client::{ClientConfig, GameClient};
+use shared::logger::Logger;
 use shared::radar;
-use shared::utils::print_error;
 
 #[derive(Parser, Debug)]
 #[command(name = "Labyrinth-client")]
@@ -39,10 +39,15 @@ struct Args {
 
     #[arg(long, help = "Run the client in offline mode.")]
     offline: bool,
+
+    #[arg(long, help = "Enable debug mode.", default_value = "false")]
+    debug: bool,
 }
 
 fn main() {
     let args = Args::parse();
+    Logger::init(args.debug);
+    let logger = Logger::get_instance();
 
     let config = ClientConfig {
         server_addr: format!("{}:{}", args.host, args.port),
@@ -64,9 +69,9 @@ fn main() {
     let client = GameClient::new(config);
     let agents_count = args.players.unwrap_or(3);
     match client.run(args.retries, agents_count) {
-        Ok(_) => println!("All agents have found the exit!"),
+        Ok(_) => logger.info("All agents have exited successfully"),
         Err(e) => {
-            print_error(&format!("{}", e));
+            logger.error(&format!("Error: {}", e));
         }
     }
 }
