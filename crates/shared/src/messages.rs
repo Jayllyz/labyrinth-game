@@ -94,14 +94,14 @@ pub enum ActionResult {
 pub enum Hint {
     RelativeCompass { angle: f32 },
     GridSize { columns: u32, rows: u32 },
-    Secret(u64),
+    Secret(u128),
     SOS,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Challenge {
     #[serde(rename = "SecretSumModulo")]
-    SecretSumModulo(u64),
+    SecretSumModulo(u128),
 }
 
 #[derive(Debug, Clone)]

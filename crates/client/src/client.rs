@@ -25,7 +25,7 @@ pub struct ClientConfig {
 
 pub struct GameClient {
     config: ClientConfig,
-    secrets: Arc<Mutex<HashMap<ThreadId, u64>>>,
+    secrets: Arc<Mutex<HashMap<ThreadId, u128>>>,
 }
 
 impl GameClient {
@@ -110,7 +110,7 @@ impl GameClient {
     fn handle_server_message(
         stream: &mut TcpStream,
         message: Message,
-        secrets: &Arc<Mutex<HashMap<ThreadId, u64>>>,
+        secrets: &Arc<Mutex<HashMap<ThreadId, u128>>>,
     ) {
         let logger = Logger::get_instance();
         let thread = std::thread::current();
@@ -173,13 +173,13 @@ impl GameClient {
 
                 match value {
                     shared::messages::Challenge::SecretSumModulo(challenge) => {
-                        if let Ok(mut secrets) = secrets.lock() {
+                        if let Ok(secrets) = secrets.lock() {
                             println!("Input SumModuloSecret: {}", challenge);
                             println!("{:?}", secrets);
-                            let sum = secrets.values().fold(0u64, |acc, value| (acc + value));
+                            let sum = secrets.values().sum::<u128>();
                             println!("Sum: {}", sum);
 
-                            let result: u128 = sum as u128 % challenge as u128;
+                            let result = sum % challenge;
 
                             if let Some(name) = thread.name() {
                                 logger.debug(&format!(
@@ -194,8 +194,6 @@ impl GameClient {
                                     answer: result.to_string(),
                                 }),
                             );
-
-                            secrets.clear();
                         }
                     }
                 }
