@@ -8,7 +8,7 @@ use shared::{
     radar::{decode_base64, extract_data},
     utils::print_error,
 };
-use std::{error::Error, net::TcpStream, sync::mpsc, thread};
+use std::{error::Error, net::TcpStream, thread};
 
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
@@ -28,7 +28,6 @@ impl GameClient {
 
     pub fn run(&self, max_retries: u8, num_agents: u8) -> Result<(), Box<dyn Error>> {
         let logger = Logger::get_instance();
-        let (token_tx, token_rx) = mpsc::channel();
 
         let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries);
         let register_msg =
@@ -36,18 +35,14 @@ impl GameClient {
 
         send_message(&mut stream, &register_msg)?;
 
-        match receive_message(&mut stream)? {
+        let token = match receive_message(&mut stream)? {
             Message::RegisterTeamResult(RegisterTeamResult::Ok { registration_token, .. }) => {
-                token_tx.send(registration_token)?;
+                registration_token
             }
             _ => return Err("Failed to register team".into()),
-        }
+        };
 
         let mut handles = vec![];
-        let token = match token_rx.recv() {
-            Ok(token) => token,
-            Err(e) => return Err(format!("Failed to receive token: {:?}", e).into()),
-        };
 
         for i in 0..num_agents {
             let config = self.config.clone();
