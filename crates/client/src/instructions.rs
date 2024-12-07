@@ -53,8 +53,23 @@ pub fn check_win_condition(cells: Vec<Cells>, direction: messages::Action) -> bo
     false
 }
 
+pub fn solve_sum_modulo(
+    secret_sum: u128,
+    secrets: &std::collections::HashMap<std::thread::ThreadId, u128>,
+) -> String {
+    let sum = secrets.values().sum::<u128>();
+    let result = sum % secret_sum;
+
+    return result.to_string();
+}
+
 #[cfg(test)]
 mod tests {
+    use std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+    };
+
     use super::*;
     use messages::RadarView;
     use shared::radar::{decode_base64, extract_data};
@@ -150,5 +165,31 @@ mod tests {
         ];
         let direction = messages::Action::MoveTo(messages::Direction::Right);
         assert!(!check_win_condition(cells, direction));
+    }
+
+    #[test]
+    fn test_sum_modulo() {
+        let secrets_arc = Arc::new(Mutex::new(HashMap::new()));
+        let mut handles = vec![];
+
+        let values = vec![2667360881372235285, 7064968778338382540, 8653237798568263501];
+
+        for value in values {
+            let secrets = secrets_arc.clone();
+            let handle = std::thread::spawn(move || {
+                let thread_id = std::thread::current().id();
+                secrets.lock().unwrap().insert(thread_id, value);
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let secrets = secrets_arc.lock().unwrap();
+
+        let result = solve_sum_modulo(1524576388644652385, &secrets);
+        assert_eq!(result, "90650794543052706");
     }
 }

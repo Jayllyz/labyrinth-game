@@ -174,14 +174,14 @@ impl GameClient {
                 match value {
                     shared::messages::Challenge::SecretSumModulo(challenge) => {
                         if let Ok(secrets) = secrets.lock() {
-                            let sum = secrets.values().sum::<u128>();
-
-                            let result = sum % challenge;
-
+                            let result = instructions::solve_sum_modulo(challenge, &secrets);
+                            println!("Challenge: {}", challenge);
+                            println!("Secrets: {:?}", secrets);
+                            println!("Result: {}", result);
                             let _ = send_message(
                                 stream,
                                 &Message::Action(shared::messages::Action::SolveChallenge {
-                                    answer: result.to_string(),
+                                    answer: result,
                                 }),
                             );
                         }
