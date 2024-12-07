@@ -2,7 +2,7 @@ use crate::instructions;
 use shared::{
     logger::Logger,
     messages::{
-        receive_message, send_message, Hint, Message, RegisterTeam, RegisterTeamResult,
+        receive_message, send_message, Action, Hint, Message, RegisterTeam, RegisterTeamResult,
         SubscribePlayer, SubscribePlayerResult,
     },
     radar::{decode_base64, extract_data},
@@ -50,7 +50,6 @@ impl GameClient {
         };
 
         let mut handles = vec![];
-
         let secrets = Arc::clone(&self.secrets);
 
         for i in 0..num_agents {
@@ -115,11 +114,11 @@ impl GameClient {
         let logger = Logger::get_instance();
         let thread = std::thread::current();
 
-        // if logger.is_debug_enabled() {
-        //     if let Some(name) = thread.name() {
-        //         logger.debug(&format!("{} received message: {:?}", name, message));
-        //     }
-        // }
+        if logger.is_debug_enabled() {
+            if let Some(name) = thread.name() {
+                logger.debug(&format!("{} received message: {:?}", name, message));
+            }
+        }
 
         match message {
             Message::SubscribePlayerResult(result) => match result {
@@ -156,7 +155,6 @@ impl GameClient {
             Message::Hint(hint) => match hint {
                 Hint::Secret(secret) => {
                     if let Ok(mut secrets) = secrets.lock() {
-                        println!("Inserting secret: {} at index: {:?}", secret, thread.id());
                         secrets.insert(thread.id(), secret);
                     }
                 }
@@ -175,15 +173,16 @@ impl GameClient {
                     shared::messages::Challenge::SecretSumModulo(challenge) => {
                         if let Ok(secrets) = secrets.lock() {
                             let result = instructions::solve_sum_modulo(challenge, &secrets);
-                            println!("Challenge: {}", challenge);
-                            println!("Secrets: {:?}", secrets);
-                            println!("Result: {}", result);
-                            let _ = send_message(
+                            match send_message(
                                 stream,
-                                &Message::Action(shared::messages::Action::SolveChallenge {
-                                    answer: result,
-                                }),
-                            );
+                                &Message::Action(Action::SolveChallenge { answer: result }),
+                            ) {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    logger
+                                        .error(&format!("Failed to send challenge result: {}", e));
+                                }
+                            }
                         }
                     }
                 }
