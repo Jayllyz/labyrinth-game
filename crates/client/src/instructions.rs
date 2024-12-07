@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use shared::messages::{self};
 use shared::radar::{Cells, Passages};
 
@@ -53,14 +55,11 @@ pub fn check_win_condition(cells: Vec<Cells>, direction: messages::Action) -> bo
     false
 }
 
-pub fn solve_sum_modulo(
+pub fn solve_sum_modulo<S: ::std::hash::BuildHasher>(
     secret_sum: u128,
-    secrets: &std::collections::HashMap<std::thread::ThreadId, u128>,
+    secrets: &HashMap<std::thread::ThreadId, u128, S>,
 ) -> String {
-    let sum = secrets.values().sum::<u128>();
-    let result = sum % secret_sum;
-
-    return result.to_string();
+    (secrets.values().sum::<u128>() % secret_sum).to_string()
 }
 
 #[cfg(test)]
