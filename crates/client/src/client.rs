@@ -174,19 +174,9 @@ impl GameClient {
                 match value {
                     shared::messages::Challenge::SecretSumModulo(challenge) => {
                         if let Ok(secrets) = secrets.lock() {
-                            println!("Input SumModuloSecret: {}", challenge);
-                            println!("{:?}", secrets);
                             let sum = secrets.values().sum::<u128>();
-                            println!("Sum: {}", sum);
 
                             let result = sum % challenge;
-
-                            if let Some(name) = thread.name() {
-                                logger.debug(&format!(
-                                    "{} calculated secret sum modulo: {}",
-                                    name, result
-                                ));
-                            }
 
                             let _ = send_message(
                                 stream,
