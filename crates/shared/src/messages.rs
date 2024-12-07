@@ -69,11 +69,8 @@ pub enum Direction {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Action {
-    #[serde(rename = "MoveTo")]
     MoveTo(Direction),
-    SolveChallenge {
-        answer: String,
-    },
+    SolveChallenge { answer: String },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -94,14 +91,13 @@ pub enum ActionResult {
 pub enum Hint {
     RelativeCompass { angle: f32 },
     GridSize { columns: u32, rows: u32 },
-    Secret(u64),
+    Secret(u128),
     SOS,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Challenge {
-    #[serde(rename = "SecretSumModulo")]
-    SecretSumModulo(u64),
+    SecretSumModulo(u128),
 }
 
 #[derive(Debug, Clone)]
