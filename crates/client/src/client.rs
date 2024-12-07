@@ -113,24 +113,19 @@ impl GameClient {
     ) {
         let logger = Logger::get_instance();
         let thread = std::thread::current();
+        let name = thread.name().unwrap_or("Unknown");
 
         if logger.is_debug_enabled() {
-            if let Some(name) = thread.name() {
-                logger.debug(&format!("{} received message: {:?}", name, message));
-            }
+            logger.debug(&format!("{} received message: {:?}", name, message));
         }
 
         match message {
             Message::SubscribePlayerResult(result) => match result {
                 SubscribePlayerResult::Ok => {
-                    if let Some(name) = thread.name() {
-                        logger.info(&format!("{} has successfully subscribed to game", name));
-                    }
+                    logger.info(&format!("{} has successfully subscribed to game", name));
                 }
                 SubscribePlayerResult::Err(err) => {
-                    if let Some(name) = thread.name() {
-                        logger.error(&format!("{} failed to subscribe: {:?}", name, err));
-                    }
+                    logger.error(&format!("{} failed to subscribe: {:?}", name, err));
                     thread::park();
                 }
             },
@@ -146,9 +141,7 @@ impl GameClient {
                 }
 
                 if is_win {
-                    if let Some(name) = thread.name() {
-                        logger.info(&format!("{} has found the exit!", name));
-                    }
+                    logger.info(&format!("{} has found the exit!", name));
                     thread.unpark();
                 }
             }
@@ -159,15 +152,11 @@ impl GameClient {
                     }
                 }
                 _ => {
-                    if let Some(name) = thread.name() {
-                        logger.error(&format!("{} received unknown hint", name));
-                    }
+                    logger.warn(&format!("{} received unhandled hint: {:?}", name, hint));
                 }
             },
             Message::Challenge(value) => {
-                if let Some(name) = thread.name() {
-                    logger.debug(&format!("{} received challenge: {:?}", name, value));
-                }
+                logger.info(&format!("{} received challenge: {:?}", name, value));
 
                 match value {
                     shared::messages::Challenge::SecretSumModulo(challenge) => {
@@ -177,7 +166,9 @@ impl GameClient {
                                 stream,
                                 &Message::Action(Action::SolveChallenge { answer: result }),
                             ) {
-                                Ok(_) => {}
+                                Ok(_) => {
+                                    logger.info(&format!("{} resolved the challenge", name));
+                                }
                                 Err(e) => {
                                     logger
                                         .error(&format!("Failed to send challenge result: {}", e));
