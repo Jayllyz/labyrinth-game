@@ -174,7 +174,9 @@ mod tests {
         let values = vec![2667360881372235285, 7064968778338382540, 8653237798568263501];
 
         for value in values {
-            let secrets = secrets_arc.clone();
+            let secrets = Arc::<
+                std::sync::Mutex<std::collections::HashMap<std::thread::ThreadId, u128>>,
+            >::clone(&secrets_arc);
             let handle = std::thread::spawn(move || {
                 let thread_id = std::thread::current().id();
                 secrets.lock().unwrap().insert(thread_id, value);
