@@ -2,13 +2,19 @@ use crate::instructions;
 use shared::{
     logger::Logger,
     messages::{
-        receive_message, send_message, Message, RegisterTeam, RegisterTeamResult, SubscribePlayer,
-        SubscribePlayerResult,
+        receive_message, send_message, Hint, Message, RegisterTeam, RegisterTeamResult,
+        SubscribePlayer, SubscribePlayerResult,
     },
     radar::{decode_base64, extract_data},
     utils::print_error,
 };
-use std::{error::Error, net::TcpStream, thread};
+use std::{
+    collections::HashMap,
+    error::Error,
+    net::TcpStream,
+    sync::{Arc, Mutex},
+    thread::{self, ThreadId},
+};
 
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
@@ -19,11 +25,12 @@ pub struct ClientConfig {
 
 pub struct GameClient {
     config: ClientConfig,
+    secrets: Arc<Mutex<HashMap<ThreadId, u64>>>,
 }
 
 impl GameClient {
     pub fn new(config: ClientConfig) -> Self {
-        Self { config }
+        Self { config, secrets: Arc::new(Mutex::new(HashMap::new())) }
     }
 
     pub fn run(&self, max_retries: u8, num_agents: u8) -> Result<(), Box<dyn Error>> {
@@ -44,10 +51,13 @@ impl GameClient {
 
         let mut handles = vec![];
 
+        let secrets = Arc::clone(&self.secrets);
+
         for i in 0..num_agents {
             let config = self.config.clone();
             let agent_token = token.clone();
             let agent_name = format!("Player{}", i + 1);
+            let secrets = Arc::clone(&secrets);
 
             let handle = thread::Builder::new()
                 .name(agent_name.clone())
@@ -66,7 +76,7 @@ impl GameClient {
                     }
 
                     while let Ok(msg) = receive_message(&mut stream) {
-                        Self::handle_server_message(&mut stream, msg);
+                        Self::handle_server_message(&mut stream, msg, &secrets);
                     }
                 })
                 .map_err(|e| format!("Failed to spawn thread: {}", e))?;
@@ -97,15 +107,19 @@ impl GameClient {
         }
     }
 
-    fn handle_server_message(stream: &mut TcpStream, message: Message) {
+    fn handle_server_message(
+        stream: &mut TcpStream,
+        message: Message,
+        secrets: &Arc<Mutex<HashMap<ThreadId, u64>>>,
+    ) {
         let logger = Logger::get_instance();
         let thread = std::thread::current();
 
-        if logger.is_debug_enabled() {
-            if let Some(name) = thread.name() {
-                logger.debug(&format!("{} received message: {:?}", name, message));
-            }
-        }
+        // if logger.is_debug_enabled() {
+        //     if let Some(name) = thread.name() {
+        //         logger.debug(&format!("{} received message: {:?}", name, message));
+        //     }
+        // }
 
         match message {
             Message::SubscribePlayerResult(result) => match result {
@@ -139,14 +153,51 @@ impl GameClient {
                     thread.unpark();
                 }
             }
-            Message::Hint(hint) => {
-                if let Some(name) = thread.name() {
-                    logger.debug(&format!("{} received hint: {:?}", name, hint));
+            Message::Hint(hint) => match hint {
+                Hint::Secret(secret) => {
+                    if let Ok(mut secrets) = secrets.lock() {
+                        println!("Inserting secret: {} at index: {:?}", secret, thread.id());
+                        secrets.insert(thread.id(), secret);
+                    }
                 }
-            }
-            Message::Challenge(challenge) => {
+                _ => {
+                    if let Some(name) = thread.name() {
+                        logger.error(&format!("{} received unknown hint", name));
+                    }
+                }
+            },
+            Message::Challenge(value) => {
                 if let Some(name) = thread.name() {
-                    logger.debug(&format!("{} received challenge: {:?}", name, challenge));
+                    logger.debug(&format!("{} received challenge: {:?}", name, value));
+                }
+
+                match value {
+                    shared::messages::Challenge::SecretSumModulo(challenge) => {
+                        if let Ok(mut secrets) = secrets.lock() {
+                            println!("Input SumModuloSecret: {}", challenge);
+                            println!("{:?}", secrets);
+                            let sum = secrets.values().fold(0u64, |acc, value| (acc + value));
+                            println!("Sum: {}", sum);
+
+                            let result: u128 = sum as u128 % challenge as u128;
+
+                            if let Some(name) = thread.name() {
+                                logger.debug(&format!(
+                                    "{} calculated secret sum modulo: {}",
+                                    name, result
+                                ));
+                            }
+
+                            let _ = send_message(
+                                stream,
+                                &Message::Action(shared::messages::Action::SolveChallenge {
+                                    answer: result.to_string(),
+                                }),
+                            );
+
+                            secrets.clear();
+                        }
+                    }
                 }
             }
             Message::MessageError(err) => {
@@ -199,7 +250,11 @@ mod tests {
 
         let message = Message::SubscribePlayerResult(SubscribePlayerResult::Ok);
 
-        GameClient::handle_server_message(&mut stream, message);
+        GameClient::handle_server_message(
+            &mut stream,
+            message,
+            &Arc::new(Mutex::new(HashMap::new())),
+        );
     }
 
     #[test]
