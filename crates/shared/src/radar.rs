@@ -36,6 +36,15 @@ impl ToBinary for &str {
     }
 }
 
+impl ToBinary for &String {
+    fn to_binary(&self) -> String {
+        self.chars().fold(String::with_capacity(self.len() * 8), |mut acc, c| {
+            write!(acc, "{:08b}", c as u8).unwrap();
+            acc
+        })
+    }
+}
+
 impl ToBinary for &[i32] {
     fn to_binary(&self) -> String {
         self.iter().fold(String::with_capacity(self.len() * 8), |mut acc, &d| {
@@ -55,28 +64,33 @@ impl<const N: usize> ToBinary for &[i32; N] {
 }
 
 pub fn split_into_chunks(text: &str, chunk_size: usize) -> Vec<String> {
-    let subs: Vec<String> = text
-        .as_bytes()
+    text.as_bytes()
         .chunks(chunk_size)
         .map(|chunk| {
-            let mut s = chunk.iter().map(|&b| b as char).collect::<String>();
-            s.extend(std::iter::repeat('0').take(chunk_size - s.len()));
+            let mut s = String::with_capacity(chunk_size);
+            s.extend(chunk.iter().map(|&b| b as char));
+            if s.len() < chunk_size {
+                s.extend(std::iter::repeat('0').take(chunk_size - s.len()));
+            }
             s
         })
-        .collect();
-
-    subs
+        .collect::<Vec<String>>()
 }
 
 pub fn encode_base64<T: ToBinary>(input: T) -> String {
     let binary_text = input.to_binary();
-
     let subs = split_into_chunks(&binary_text, 6);
+    let mut encoded = String::with_capacity(subs.len());
 
-    let mut encoded = String::new();
     for sub in subs {
-        let decimal = isize::from_str_radix(&sub, 2).unwrap();
-        encoded += &BASE64_CHARS.chars().nth(decimal as usize).unwrap().to_string();
+        let decimal = match u8::from_str_radix(&sub, 2) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+
+        if let Some(c) = BASE64_CHARS.chars().nth(decimal as usize) {
+            encoded.push(c);
+        }
     }
 
     encoded
@@ -124,16 +138,23 @@ pub fn decode_base64(input: &str) -> String {
     let mut buffer: u32 = 0;
     let mut bits: u32 = 0;
 
-    for char in input.chars() {
-        if let Some(value) = BASE64_CHARS.find(char) {
-            buffer = (buffer << 6) | (value as u32); // Shift buffer 6 bits to the left and add the value
-            bits += 6;
+    for &byte in input.as_bytes() {
+        let value = match byte {
+            b'a'..=b'z' => byte - b'a',      // 0-25
+            b'A'..=b'Z' => byte - b'A' + 26, // 26-51
+            b'0'..=b'9' => byte - b'0' + 52, // 52-61
+            b'+' => 62,
+            b'/' => 63,
+            _ => continue,
+        };
 
-            while bits >= 8 {
-                bits -= 8;
-                let byte = ((buffer >> bits) & 0xFF) as u8; // Shift buffer to the right by bits and pad with 0s
-                decoded.push(byte as char);
-            }
+        buffer = (buffer << 6) | (value as u32); // Shift buffer 6 bits to the left and add the value
+        bits += 6;
+
+        while bits >= 8 {
+            bits -= 8;
+            let byte = ((buffer >> bits) & 0xFF) as u8; // Shift buffer to the right by bits and pad with 0s
+            decoded.push(byte as char);
         }
     }
 
@@ -141,10 +162,10 @@ pub fn decode_base64(input: &str) -> String {
 }
 
 pub fn retrieve_cell(octet: &str) -> Vec<Cells> {
-    let num_cells: usize = (octet.len() - 4) / 4; // 4 bits per cell, remove the last 4 bits (padding)
-    let mut data = Vec::with_capacity(num_cells);
+    const NUM_CELLS: usize = 9; // 4 bits per cell, remove the last 4 bits (padding)
+    let mut data = Vec::with_capacity(NUM_CELLS);
 
-    for i in (0..num_cells).map(|x| x * 4) {
+    for i in (0..NUM_CELLS).map(|x| x * 4) {
         let bits = &octet[i..i + 4];
         let value = match u8::from_str_radix(bits, 2) {
             Ok(v) => v,
@@ -169,13 +190,13 @@ pub fn retrieve_cell(octet: &str) -> Vec<Cells> {
 }
 
 pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec<Passages>) {
-    let num_horizontal = horizontal.len() / 2;
-    let num_vertical = vertical.len() / 2;
+    const NUM_HORIZONTAL: usize = 12;
+    const NUM_VERTICAL: usize = 12;
 
-    let mut horizontal_data = Vec::with_capacity(num_horizontal);
-    let mut vertical_data = Vec::with_capacity(num_vertical);
+    let mut horizontal_data = Vec::with_capacity(NUM_HORIZONTAL);
+    let mut vertical_data = Vec::with_capacity(NUM_VERTICAL);
 
-    for i in (0..num_horizontal).map(|x| x * 2) {
+    for i in (0..NUM_HORIZONTAL).map(|x| x * 2) {
         let bits = &horizontal[i..i + 2];
         let value = match u8::from_str_radix(bits, 2) {
             Ok(v) => v,
@@ -191,7 +212,7 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec
         horizontal_data.push(passage);
     }
 
-    for i in (0..num_vertical).map(|x| x * 2) {
+    for i in (0..NUM_VERTICAL).map(|x| x * 2) {
         let bits = &vertical[i..i + 2];
         let value = match u8::from_str_radix(bits, 2) {
             Ok(v) => v,
@@ -210,11 +231,8 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec
     (horizontal_data, vertical_data)
 }
 
-pub fn extract_data(input: &str) -> (Vec<Passages>, Vec<Passages>, Vec<Cells>) {
-    let binary = input.chars().fold(String::with_capacity(input.len() * 8), |mut acc, c| {
-        write!(acc, "{:08b}", c as u8).unwrap();
-        acc
-    });
+pub fn extract_data<T: ToBinary>(input: T) -> (Vec<Passages>, Vec<Passages>, Vec<Cells>) {
+    let binary = input.to_binary();
 
     if binary.len() < 88 {
         return (Vec::new(), Vec::new(), Vec::new());
@@ -321,33 +339,127 @@ mod tests {
     // Tests for the `retrieve_cell` function
     #[test]
     fn test_retrieve_cell() {
-        assert_eq!(retrieve_cell("00000000"), vec![Cells::NOTHING]);
-
-        assert_eq!(retrieve_cell("000100100000"), vec![Cells::ALLY, Cells::ENEMY]);
-
         assert_eq!(
-            retrieve_cell("0011010010000000"),
-            vec![Cells::MONSTER, Cells::HELP, Cells::OBJECTIVE]
+            retrieve_cell("1111111111111111000011111111000000000000"),
+            vec![
+                Cells::INVALID,
+                Cells::INVALID,
+                Cells::INVALID,
+                Cells::INVALID,
+                Cells::NOTHING,
+                Cells::INVALID,
+                Cells::INVALID,
+                Cells::NOTHING,
+                Cells::NOTHING
+            ]
         );
 
-        assert_eq!(retrieve_cell("111100000000"), vec![Cells::INVALID, Cells::NOTHING]);
+        assert_eq!(
+            retrieve_cell("1111111111110000000011110000000011110000"),
+            vec![
+                Cells::INVALID,
+                Cells::INVALID,
+                Cells::INVALID,
+                Cells::NOTHING,
+                Cells::NOTHING,
+                Cells::INVALID,
+                Cells::NOTHING,
+                Cells::NOTHING,
+                Cells::INVALID
+            ]
+        );
 
-        assert_eq!(retrieve_cell("011100010000"), vec![Cells::ALLY]);
+        assert_eq!(
+            retrieve_cell("1111111111110000000011110000000011110000"),
+            vec![
+                Cells::INVALID,
+                Cells::INVALID,
+                Cells::INVALID,
+                Cells::NOTHING,
+                Cells::NOTHING,
+                Cells::INVALID,
+                Cells::NOTHING,
+                Cells::NOTHING,
+                Cells::INVALID
+            ]
+        );
     }
 
     #[test]
     fn test_retrieve_passage() {
-        let (horizontal, vertical) = retrieve_passage("000110", "010110");
-        assert_eq!(horizontal, vec![Passages::UNDEFINED, Passages::OPEN, Passages::WALL]);
-        assert_eq!(vertical, vec![Passages::OPEN, Passages::OPEN, Passages::WALL]);
+        let (horizontal, vertical) =
+            retrieve_passage("000000001010000101100110", "000000000010011010011010");
+        assert_eq!(
+            horizontal,
+            vec![
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::WALL,
+                Passages::WALL,
+                Passages::UNDEFINED,
+                Passages::OPEN,
+                Passages::OPEN,
+                Passages::WALL,
+                Passages::OPEN,
+                Passages::WALL
+            ]
+        );
+        assert_eq!(
+            vertical,
+            vec![
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::WALL,
+                Passages::OPEN,
+                Passages::WALL,
+                Passages::WALL,
+                Passages::OPEN,
+                Passages::WALL,
+                Passages::WALL
+            ]
+        );
 
-        let (horizontal, vertical) = retrieve_passage("101010", "010101");
-        assert_eq!(horizontal, vec![Passages::WALL, Passages::WALL, Passages::WALL]);
-        assert_eq!(vertical, vec![Passages::OPEN, Passages::OPEN, Passages::OPEN]);
-
-        let (horizontal, vertical) = retrieve_passage("11", "11");
-        assert_eq!(horizontal.len(), 0);
-        assert_eq!(vertical.len(), 0);
+        let (horizontal, vertical) =
+            retrieve_passage("000000101000010100011000", "000000001001100001101000");
+        assert_eq!(
+            horizontal,
+            vec![
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::WALL,
+                Passages::WALL,
+                Passages::UNDEFINED,
+                Passages::OPEN,
+                Passages::OPEN,
+                Passages::UNDEFINED,
+                Passages::OPEN,
+                Passages::WALL,
+                Passages::UNDEFINED
+            ]
+        );
+        assert_eq!(
+            vertical,
+            vec![
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::UNDEFINED,
+                Passages::WALL,
+                Passages::OPEN,
+                Passages::WALL,
+                Passages::UNDEFINED,
+                Passages::OPEN,
+                Passages::WALL,
+                Passages::WALL,
+                Passages::UNDEFINED
+            ]
+        );
     }
 
     #[test]

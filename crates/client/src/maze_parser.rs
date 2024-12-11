@@ -5,12 +5,8 @@ pub fn maze_parser(input: &str) -> Maze {
         return Maze::new(Vec::new(), Cell { row: 0, column: 0 }, Cell { row: 0, column: 0 });
     }
 
-    let mut untrimmed_lines: Vec<&str> = input.lines().collect();
-    untrimmed_lines =
-        untrimmed_lines.into_iter().skip_while(|line| line.trim().is_empty()).collect();
-    untrimmed_lines = untrimmed_lines.into_iter().map(|line| line.trim_start()).collect();
-
-    let lines: Vec<&str> = untrimmed_lines;
+    let lines: Vec<&str> =
+        input.lines().skip_while(|line| line.chars().all(char::is_whitespace)).collect();
     let (height, width) = (lines.len(), lines[0].len());
 
     let map = vec![vec![0u16; width]; height];
