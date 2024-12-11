@@ -36,6 +36,15 @@ impl ToBinary for &str {
     }
 }
 
+impl ToBinary for &String {
+    fn to_binary(&self) -> String {
+        self.chars().fold(String::with_capacity(self.len() * 8), |mut acc, c| {
+            write!(acc, "{:08b}", c as u8).unwrap();
+            acc
+        })
+    }
+}
+
 impl ToBinary for &[i32] {
     fn to_binary(&self) -> String {
         self.iter().fold(String::with_capacity(self.len() * 8), |mut acc, &d| {
@@ -129,16 +138,23 @@ pub fn decode_base64(input: &str) -> String {
     let mut buffer: u32 = 0;
     let mut bits: u32 = 0;
 
-    for char in input.chars() {
-        if let Some(value) = BASE64_CHARS.find(char) {
-            buffer = (buffer << 6) | (value as u32); // Shift buffer 6 bits to the left and add the value
-            bits += 6;
+    for &byte in input.as_bytes() {
+        let value = match byte {
+            b'a'..=b'z' => byte - b'a',      // 0-25
+            b'A'..=b'Z' => byte - b'A' + 26, // 26-51
+            b'0'..=b'9' => byte - b'0' + 52, // 52-61
+            b'+' => 62,
+            b'/' => 63,
+            _ => continue,
+        };
 
-            while bits >= 8 {
-                bits -= 8;
-                let byte = ((buffer >> bits) & 0xFF) as u8; // Shift buffer to the right by bits and pad with 0s
-                decoded.push(byte as char);
-            }
+        buffer = (buffer << 6) | (value as u32); // Shift buffer 6 bits to the left and add the value
+        bits += 6;
+
+        while bits >= 8 {
+            bits -= 8;
+            let byte = ((buffer >> bits) & 0xFF) as u8; // Shift buffer to the right by bits and pad with 0s
+            decoded.push(byte as char);
         }
     }
 
@@ -215,11 +231,8 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec
     (horizontal_data, vertical_data)
 }
 
-pub fn extract_data(input: &str) -> (Vec<Passages>, Vec<Passages>, Vec<Cells>) {
-    let binary = input.chars().fold(String::with_capacity(input.len() * 8), |mut acc, c| {
-        write!(acc, "{:08b}", c as u8).unwrap();
-        acc
-    });
+pub fn extract_data<T: ToBinary>(input: T) -> (Vec<Passages>, Vec<Passages>, Vec<Cells>) {
+    let binary = input.to_binary();
 
     if binary.len() < 88 {
         return (Vec::new(), Vec::new(), Vec::new());

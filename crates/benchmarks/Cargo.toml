@@ -23,3 +23,7 @@ harness = false
 [[bench]]
 name = "sw_generator"
 harness = false
+
+[[bench]]
+name = "base64"
+harness = false
