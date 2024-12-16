@@ -1,4 +1,9 @@
-use shared::maze::{Cell, Maze, PositionType};
+use shared::{
+    maze::{Cell, Maze, PositionType},
+    radar::{CellType, Passages},
+};
+
+use crate::data_structures::maze_graph::{MazeCell, MazeGraph};
 
 pub fn maze_parser(input: &str) -> Maze {
     if input.is_empty() {
@@ -38,6 +43,56 @@ pub fn maze_parser(input: &str) -> Maze {
     }
 
     maze
+}
+
+pub fn maze_to_graph((horizontal, vertical, cells): (Vec<Passages>, Vec<Passages>, Vec<CellType>)) {
+    let mut maze_graph = MazeGraph::new();
+    let player_pos = Cell { row: 0, column: 0 };
+
+    let cell_mask = vec![
+        Cell { row: -1, column: -1 },
+        Cell { row: 0, column: -1 },
+        Cell { row: 1, column: -1 },
+        Cell { row: -1, column: 0 },
+        Cell { row: 0, column: 0 },
+        Cell { row: 1, column: 0 },
+        Cell { row: -1, column: 1 },
+        Cell { row: 0, column: 1 },
+        Cell { row: 1, column: 1 },
+    ];
+
+    for cell_id in 0..cells.len() {
+        if cells[cell_id] == CellType::INVALID {
+            continue;
+        }
+
+        if !maze_graph.contains(&player_pos) {
+            maze_graph.add(player_pos, cells[cell_id]);
+        }
+
+        if cell_id > 2 && horizontal[cell_id] == Passages::OPEN {
+            let top_cell = player_pos + cell_mask[cell_id];
+
+            if !maze_graph.contains(&top_cell) {
+                maze_graph.add(top_cell, cells[cell_id].clone());
+            }
+
+            maze_graph.add_neighbor(&top_cell, &player_pos);
+            maze_graph.add_neighbor(&player_pos, &top_cell);
+        }
+
+        if cell_id < 6 && horizontal[cell_id + 3] == Passages::OPEN {
+            // create bottom cell (y+1)
+        }
+
+        if cell_id % 3 != 0 && vertical[cell_id] == Passages::OPEN {
+            // create left cell (x-1)
+        }
+
+        if cell_id % 3 != 2 && vertical[cell_id] == Passages::OPEN {
+            // create right cell (x+1)
+        }
+    }
 }
 
 #[cfg(test)]

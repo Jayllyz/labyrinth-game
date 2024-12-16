@@ -12,7 +12,7 @@ pub enum Passages {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Cells {
+pub enum CellType {
     NOTHING = 0,
     ALLY = 1,
     ENEMY = 2,
@@ -161,7 +161,7 @@ pub fn decode_base64(input: &str) -> String {
     decoded
 }
 
-pub fn retrieve_cell(octet: &str) -> Vec<Cells> {
+pub fn retrieve_cell(octet: &str) -> Vec<CellType> {
     const NUM_CELLS: usize = 9; // 4 bits per cell, remove the last 4 bits (padding)
     let mut data = Vec::with_capacity(NUM_CELLS);
 
@@ -173,14 +173,14 @@ pub fn retrieve_cell(octet: &str) -> Vec<Cells> {
         };
 
         let cell = match value {
-            0 => Cells::NOTHING,
-            1 => Cells::ALLY,
-            2 => Cells::ENEMY,
-            3 => Cells::MONSTER,
-            4 => Cells::HELP,
-            8 => Cells::OBJECTIVE,
-            11 => Cells::ObjectiveMonster,
-            15 => Cells::INVALID,
+            0 => CellType::NOTHING,
+            1 => CellType::ALLY,
+            2 => CellType::ENEMY,
+            3 => CellType::MONSTER,
+            4 => CellType::HELP,
+            8 => CellType::OBJECTIVE,
+            11 => CellType::ObjectiveMonster,
+            15 => CellType::INVALID,
             _ => continue,
         };
         data.push(cell);
@@ -231,7 +231,7 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec
     (horizontal_data, vertical_data)
 }
 
-pub fn extract_data<T: ToBinary>(input: T) -> (Vec<Passages>, Vec<Passages>, Vec<Cells>) {
+pub fn extract_data<T: ToBinary>(input: T) -> (Vec<Passages>, Vec<Passages>, Vec<CellType>) {
     let binary = input.to_binary();
 
     if binary.len() < 88 {
@@ -342,45 +342,45 @@ mod tests {
         assert_eq!(
             retrieve_cell("1111111111111111000011111111000000000000"),
             vec![
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::NOTHING
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::NOTHING
             ]
         );
 
         assert_eq!(
             retrieve_cell("1111111111110000000011110000000011110000"),
             vec![
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::NOTHING,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::NOTHING,
-                Cells::INVALID
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::NOTHING,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::NOTHING,
+                CellType::INVALID
             ]
         );
 
         assert_eq!(
             retrieve_cell("1111111111110000000011110000000011110000"),
             vec![
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::NOTHING,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::NOTHING,
-                Cells::INVALID
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::NOTHING,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::NOTHING,
+                CellType::INVALID
             ]
         );
     }
@@ -508,15 +508,15 @@ mod tests {
 
         assert_eq!(
             vec![
-                Cells::NOTHING,
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::NOTHING,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::NOTHING,
-                Cells::INVALID
+                CellType::NOTHING,
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::NOTHING,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::NOTHING,
+                CellType::INVALID
             ],
             cells
         );
