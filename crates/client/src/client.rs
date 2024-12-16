@@ -2,8 +2,8 @@ use crate::instructions;
 use shared::{
     logger::Logger,
     messages::{
-        receive_message, send_message, Action, Hint, Message, RegisterTeam, RegisterTeamResult,
-        SubscribePlayer, SubscribePlayerResult,
+        self, receive_message, send_message, Action, Hint, Message, RegisterTeam,
+        RegisterTeamResult, SubscribePlayer, SubscribePlayerResult,
     },
     radar::{decode_base64, extract_data},
     utils::print_error,
@@ -23,70 +23,25 @@ pub struct ClientConfig {
     pub token: Option<String>,
 }
 
+struct SecretSumModulo {
+    sum: Arc<Mutex<u128>>,
+    secrets: Arc<Mutex<HashMap<ThreadId, u128>>>,
+}
+
 pub struct GameClient {
     config: ClientConfig,
-    secrets: Arc<Mutex<HashMap<ThreadId, u128>>>,
+    challenge_secret_sum: SecretSumModulo,
 }
 
 impl GameClient {
     pub fn new(config: ClientConfig) -> Self {
-        Self { config, secrets: Arc::new(Mutex::new(HashMap::new())) }
-    }
-
-    pub fn run(&self, max_retries: u8, num_agents: u8) -> Result<(), Box<dyn Error>> {
-        let logger = Logger::get_instance();
-
-        let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries);
-        let register_msg =
-            Message::RegisterTeam(RegisterTeam { name: self.config.team_name.clone() });
-
-        send_message(&mut stream, &register_msg)?;
-
-        let token = match receive_message(&mut stream)? {
-            Message::RegisterTeamResult(RegisterTeamResult::Ok { registration_token, .. }) => {
-                registration_token
-            }
-            _ => return Err("Failed to register team".into()),
-        };
-
-        let mut handles = vec![];
-        let secrets = Arc::clone(&self.secrets);
-
-        for i in 0..num_agents {
-            let config = self.config.clone();
-            let agent_token = token.clone();
-            let agent_name = format!("Player{}", i + 1);
-            let secrets = Arc::clone(&secrets);
-
-            let handle = thread::Builder::new()
-                .name(agent_name.clone())
-                .spawn(move || {
-                    let mut stream = Self::connect_to_server(&config.server_addr, max_retries);
-                    let subscribe_msg = Message::SubscribePlayer(SubscribePlayer {
-                        name: agent_name,
-                        registration_token: agent_token,
-                    });
-
-                    match send_message(&mut stream, &subscribe_msg) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            logger.error(&format!("Failed to send message: {}", e));
-                        }
-                    }
-
-                    while let Ok(msg) = receive_message(&mut stream) {
-                        Self::handle_server_message(&mut stream, msg, &secrets);
-                    }
-                })
-                .map_err(|e| format!("Failed to spawn thread: {}", e))?;
-
-            handles.push(handle);
+        Self {
+            config,
+            challenge_secret_sum: SecretSumModulo {
+                sum: Arc::new(Mutex::new(0)),
+                secrets: Arc::new(Mutex::new(HashMap::new())),
+            },
         }
-
-        for handle in handles {
-            handle.join().map_err(|e| format!("Thread panicked: {:?}", e))?;
-        }
-        Ok(())
     }
 
     fn connect_to_server(address: &str, mut max_retries: u8) -> TcpStream {
@@ -106,18 +61,74 @@ impl GameClient {
         }
     }
 
+    pub fn run(&self, max_retries: u8, num_agents: u8) -> Result<(), Box<dyn Error>> {
+        let logger = Logger::get_instance();
+
+        let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries);
+        let register_msg =
+            Message::RegisterTeam(RegisterTeam { name: self.config.team_name.clone() });
+
+        send_message(&mut stream, &register_msg)?;
+
+        let token = match receive_message(&mut stream)? {
+            Message::RegisterTeamResult(RegisterTeamResult::Ok { registration_token, .. }) => {
+                registration_token
+            }
+            _ => return Err("Failed to register team".into()),
+        };
+
+        let mut handles = vec![];
+
+        for i in 0..num_agents {
+            let config = self.config.clone();
+            let agent_token = token.clone();
+            let agent_name = format!("Player{}", i + 1);
+            let secrets_sum = SecretSumModulo {
+                sum: Arc::clone(&self.challenge_secret_sum.sum),
+                secrets: Arc::clone(&self.challenge_secret_sum.secrets),
+            };
+
+            let handle = thread::Builder::new()
+                .name(agent_name.clone())
+                .spawn(move || {
+                    let mut stream = Self::connect_to_server(&config.server_addr, max_retries);
+                    let subscribe_msg = Message::SubscribePlayer(SubscribePlayer {
+                        name: agent_name,
+                        registration_token: agent_token,
+                    });
+
+                    match send_message(&mut stream, &subscribe_msg) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            logger.error(&format!("Failed to send message: {}", e));
+                        }
+                    }
+
+                    while let Ok(msg) = receive_message(&mut stream) {
+                        Self::handle_server_message(&mut stream, msg, &secrets_sum);
+                    }
+                })
+                .map_err(|e| format!("Failed to spawn thread: {}", e))?;
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().map_err(|e| format!("Thread panicked: {:?}", e))?;
+        }
+        Ok(())
+    }
+
     fn handle_server_message(
         stream: &mut TcpStream,
         message: Message,
-        secrets: &Arc<Mutex<HashMap<ThreadId, u128>>>,
+        secrets_sum: &SecretSumModulo,
     ) {
         let logger = Logger::get_instance();
         let thread = std::thread::current();
         let name = thread.name().unwrap_or("Unknown");
 
-        if logger.is_debug_enabled() {
-            logger.debug(&format!("{} received message: {:?}", name, message));
-        }
+        logger.debug(&format!("{} received message: {:?}", name, message));
 
         match message {
             Message::SubscribePlayerResult(result) => match result {
@@ -126,7 +137,6 @@ impl GameClient {
                 }
                 SubscribePlayerResult::Err(err) => {
                     logger.error(&format!("{} failed to subscribe: {:?}", name, err));
-                    thread::park();
                 }
             },
             Message::RadarView(view) => {
@@ -142,12 +152,11 @@ impl GameClient {
 
                 if is_win {
                     logger.info(&format!("{} has found the exit!", name));
-                    thread.unpark();
                 }
             }
             Message::Hint(hint) => match hint {
                 Hint::Secret(secret) => {
-                    if let Ok(mut secrets) = secrets.lock() {
+                    if let Ok(mut secrets) = secrets_sum.secrets.lock() {
                         secrets.insert(thread.id(), secret);
                     }
                 }
@@ -160,31 +169,55 @@ impl GameClient {
 
                 match value {
                     shared::messages::Challenge::SecretSumModulo(challenge) => {
-                        if let Ok(secrets) = secrets.lock() {
-                            let result = instructions::solve_sum_modulo(challenge, &secrets);
-                            match send_message(
-                                stream,
-                                &Message::Action(Action::SolveChallenge { answer: result }),
-                            ) {
-                                Ok(_) => {
-                                    logger.info(&format!("{} resolved the challenge", name));
-                                }
-                                Err(e) => {
-                                    logger
-                                        .error(&format!("Failed to send challenge result: {}", e));
-                                }
-                            }
-                        }
+                        Self::handle_secret_sum_modulo(
+                            stream,
+                            &secrets_sum.secrets,
+                            &secrets_sum.sum,
+                            Some(challenge),
+                        );
                     }
                 }
             }
+            Message::ActionError(err) => match err {
+                messages::ActionError::InvalidChallengeSolution => {
+                    logger.info(&format!("{} failed to solve challenge, retrying...", name));
+                    Self::handle_secret_sum_modulo(
+                        stream,
+                        &secrets_sum.secrets,
+                        &secrets_sum.sum,
+                        None,
+                    );
+                }
+                messages::ActionError::InvalidMove => todo!(),
+                messages::ActionError::OutOfMap => todo!(),
+                messages::ActionError::Blocked => todo!(),
+                messages::ActionError::SolveChallengeFirst => todo!(),
+            },
             Message::MessageError(err) => {
                 logger.error(&format!("Server error: {}", err.message));
-                thread::park();
             }
             _ => {
                 logger.warn(&format!("Unhandled message: {:?}", message));
-                thread::park();
+            }
+        }
+    }
+
+    fn handle_secret_sum_modulo(
+        stream: &mut TcpStream,
+        secrets: &Arc<Mutex<HashMap<ThreadId, u128>>>,
+        secret_sum: &Arc<Mutex<u128>>,
+        new_sum: Option<u128>,
+    ) {
+        if let Ok(mut sum) = secret_sum.lock() {
+            if let Some(new_sum) = new_sum {
+                *sum = new_sum;
+            }
+            if let Ok(secrets) = secrets.lock() {
+                let result = instructions::solve_sum_modulo(*sum, &secrets);
+                let _ = send_message(
+                    stream,
+                    &Message::Action(Action::SolveChallenge { answer: result }),
+                );
             }
         }
     }
@@ -231,7 +264,10 @@ mod tests {
         GameClient::handle_server_message(
             &mut stream,
             message,
-            &Arc::new(Mutex::new(HashMap::new())),
+            &SecretSumModulo {
+                sum: Arc::new(Mutex::new(0)),
+                secrets: Arc::new(Mutex::new(HashMap::new())),
+            },
         );
     }
 
