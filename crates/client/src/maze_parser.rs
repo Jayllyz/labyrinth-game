@@ -63,13 +63,17 @@ fn rotate_right_90(cells: &mut Vec<Cell>) {
     }
 }
 
+pub struct Player {
+    pub direction: String,
+    pub position: Cell,
+}
+
 pub fn maze_to_graph(
     (horizontal, vertical, cells): (Vec<Passages>, Vec<Passages>, Vec<CellType>),
-) -> MazeGraph {
-    let mut maze_graph = MazeGraph::new();
-    let player_pos = Cell { row: 0, column: 0 };
-
-    let cell_mask = vec![
+    player: &Player,
+    maze_graph: &mut MazeGraph,
+) {
+    let mut cell_mask = vec![
         Cell { row: -1, column: -1 },
         Cell { row: 0, column: -1 },
         Cell { row: 1, column: -1 },
@@ -81,12 +85,23 @@ pub fn maze_to_graph(
         Cell { row: 1, column: 1 },
     ];
 
+    if player.direction == "right" {
+        rotate_left_90(&mut cell_mask);
+    }
+    if player.direction == "left" {
+        rotate_right_90(&mut cell_mask);
+    }
+    if player.direction == "back" {
+        rotate_right_90(&mut cell_mask);
+        rotate_right_90(&mut cell_mask);
+    }
+
     for cell_id in 0..cells.len() {
         if cells[cell_id] == CellType::INVALID {
             continue;
         }
 
-        let cell_pos = player_pos + cell_mask[cell_id];
+        let cell_pos = player.position + cell_mask[cell_id];
 
         if !maze_graph.contains(&cell_pos) {
             maze_graph.add(cell_pos, cells[cell_id].clone());
@@ -94,7 +109,7 @@ pub fn maze_to_graph(
 
         // top cell
         if cell_id > 2 && horizontal[cell_id] == Passages::OPEN {
-            let top_cell = Cell { row: cell_pos.row, column: cell_pos.column - 1 };
+            let top_cell = player.position + cell_mask[cell_id - 3];
 
             if !maze_graph.contains(&top_cell) {
                 maze_graph.add(top_cell, cells[cell_id - 3].clone());
@@ -106,7 +121,7 @@ pub fn maze_to_graph(
 
         // bottom cell
         if cell_id < 6 && horizontal[cell_id + 3] == Passages::OPEN {
-            let bottom_cell = Cell { row: cell_pos.row, column: cell_pos.column + 1 };
+            let bottom_cell = player.position + cell_mask[cell_id + 3];
 
             if !maze_graph.contains(&bottom_cell) {
                 maze_graph.add(bottom_cell, cells[cell_id + 3].clone());
@@ -118,7 +133,7 @@ pub fn maze_to_graph(
 
         // left cell
         if cell_id % 3 != 0 && vertical[cell_id + cell_id / 3] == Passages::OPEN {
-            let left_cell = Cell { row: cell_pos.row - 1, column: cell_pos.column };
+            let left_cell = player.position + cell_mask[cell_id - 1];
 
             if !maze_graph.contains(&left_cell) {
                 maze_graph.add(left_cell, cells[cell_id - 1].clone());
@@ -130,7 +145,7 @@ pub fn maze_to_graph(
 
         // right cell
         if cell_id % 3 != 2 && vertical[cell_id + cell_id / 3 + 1] == Passages::OPEN {
-            let right_cell = Cell { row: cell_pos.row + 1, column: cell_pos.column };
+            let right_cell = player.position + cell_mask[cell_id + 1];
 
             if !maze_graph.contains(&right_cell) {
                 maze_graph.add(right_cell, cells[cell_id + 1].clone());
@@ -140,7 +155,6 @@ pub fn maze_to_graph(
             maze_graph.add_neighbor(&cell_pos, &right_cell);
         }
     }
-    maze_graph
 }
 
 #[cfg(test)]
@@ -151,10 +165,22 @@ mod tests {
 
     #[test]
     fn testo() {
-        let decoded = radar::decode_base64("giLbMjIad/apapa");
+        let decoded = radar::decode_base64("Hjeikcyc/W8a8pa");
         let data = radar::extract_data(&decoded);
 
-        let m = maze_to_graph(data);
+        let mut p = Player { position: Cell { row: 0, column: 0 }, direction: "front".to_string() };
+        let mut m = MazeGraph::new();
+        maze_to_graph(data, &p, &mut m);
+
+        println!("{:?}", m);
+
+        p.direction = "right".to_string();
+        p.position = p.position + Cell { row: 1, column: 0 };
+
+        let decoded = radar::decode_base64("kOuczzGa//apaaa");
+        let data = radar::extract_data(&decoded);
+        maze_to_graph(data, &p, &mut m);
+
         println!("{:?}", m);
     }
 
