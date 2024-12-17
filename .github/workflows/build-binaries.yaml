@@ -38,7 +38,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - uses: taiki-e/upload-rust-binary-action@v1
+    - uses: taiki-e/upload-rust-binary-action@v1 # zizmor: ignore[ref-confusion]
       with:
         bin: client
         target: ${{ matrix.target }}
@@ -50,7 +50,7 @@ jobs:
         CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1
         CARGO_PROFILE_RELEASE_LTO: true
 
-    - uses: taiki-e/upload-rust-binary-action@v1
+    - uses: taiki-e/upload-rust-binary-action@v1 # zizmor: ignore[ref-confusion]
       with:
         bin: server
         target: ${{ matrix.target }}
