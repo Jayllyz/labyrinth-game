@@ -45,6 +45,24 @@ pub fn maze_parser(input: &str) -> Maze {
     maze
 }
 
+fn rotate_left_90(cells: &mut Vec<Cell>) {
+    for cell in cells.iter_mut() {
+        let new_row = -cell.column;
+        let new_column = cell.row;
+        cell.row = new_row;
+        cell.column = new_column;
+    }
+}
+
+fn rotate_right_90(cells: &mut Vec<Cell>) {
+    for cell in cells.iter_mut() {
+        let new_row = cell.column;
+        let new_column = -cell.row;
+        cell.row = new_row;
+        cell.column = new_column;
+    }
+}
+
 pub fn maze_to_graph(
     (horizontal, vertical, cells): (Vec<Passages>, Vec<Passages>, Vec<CellType>),
 ) -> MazeGraph {
@@ -138,6 +156,68 @@ mod tests {
 
         let m = maze_to_graph(data);
         println!("{:?}", m);
+    }
+
+    #[test]
+    fn test_rotate_left() {
+        let mut cell_mask = vec![
+            Cell { row: -1, column: -1 },
+            Cell { row: 0, column: -1 },
+            Cell { row: 1, column: -1 },
+            Cell { row: -1, column: 0 },
+            Cell { row: 0, column: 0 },
+            Cell { row: 1, column: 0 },
+            Cell { row: -1, column: 1 },
+            Cell { row: 0, column: 1 },
+            Cell { row: 1, column: 1 },
+        ];
+
+        let expected_rotation = vec![
+            Cell { row: 1, column: -1 },
+            Cell { row: 1, column: 0 },
+            Cell { row: 1, column: 1 },
+            Cell { row: 0, column: -1 },
+            Cell { row: 0, column: 0 },
+            Cell { row: 0, column: 1 },
+            Cell { row: -1, column: -1 },
+            Cell { row: -1, column: 0 },
+            Cell { row: -1, column: 1 },
+        ];
+
+        rotate_left_90(&mut cell_mask);
+
+        assert_eq!(cell_mask, expected_rotation)
+    }
+
+    #[test]
+    fn test_rotate_right() {
+        let mut cell_mask = vec![
+            Cell { row: -1, column: -1 },
+            Cell { row: 0, column: -1 },
+            Cell { row: 1, column: -1 },
+            Cell { row: -1, column: 0 },
+            Cell { row: 0, column: 0 },
+            Cell { row: 1, column: 0 },
+            Cell { row: -1, column: 1 },
+            Cell { row: 0, column: 1 },
+            Cell { row: 1, column: 1 },
+        ];
+
+        let expected_rotation = vec![
+            Cell { row: -1, column: 1 },
+            Cell { row: -1, column: 0 },
+            Cell { row: -1, column: -1 },
+            Cell { row: 0, column: 1 },
+            Cell { row: 0, column: 0 },
+            Cell { row: 0, column: -1 },
+            Cell { row: 1, column: 1 },
+            Cell { row: 1, column: 0 },
+            Cell { row: 1, column: -1 },
+        ];
+
+        rotate_right_90(&mut cell_mask);
+
+        assert_eq!(cell_mask, expected_rotation)
     }
 
     #[test]
