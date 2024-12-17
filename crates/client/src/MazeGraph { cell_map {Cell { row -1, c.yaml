@@ -1,0 +1,2 @@
+MazeGraph { 
+cell_map: {Cell { row: -1, column: 1 }: MazeCell { cell_type: NOTHING, neighbors: {} }, Cell { row: 0, column: 1 }: MazeCell { cell_type: NOTHING, neighbors: {Cell { row: 0, column: 0 }} }, Cell { row: -1, column: -1 }: MazeCell { cell_type: NOTHING, neighbors: {Cell { row: -1, column: 0 }} }, Cell { row: -1, column: 0 }: MazeCell { cell_type: NOTHING, neighbors: {Cell { row: -1, column: -1 }} }, Cell { row: 0, column: 0 }: MazeCell { cell_type: NOTHING, neighbors: {Cell { row: 0, column: 1 }} }} }

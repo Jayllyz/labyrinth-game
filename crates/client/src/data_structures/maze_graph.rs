@@ -1,16 +1,16 @@
 use std::{
     collections::{HashMap, HashSet},
     hash::{Hash, Hasher},
-    simd::MaskElement,
 };
 
 use shared::{maze::Cell, radar::CellType};
 
+#[derive(Debug)]
 pub struct MazeCell {
     pub cell_type: CellType,
     pub neighbors: HashSet<Cell>,
 }
-
+#[derive(Debug)]
 pub struct MazeGraph {
     cell_map: HashMap<Cell, MazeCell>,
 }
@@ -35,7 +35,6 @@ impl MazeGraph {
 
 #[cfg(test)]
 mod test {
-    use std::collections::hash_map;
 
     use super::*;
 

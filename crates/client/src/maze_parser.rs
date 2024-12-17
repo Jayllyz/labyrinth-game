@@ -45,7 +45,9 @@ pub fn maze_parser(input: &str) -> Maze {
     maze
 }
 
-pub fn maze_to_graph((horizontal, vertical, cells): (Vec<Passages>, Vec<Passages>, Vec<CellType>)) {
+pub fn maze_to_graph(
+    (horizontal, vertical, cells): (Vec<Passages>, Vec<Passages>, Vec<CellType>),
+) -> MazeGraph {
     let mut maze_graph = MazeGraph::new();
     let player_pos = Cell { row: 0, column: 0 };
 
@@ -66,38 +68,77 @@ pub fn maze_to_graph((horizontal, vertical, cells): (Vec<Passages>, Vec<Passages
             continue;
         }
 
-        if !maze_graph.contains(&player_pos) {
-            maze_graph.add(player_pos, cells[cell_id]);
+        let cell_pos = player_pos + cell_mask[cell_id];
+
+        if !maze_graph.contains(&cell_pos) {
+            maze_graph.add(cell_pos, cells[cell_id].clone());
         }
 
+        // top cell
         if cell_id > 2 && horizontal[cell_id] == Passages::OPEN {
-            let top_cell = player_pos + cell_mask[cell_id];
+            let top_cell = Cell { row: cell_pos.row, column: cell_pos.column - 1 };
 
             if !maze_graph.contains(&top_cell) {
-                maze_graph.add(top_cell, cells[cell_id].clone());
+                maze_graph.add(top_cell, cells[cell_id - 3].clone());
             }
 
-            maze_graph.add_neighbor(&top_cell, &player_pos);
-            maze_graph.add_neighbor(&player_pos, &top_cell);
+            maze_graph.add_neighbor(&top_cell, &cell_pos);
+            maze_graph.add_neighbor(&cell_pos, &top_cell);
         }
 
+        // bottom cell
         if cell_id < 6 && horizontal[cell_id + 3] == Passages::OPEN {
-            // create bottom cell (y+1)
+            let bottom_cell = Cell { row: cell_pos.row, column: cell_pos.column + 1 };
+
+            if !maze_graph.contains(&bottom_cell) {
+                maze_graph.add(bottom_cell, cells[cell_id + 3].clone());
+            }
+
+            maze_graph.add_neighbor(&bottom_cell, &cell_pos);
+            maze_graph.add_neighbor(&cell_pos, &bottom_cell);
         }
 
-        if cell_id % 3 != 0 && vertical[cell_id] == Passages::OPEN {
-            // create left cell (x-1)
+        // left cell
+        if cell_id % 3 != 0 && vertical[cell_id + cell_id / 3] == Passages::OPEN {
+            let left_cell = Cell { row: cell_pos.row - 1, column: cell_pos.column };
+
+            if !maze_graph.contains(&left_cell) {
+                maze_graph.add(left_cell, cells[cell_id - 1].clone());
+            }
+
+            maze_graph.add_neighbor(&left_cell, &cell_pos);
+            maze_graph.add_neighbor(&cell_pos, &left_cell);
         }
 
-        if cell_id % 3 != 2 && vertical[cell_id] == Passages::OPEN {
-            // create right cell (x+1)
+        // right cell
+        if cell_id % 3 != 2 && vertical[cell_id + cell_id / 3 + 1] == Passages::OPEN {
+            let right_cell = Cell { row: cell_pos.row + 1, column: cell_pos.column };
+
+            if !maze_graph.contains(&right_cell) {
+                maze_graph.add(right_cell, cells[cell_id + 1].clone());
+            }
+
+            maze_graph.add_neighbor(&right_cell, &cell_pos);
+            maze_graph.add_neighbor(&cell_pos, &right_cell);
         }
     }
+    maze_graph
 }
 
 #[cfg(test)]
 mod tests {
+    use shared::radar;
+
     use super::*;
+
+    #[test]
+    fn testo() {
+        let decoded = radar::decode_base64("giLbMjIad/apapa");
+        let data = radar::extract_data(&decoded);
+
+        let m = maze_to_graph(data);
+        println!("{:?}", m);
+    }
 
     #[test]
     fn test_maze_parser() {
