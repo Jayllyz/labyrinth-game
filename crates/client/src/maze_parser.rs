@@ -1,49 +1,9 @@
 use shared::{
-    maze::{Cell, Maze, PositionType},
+    maze::Cell,
     radar::{CellType, Passages},
 };
 
-use crate::data_structures::maze_graph::{MazeCell, MazeGraph};
-
-pub fn maze_parser(input: &str) -> Maze {
-    if input.is_empty() {
-        return Maze::new(Vec::new(), Cell { row: 0, column: 0 }, Cell { row: 0, column: 0 });
-    }
-
-    let lines: Vec<&str> =
-        input.lines().skip_while(|line| line.chars().all(char::is_whitespace)).collect();
-    let (height, width) = (lines.len(), lines[0].len());
-
-    let map = vec![vec![0u16; width]; height];
-    let entry = Cell { row: 0, column: 0 };
-    let exit = Cell { row: 0, column: 0 };
-    let mut maze = Maze::new(map, entry, exit);
-
-    for (row, line) in lines.iter().enumerate() {
-        for (col, char) in line.chars().enumerate() {
-            match char {
-                ' ' => {
-                    maze.map[row][col] = PositionType::SPACE;
-                }
-                '2' => {
-                    maze.map[row][col] = PositionType::ENTRY;
-                    maze.entry.row = row as i16;
-                    maze.entry.column = col as i16;
-                }
-                '3' => {
-                    maze.map[row][col] = PositionType::EXIT;
-                    maze.exit.row = row as i16;
-                    maze.exit.column = col as i16;
-                }
-                _ => {
-                    maze.map[row][col] = PositionType::WALL;
-                }
-            }
-        }
-    }
-
-    maze
-}
+use crate::data_structures::maze_graph::MazeGraph;
 
 fn rotate_left_90(cells: &mut Vec<Cell>) {
     for cell in cells.iter_mut() {
@@ -73,6 +33,89 @@ pub fn maze_to_graph(
     player: &Player,
     maze_graph: &mut MazeGraph,
 ) {
+    let directions_mask = get_direction_mask(player);
+
+    for cell_id in 0..cells.len() {
+        if cells[cell_id] == CellType::INVALID {
+            continue;
+        }
+
+        let cell_pos = player.position + directions_mask[cell_id];
+
+        if !maze_graph.contains(&cell_pos) {
+            maze_graph.add(cell_pos, cells[cell_id].clone());
+        }
+
+        let mut neigbors_to_add: Vec<Cell> = Vec::new();
+
+        if is_top_cell_accessible(cell_id, &horizontal) {
+            let top_cell_id = cell_id - 3;
+            let top_cell = player.position + directions_mask[top_cell_id];
+
+            if !maze_graph.contains(&top_cell) {
+                maze_graph.add(top_cell, cells[top_cell_id].clone());
+            }
+
+            neigbors_to_add.push(top_cell);
+        }
+
+        if is_bottom_cell_accessible(cell_id, &horizontal) {
+            let bottom_cell_id = cell_id + 3;
+            let bottom_cell = player.position + directions_mask[bottom_cell_id];
+
+            if !maze_graph.contains(&bottom_cell) {
+                maze_graph.add(bottom_cell, cells[bottom_cell_id].clone());
+            }
+
+            neigbors_to_add.push(bottom_cell);
+        }
+
+        if is_left_cell_accessible(cell_id, &vertical) {
+            let left_cell_id = cell_id - 1;
+            let left_cell = player.position + directions_mask[left_cell_id];
+
+            if !maze_graph.contains(&left_cell) {
+                maze_graph.add(left_cell, cells[left_cell_id].clone());
+            }
+
+            neigbors_to_add.push(left_cell);
+        }
+
+        if is_right_cell_accessible(cell_id, &vertical) {
+            let right_cell_id = cell_id + 1;
+            let right_cell = player.position + directions_mask[right_cell_id];
+
+            if !maze_graph.contains(&right_cell) {
+                maze_graph.add(right_cell, cells[right_cell_id].clone());
+            }
+
+            neigbors_to_add.push(right_cell);
+        }
+
+        for neighbor in neigbors_to_add {
+            maze_graph.add_neighbor(&cell_pos, &neighbor);
+            maze_graph.add_neighbor(&neighbor, &cell_pos);
+        }
+    }
+}
+
+fn is_right_cell_accessible(cell_id: usize, vertical: &Vec<Passages>) -> bool {
+    cell_id % 3 != 2 && vertical[cell_id + cell_id / 3 + 1] == Passages::OPEN
+}
+
+fn is_left_cell_accessible(cell_id: usize, vertical: &Vec<Passages>) -> bool {
+    cell_id % 3 != 0 && vertical[cell_id + cell_id / 3] == Passages::OPEN
+}
+
+fn is_bottom_cell_accessible(cell_id: usize, horizontal: &Vec<Passages>) -> bool {
+    cell_id < 6 && horizontal[cell_id + 3] == Passages::OPEN
+}
+
+fn is_top_cell_accessible(cell_id: usize, horizontal: &Vec<Passages>) -> bool {
+    cell_id > 2 && horizontal[cell_id] == Passages::OPEN
+}
+
+fn get_direction_mask(player: &Player) -> Vec<Cell> {
     let mut cell_mask = vec![
         Cell { row: -1, column: -1 },
         Cell { row: 0, column: -1 },
@@ -95,66 +138,7 @@ pub fn maze_to_graph(
         rotate_right_90(&mut cell_mask);
         rotate_right_90(&mut cell_mask);
     }
-
-    for cell_id in 0..cells.len() {
-        if cells[cell_id] == CellType::INVALID {
-            continue;
-        }
-
-        let cell_pos = player.position + cell_mask[cell_id];
-
-        if !maze_graph.contains(&cell_pos) {
-            maze_graph.add(cell_pos, cells[cell_id].clone());
-        }
-
-        // top cell
-        if cell_id > 2 && horizontal[cell_id] == Passages::OPEN {
-            let top_cell = player.position + cell_mask[cell_id - 3];
-
-            if !maze_graph.contains(&top_cell) {
-                maze_graph.add(top_cell, cells[cell_id - 3].clone());
-            }
-
-            maze_graph.add_neighbor(&top_cell, &cell_pos);
-            maze_graph.add_neighbor(&cell_pos, &top_cell);
-        }
-
-        // bottom cell
-        if cell_id < 6 && horizontal[cell_id + 3] == Passages::OPEN {
-            let bottom_cell = player.position + cell_mask[cell_id + 3];
-
-            if !maze_graph.contains(&bottom_cell) {
-                maze_graph.add(bottom_cell, cells[cell_id + 3].clone());
-            }
-
-            maze_graph.add_neighbor(&bottom_cell, &cell_pos);
-            maze_graph.add_neighbor(&cell_pos, &bottom_cell);
-        }
-
-        // left cell
-        if cell_id % 3 != 0 && vertical[cell_id + cell_id / 3] == Passages::OPEN {
-            let left_cell = player.position + cell_mask[cell_id - 1];
-
-            if !maze_graph.contains(&left_cell) {
-                maze_graph.add(left_cell, cells[cell_id - 1].clone());
-            }
-
-            maze_graph.add_neighbor(&left_cell, &cell_pos);
-            maze_graph.add_neighbor(&cell_pos, &left_cell);
-        }
-
-        // right cell
-        if cell_id % 3 != 2 && vertical[cell_id + cell_id / 3 + 1] == Passages::OPEN {
-            let right_cell = player.position + cell_mask[cell_id + 1];
-
-            if !maze_graph.contains(&right_cell) {
-                maze_graph.add(right_cell, cells[cell_id + 1].clone());
-            }
-
-            maze_graph.add_neighbor(&right_cell, &cell_pos);
-            maze_graph.add_neighbor(&cell_pos, &right_cell);
-        }
-    }
+    cell_mask
 }
 
 #[cfg(test)]
@@ -244,52 +228,5 @@ mod tests {
         rotate_right_90(&mut cell_mask);
 
         assert_eq!(cell_mask, expected_rotation)
-    }
-
-    #[test]
-    fn test_maze_parser() {
-        let input = "###\n# #\n###";
-        let expected = vec![vec![1, 1, 1], vec![1, 0, 1], vec![1, 1, 1]];
-        assert_eq!(maze_parser(input).map, expected);
-
-        let input = "#### \n#  ##\n#### ";
-        let expected = vec![vec![1, 1, 1, 1, 0], vec![1, 0, 0, 1, 1], vec![1, 1, 1, 1, 0]];
-        assert_eq!(maze_parser(input).map, expected);
-
-        let input = "#  # \n#  # \n#  # ";
-        let expected = vec![vec![1, 0, 0, 1, 0], vec![1, 0, 0, 1, 0], vec![1, 0, 0, 1, 0]];
-        assert_eq!(maze_parser(input).map, expected);
-
-        /*
-            # # # # # # # # # # #
-            #   #   2   #       #
-            # 3 # # #   #   # # #
-            #   #       #       #
-            #   # # #   #   # # #
-            #   #               #
-            #   #   # # #   # # #
-            #           #       #
-            # # #   #   #   #   #
-            #       #       #   #
-            # # # # # # # # # # #
-        */
-        let input = "###########\n# # 2 #   #\n#3### # ###\n# #   #   #\n# ### # ###\n# #       #\n# # ### ###\n#     #   #\n### # # # #\n#   #   # #\n###########";
-        let expected = vec![
-            vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            vec![1, 0, 1, 0, 2, 0, 1, 0, 0, 0, 1],
-            vec![1, 3, 1, 1, 1, 0, 1, 0, 1, 1, 1],
-            vec![1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
-            vec![1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1],
-            vec![1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1],
-            vec![1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1],
-            vec![1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
-            vec![1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1],
-            vec![1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1],
-            vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        ];
-        assert_eq!(maze_parser(input).map, expected);
-
-        // Test with empty input
-        assert_eq!(maze_parser("").map, Vec::<Vec<u16>>::new());
     }
 }
