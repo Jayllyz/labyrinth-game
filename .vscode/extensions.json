@@ -1,6 +1,7 @@
 {
     "recommendations": [
       "rust-lang.rust-analyzer", // official rust extension
-      "tamasfe.even-better-toml" // toml syntax
+      "tamasfe.even-better-toml", // toml syntax
+      "vadimcn.vscode-lldb" // lldb debugger
     ]
   }
