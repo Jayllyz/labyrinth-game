@@ -2,7 +2,7 @@ use crate::instructions;
 use shared::{
     logger::Logger,
     messages::{
-        self, receive_message, send_message, Action, Hint, Message, RegisterTeam,
+        self, receive_message, send_message, Action, Challenge, Hint, Message, RegisterTeam,
         RegisterTeamResult, SubscribePlayer, SubscribePlayerResult,
     },
     radar::{decode_base64, extract_data},
@@ -93,7 +93,7 @@ impl GameClient {
                 .spawn(move || {
                     let mut stream = Self::connect_to_server(&config.server_addr, max_retries);
                     let subscribe_msg = Message::SubscribePlayer(SubscribePlayer {
-                        name: agent_name,
+                        name: agent_name.clone(),
                         registration_token: agent_token,
                     });
 
@@ -105,7 +105,7 @@ impl GameClient {
                     }
 
                     while let Ok(msg) = receive_message(&mut stream) {
-                        Self::handle_server_message(&mut stream, msg, &secrets_sum);
+                        Self::handle_server_message(&mut stream, &agent_name, msg, &secrets_sum);
                     }
                 })
                 .map_err(|e| format!("Failed to spawn thread: {}", e))?;
@@ -121,54 +121,39 @@ impl GameClient {
 
     fn handle_server_message(
         stream: &mut TcpStream,
+        thread_name: &str,
         message: Message,
         secrets_sum: &SecretSumModulo,
     ) {
         let logger = Logger::get_instance();
         let thread = std::thread::current();
-        let name = thread.name().unwrap_or("Unknown");
 
-        logger.debug(&format!("{} received message: {:?}", name, message));
+        logger.debug(&format!("{} received message: {:?}", thread_name, message));
 
         match message {
             Message::SubscribePlayerResult(result) => match result {
                 SubscribePlayerResult::Ok => {
-                    logger.info(&format!("{} has successfully subscribed to game", name));
+                    logger.info(&format!("{} has successfully subscribed to game", thread_name));
                 }
                 SubscribePlayerResult::Err(err) => {
-                    logger.error(&format!("{} failed to subscribe: {:?}", name, err));
+                    logger.error(&format!("{} failed to subscribe: {:?}", thread_name, err));
                 }
             },
             Message::RadarView(view) => {
-                let (horizontal, vertical, cells) = extract_data(&decode_base64(&view.0));
-                let action = instructions::right_hand_solver(horizontal, vertical);
-                let is_win = instructions::check_win_condition(cells, action.clone());
-                match send_message(stream, &Message::Action(action)) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        logger.error(&format!("Failed to send action: {}", e));
-                    }
-                }
-
-                if is_win {
-                    logger.info(&format!("{} has found the exit!", name));
-                }
+                Self::handle_radar_view(stream, logger, thread_name, view);
             }
-            Message::Hint(hint) => match hint {
-                Hint::Secret(secret) => {
+            Message::Hint(hint) => {
+                if let Hint::Secret(secret) = hint {
                     if let Ok(mut secrets) = secrets_sum.secrets.lock() {
                         secrets.insert(thread.id(), secret);
                     }
                 }
-                _ => {
-                    logger.warn(&format!("{} received unhandled hint: {:?}", name, hint));
-                }
-            },
+            }
             Message::Challenge(value) => {
-                logger.info(&format!("{} received challenge: {:?}", name, value));
+                logger.info(&format!("{} received challenge: {:?}", thread_name, value));
 
                 match value {
-                    shared::messages::Challenge::SecretSumModulo(challenge) => {
+                    Challenge::SecretSumModulo(challenge) => {
                         Self::handle_secret_sum_modulo(
                             stream,
                             &secrets_sum.secrets,
@@ -180,7 +165,7 @@ impl GameClient {
             }
             Message::ActionError(err) => match err {
                 messages::ActionError::InvalidChallengeSolution => {
-                    logger.info(&format!("{} failed to solve challenge, retrying...", name));
+                    logger.info(&format!("{} failed to solve challenge, retrying...", thread_name));
                     Self::handle_secret_sum_modulo(
                         stream,
                         &secrets_sum.secrets,
@@ -219,6 +204,24 @@ impl GameClient {
                     &Message::Action(Action::SolveChallenge { answer: result }),
                 );
             }
+        }
+    }
+
+    fn handle_radar_view(
+        stream: &mut TcpStream,
+        logger: &Logger,
+        thread_name: &str,
+        view: messages::RadarView,
+    ) {
+        let (horizontal, vertical, cells) = extract_data(&decode_base64(&view.0));
+        let action = instructions::right_hand_solver(horizontal, vertical);
+        let is_win = instructions::check_win_condition(cells, action.clone());
+        if let Err(e) = send_message(stream, &Message::Action(action)) {
+            logger.error(&format!("{} failed to send action: {}", thread_name, e));
+        }
+
+        if is_win {
+            logger.info(&format!("{} has found the exit!", thread_name));
         }
     }
 }
@@ -263,6 +266,7 @@ mod tests {
 
         GameClient::handle_server_message(
             &mut stream,
+            "Player1",
             message,
             &SecretSumModulo {
                 sum: Arc::new(Mutex::new(0)),
@@ -282,5 +286,52 @@ mod tests {
         let client = GameClient::new(config.clone());
         assert_eq!(client.config.server_addr, config.server_addr);
         assert_eq!(client.config.team_name, config.team_name);
+    }
+
+    #[test]
+    fn test_handle_secret_sum_modulo() {
+        let (listener, addr) = setup_mock_server();
+
+        thread::spawn(move || {
+            listener.accept().unwrap();
+        });
+
+        let mut stream = TcpStream::connect(addr).unwrap();
+
+        let secrets = Arc::new(Mutex::new(HashMap::new()));
+
+        let secret_sum = Arc::new(Mutex::new(0));
+
+        let message = Message::Challenge(messages::Challenge::SecretSumModulo(10));
+
+        GameClient::handle_server_message(
+            &mut stream,
+            "Player1",
+            message,
+            &SecretSumModulo { sum: secret_sum, secrets },
+        );
+    }
+
+    #[test]
+    fn test_handle_radar_view() {
+        let (listener, addr) = setup_mock_server();
+
+        thread::spawn(move || {
+            listener.accept().unwrap();
+        });
+
+        let mut stream = TcpStream::connect(addr).unwrap();
+
+        let message = Message::RadarView(messages::RadarView("bKgGjsIyap8p8aa".to_string()));
+
+        GameClient::handle_server_message(
+            &mut stream,
+            "Player1",
+            message,
+            &SecretSumModulo {
+                sum: Arc::new(Mutex::new(0)),
+                secrets: Arc::new(Mutex::new(HashMap::new())),
+            },
+        );
     }
 }
