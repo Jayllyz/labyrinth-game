@@ -1,0 +1,33 @@
+name: Gh Actions lint
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+    - '.github/workflows/**'
+  pull_request:
+    paths:
+    - '.github/workflows/**'
+
+jobs:
+  zizmor:
+    name: zizmor latest via PyPI
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      # required for workflows in private repositories
+      contents: read
+      actions: read
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+
+    - name: Install the latest version of uv
+      uses: astral-sh/setup-uv@v4
+
+    - name: Run zizmor
+      run: uvx zizmor .
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

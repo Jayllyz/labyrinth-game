@@ -3,8 +3,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
+
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
@@ -22,36 +23,40 @@ jobs:
     name: Code Quality
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
 
-      - name: Install Rust toolchain
-        uses: moonrepo/setup-rust@v1
-        with:
-          components: clippy,rustfmt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Install Rust toolchain
+      uses: moonrepo/setup-rust@v1
+      with:
+        components: clippy,rustfmt
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check formatting
-        run: cargo fmt --all --check
+    - name: Check formatting
+      run: cargo fmt --all --check
 
-      - name: Run Clippy
-        run: cargo clippy --all-targets --all-features
+    - name: Run Clippy
+      run: cargo clippy --all-targets --all-features
 
   test:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
 
-      - name: Install Rust toolchain
-        uses: moonrepo/setup-rust@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Install Rust toolchain
+      uses: moonrepo/setup-rust@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check
-        run: cargo check --all-targets --all-features
+    - name: Check
+      run: cargo check --all-targets --all-features
 
-      - name: Run tests
-        run: cargo test
+    - name: Run tests
+      run: cargo test

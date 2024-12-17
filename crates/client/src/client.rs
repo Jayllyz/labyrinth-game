@@ -215,11 +215,11 @@ impl GameClient {
     ) {
         let (horizontal, vertical, cells) = extract_data(&decode_base64(&view.0));
         let action = instructions::right_hand_solver(horizontal, vertical);
-        let is_win = instructions::check_win_condition(cells, action.clone());
-        if let Err(e) = send_message(stream, &Message::Action(action)) {
+        if let Err(e) = send_message(stream, &Message::Action(action.clone())) {
             logger.error(&format!("{} failed to send action: {}", thread_name, e));
         }
 
+        let is_win = instructions::check_win_condition(cells, action);
         if is_win {
             logger.info(&format!("{} has found the exit!", thread_name));
         }

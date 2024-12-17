@@ -3,6 +3,7 @@ name: E2E Tests
 on:
   workflow_dispatch:
 
+
 env:
   CI: true
   FORCE_COLOR: 1
@@ -11,22 +12,26 @@ jobs:
   e2e-tests:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
 
-      - name: Build and run E2E tests
-        run: |
-          docker build -t test-e2e . -f e2e/Dockerfile && docker run --rm test-e2e
+    - name: Build and run E2E tests
+      run: |
+        docker build -t test-e2e . -f e2e/Dockerfile && docker run --rm test-e2e
 
-      - name: Report status
-        if: always()
-        run: |
-          if [ ${{ job.status }} == 'success' ]; then
-            echo "E2E tests passed successfully!"
-          else
-            echo "E2E tests failed!"
-            exit 1
-          fi
+    - name: Report status
+      if: always()
+      env:
+        JOB_STATUS: ${{ job.status }}
+      run: |
+        if [ "${JOB_STATUS}" == "success" ]; then
+          echo "E2E tests passed successfully!"
+        else
+          echo "E2E tests failed!"
+          exit 1
+        fi

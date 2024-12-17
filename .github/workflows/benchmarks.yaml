@@ -3,8 +3,9 @@ name: Benchmarks
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
+
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
@@ -17,18 +18,20 @@ env:
   RUST_BACKTRACE: 1
   RUSTFLAGS: "-Dwarnings -C debuginfo=0"
 
-jobs: 
+jobs:
   bench:
     name: Benchmark
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
 
-      - name: Install Rust toolchain
-        uses: moonrepo/setup-rust@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Install Rust toolchain
+      uses: moonrepo/setup-rust@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run benchmarks
-        run: cargo bench --all-targets --all-features
+    - name: Run benchmarks
+      run: cargo bench --all-targets --all-features
