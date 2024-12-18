@@ -24,7 +24,7 @@ pub enum CellType {
 }
 
 #[derive(Debug)]
-pub struct RadarView {
+pub struct Radar {
     pub horizontal: Vec<Passages>,
     pub vertical: Vec<Passages>,
     pub cells: Vec<CellType>,
@@ -238,11 +238,11 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec
     (horizontal_data, vertical_data)
 }
 
-pub fn extract_data<T: ToBinary>(input: T) -> RadarView {
+pub fn extract_data<T: ToBinary>(input: T) -> Radar {
     let binary = input.to_binary();
 
     if binary.len() < 88 {
-        return RadarView { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() };
+        return Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() };
     }
 
     // 3 first octets are for horizontal, 3 next for vertical, and the last 5 for cells
@@ -258,7 +258,7 @@ pub fn extract_data<T: ToBinary>(input: T) -> RadarView {
     let (horizontal, vertical) = retrieve_passage(&horizontal_bits, &vertical_bits);
     let cells = retrieve_cell(cell_bits);
 
-    RadarView { horizontal, vertical, cells }
+    Radar { horizontal, vertical, cells }
 }
 
 #[cfg(test)]

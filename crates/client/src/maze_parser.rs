@@ -1,9 +1,8 @@
 use shared::maze::{Maze, PositionType};
 use shared::messages::Direction;
-use shared::radar::RadarView;
 use shared::{
     maze::Cell,
-    radar::{CellType, Passages},
+    radar::{CellType, Passages, Radar},
 };
 
 use crate::data_structures::maze_graph::MazeGraph;
@@ -69,7 +68,7 @@ impl Player {
     }
 }
 
-pub fn maze_to_graph(radar_view: &RadarView, player: &Player, maze_graph: &mut MazeGraph) {
+pub fn maze_to_graph(radar_view: &Radar, player: &Player, maze_graph: &mut MazeGraph) {
     let directions_mask = get_direction_mask(player);
 
     for cell_id in 0..radar_view.cells.len() {
@@ -305,5 +304,29 @@ mod tests {
         rotate_right_90(&mut cell_mask);
 
         assert_eq!(cell_mask, expected_rotation)
+    }
+
+    #[test]
+    fn test_player_movement() {
+        let mut player =
+            Player { position: Cell { row: 5, column: 5 }, direction: Direction::Front };
+
+        player.move_forward();
+        assert_eq!(player.position, Cell { row: 5, column: 4 });
+
+        player.turn_right();
+        assert_eq!(player.direction, Direction::Right);
+        player.move_forward();
+        assert_eq!(player.position, Cell { row: 6, column: 4 });
+
+        player.turn_left();
+        assert_eq!(player.direction, Direction::Front);
+        player.move_forward();
+        assert_eq!(player.position, Cell { row: 6, column: 3 });
+
+        player.turn_back();
+        assert_eq!(player.direction, Direction::Back);
+        player.move_forward();
+        assert_eq!(player.position, Cell { row: 6, column: 4 });
     }
 }
