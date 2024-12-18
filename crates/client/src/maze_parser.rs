@@ -8,7 +8,7 @@ use shared::{
 
 use crate::data_structures::maze_graph::MazeGraph;
 
-fn rotate_left_90(cells: &mut Vec<Cell>) {
+fn rotate_left_90(cells: &mut [Cell]) {
     for cell in cells.iter_mut() {
         let new_row = -cell.column;
         let new_column = cell.row;
@@ -17,7 +17,7 @@ fn rotate_left_90(cells: &mut Vec<Cell>) {
     }
 }
 
-fn rotate_right_90(cells: &mut Vec<Cell>) {
+fn rotate_right_90(cells: &mut [Cell]) {
     for cell in cells.iter_mut() {
         let new_row = cell.column;
         let new_column = -cell.row;
@@ -136,19 +136,19 @@ pub fn maze_to_graph(radar_view: &RadarView, player: &Player, maze_graph: &mut M
     }
 }
 
-fn is_right_cell_accessible(cell_id: usize, vertical: &Vec<Passages>) -> bool {
+fn is_right_cell_accessible(cell_id: usize, vertical: &[Passages]) -> bool {
     cell_id % 3 != 2 && vertical[cell_id + cell_id / 3 + 1] == Passages::OPEN
 }
 
-fn is_left_cell_accessible(cell_id: usize, vertical: &Vec<Passages>) -> bool {
+fn is_left_cell_accessible(cell_id: usize, vertical: &[Passages]) -> bool {
     cell_id % 3 != 0 && vertical[cell_id + cell_id / 3] == Passages::OPEN
 }
 
-fn is_bottom_cell_accessible(cell_id: usize, horizontal: &Vec<Passages>) -> bool {
+fn is_bottom_cell_accessible(cell_id: usize, horizontal: &[Passages]) -> bool {
     cell_id < 6 && horizontal[cell_id + 3] == Passages::OPEN
 }
 
-fn is_top_cell_accessible(cell_id: usize, horizontal: &Vec<Passages>) -> bool {
+fn is_top_cell_accessible(cell_id: usize, horizontal: &[Passages]) -> bool {
     cell_id > 2 && horizontal[cell_id] == Passages::OPEN
 }
 

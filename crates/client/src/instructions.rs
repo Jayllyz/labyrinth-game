@@ -46,7 +46,7 @@ pub fn right_hand_solver(radar_view: &RadarView, player: &mut Player) -> message
     messages::Action::MoveTo(messages::Direction::Right)
 }
 
-pub fn check_win_condition(cells: &Vec<CellType>, direction: messages::Action) -> bool {
+pub fn check_win_condition(cells: &[CellType], direction: messages::Action) -> bool {
     let index = match direction {
         messages::Action::MoveTo(messages::Direction::Right) => 5,
         messages::Action::MoveTo(messages::Direction::Left) => 3,

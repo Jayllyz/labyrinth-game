@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    hash::{Hash, Hasher},
-};
+use std::collections::{HashMap, HashSet};
 
 use shared::{maze::Cell, radar::CellType};
 
@@ -15,12 +12,18 @@ pub struct MazeGraph {
     cell_map: HashMap<Cell, MazeCell>,
 }
 
+impl Default for MazeGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MazeGraph {
     pub fn new() -> Self {
         Self { cell_map: HashMap::new() }
     }
     pub fn contains(&self, cell: &Cell) -> bool {
-        return self.cell_map.contains_key(cell);
+        self.cell_map.contains_key(cell)
     }
 
     pub fn add(&mut self, cell: Cell, cell_type: CellType) {
@@ -29,7 +32,7 @@ impl MazeGraph {
 
     pub fn add_neighbor(&mut self, cell: &Cell, neighbor: &Cell) {
         let maze_cell: &mut MazeCell = self.cell_map.get_mut(cell).unwrap();
-        maze_cell.neighbors.insert(neighbor.clone());
+        maze_cell.neighbors.insert(*neighbor);
     }
 }
 
