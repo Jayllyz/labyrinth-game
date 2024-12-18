@@ -62,11 +62,11 @@ pub fn tremeaux_solver(
             message = messages::Action::MoveTo(messages::Direction::Right);
         }
     } else {
-        graph.update_cell_status(player.position, CellStatus::DeadEnd);
         player.turn_back();
         message = messages::Action::MoveTo(messages::Direction::Back);
     }
 
+    graph.update_cell_status(player.position, CellStatus::DeadEnd);
     player.move_forward();
     message
 }

@@ -58,6 +58,10 @@ impl MazeGraph {
         cell.status = status;
     }
 
+    pub fn get_size(&self) -> usize {
+        self.cell_map.len()
+    }
+
     pub fn get_cell_status(&self, position: Cell) -> CellStatus {
         let Some(cell) = self.cell_map.get(&position) else {
             return CellStatus::DeadEnd;
