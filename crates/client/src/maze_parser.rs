@@ -66,6 +66,26 @@ impl Player {
             Direction::Left => Direction::Right,
         };
     }
+
+    pub fn get_next_direction(&mut self, target: &Cell) -> Direction {
+        let diff = Cell {
+            row: target.row - self.position.row,
+            column: target.column - self.position.column,
+        };
+
+        let cell_mask: Vec<Cell> = get_direction_mask(self);
+
+        if cell_mask[3] == diff {
+            return Direction::Left;
+        };
+        if cell_mask[5] == diff {
+            return Direction::Left;
+        };
+        if cell_mask[7] == diff {
+            return Direction::Left;
+        };
+        Direction::Front
+    }
 }
 
 pub fn maze_to_graph(radar_view: &Radar, player: &Player, maze_graph: &mut MazeGraph) {

@@ -1,9 +1,41 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use shared::messages::{self};
+use shared::maze::Cell;
+use shared::messages::{self, Direction};
 use shared::radar::{CellType, Passages, Radar};
 
+use crate::data_structures::maze_graph::{CellStatus, MazeGraph};
 use crate::maze_parser::Player;
+
+pub fn tremeaux_solver(radar_view: &Radar, player: &mut Player, graph: &mut MazeGraph) {
+    let Some(player_cell) = graph.get_cell(player.position.clone()) else {
+        return;
+    };
+
+    let neighbor_positions: HashSet<Cell> = player_cell.neighbors.clone();
+
+    for neighbor_position in neighbor_positions {
+        let Some(neighbor_cell) = graph.get_cell(neighbor_position.clone()) else {
+            continue;
+        };
+
+        if neighbor_cell.status == CellStatus::NotVisited {
+            graph.update_cell_status(player.position, CellStatus::VISITED);
+            let next_direction = player.get_next_direction(&neighbor_position);
+            if next_direction == Direction::Left {
+                player.turn_left();
+            }
+            if next_direction == Direction::Right {
+                player.turn_right();
+            }
+            if next_direction == Direction::Back {
+                player.turn_back();
+            }
+            player.move_forward();
+            return;
+        }
+    }
+}
 
 pub fn right_hand_solver(radar_view: &Radar, player: &mut Player) -> messages::Action {
     let messages;

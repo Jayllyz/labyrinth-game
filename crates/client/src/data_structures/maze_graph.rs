@@ -2,10 +2,18 @@ use std::collections::{HashMap, HashSet};
 
 use shared::{maze::Cell, radar::CellType};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum CellStatus {
+    VISITED,
+    NotVisited,
+    DeadEnd,
+}
+
+#[derive(Debug, Clone)]
 pub struct MazeCell {
     pub cell_type: CellType,
     pub neighbors: HashSet<Cell>,
+    pub status: CellStatus,
 }
 #[derive(Debug)]
 pub struct MazeGraph {
@@ -27,12 +35,27 @@ impl MazeGraph {
     }
 
     pub fn add(&mut self, cell: Cell, cell_type: CellType) {
-        self.cell_map.insert(cell, MazeCell { cell_type, neighbors: HashSet::new() });
+        self.cell_map.insert(
+            cell,
+            MazeCell { cell_type, neighbors: HashSet::new(), status: CellStatus::NotVisited },
+        );
     }
 
     pub fn add_neighbor(&mut self, cell: &Cell, neighbor: &Cell) {
         let maze_cell: &mut MazeCell = self.cell_map.get_mut(cell).unwrap();
         maze_cell.neighbors.insert(*neighbor);
+    }
+
+    pub fn get_cell(&mut self, position: Cell) -> Option<&mut MazeCell> {
+        self.cell_map.get_mut(&position)
+    }
+
+    pub fn update_cell_status(&mut self, position: Cell, status: CellStatus) {
+        let Some(cell) = self.cell_map.get_mut(&position) else {
+            return;
+        };
+
+        cell.status = status;
     }
 }
 
