@@ -101,12 +101,10 @@ impl GameClient {
                         name: agent_name.clone(),
                         registration_token: agent_token,
                     });
-                    match send_message(&mut stream, &subscribe_msg) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            logger.error(&format!("Failed to send message: {}", e));
-                        }
+                    if let Err(e) = send_message(&mut stream, &subscribe_msg) {
+                        logger.error(&format!("{} failed to subscribe: {}", agent_name, e));
                     }
+
                     while let Ok(msg) = receive_message(&mut stream) {
                         Self::handle_server_message(
                             &mut stream,
@@ -237,7 +235,6 @@ impl GameClient {
         let is_win = instructions::check_win_condition(&radar_view.cells, action);
         if is_win {
             logger.info(&format!("{} has found the exit!", thread_name));
-            print!("{:?}", graph);
         }
     }
 }

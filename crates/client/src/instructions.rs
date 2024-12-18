@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use shared::messages::{self};
-use shared::radar::{CellType, Passages, RadarView};
+use shared::radar::{CellType, Passages, Radar};
 
 use crate::maze_parser::Player;
 
-pub fn right_hand_solver(radar_view: &RadarView, player: &mut Player) -> messages::Action {
+pub fn right_hand_solver(radar_view: &Radar, player: &mut Player) -> messages::Action {
     let messages;
 
     if let Some(vertical) = radar_view.vertical.get(6) {
