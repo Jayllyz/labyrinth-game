@@ -82,9 +82,25 @@ impl Player {
             return Direction::Left;
         };
         if cell_mask[7] == diff {
-            return Direction::Left;
+            return Direction::Back;
         };
         Direction::Front
+    }
+
+    pub fn get_back_position(&self) -> Cell {
+        let d = match self.direction {
+            Direction::Front => Direction::Back,
+            Direction::Right => Direction::Left,
+            Direction::Back => Direction::Front,
+            Direction::Left => Direction::Right,
+        };
+
+        match d {
+            Direction::Front => Cell { row: self.position.row, column: self.position.column - 1 },
+            Direction::Right => Cell { row: self.position.row + 1, column: self.position.column },
+            Direction::Back => Cell { row: self.position.row, column: self.position.column + 1 },
+            Direction::Left => Cell { row: self.position.row - 1, column: self.position.column },
+        }
     }
 }
 
