@@ -36,9 +36,11 @@ jobs:
       run: cargo check --all-targets --all-features && cargo test
 
     - name: Tag the version
+      env:
+        GIT_TAG: ${{ inputs.publish-tag }}
       run: |
-        git tag "${{ inputs.publish-tag }}"
-        git push origin "${{ inputs.publish-tag }}"
+        git tag "${GIT_TAG}"
+        git push origin "${GIT_TAG}"
 
     - name: Generate a changelog
       uses: orhun/git-cliff-action@v4
@@ -51,7 +53,7 @@ jobs:
         GITHUB_REPO: ${{ github.repository }}
 
     - name: Create github release
-      uses: taiki-e/create-gh-release-action@v1
+      uses: taiki-e/create-gh-release-action@v1 # zizmor: ignore[ref-confusion]
       with:
         branch: main
         changelog: CHANGES.md

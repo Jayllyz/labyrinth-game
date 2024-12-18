@@ -12,7 +12,7 @@ pub enum Message {
     SubscribePlayerResult(SubscribePlayerResult),
     RadarView(RadarView),
     Action(Action),
-    ActionResult(ActionResult),
+    ActionError(ActionError),
     MessageError(MessageError),
     Hint(Hint),
     Challenge(Challenge),
@@ -78,13 +78,8 @@ pub enum ActionError {
     InvalidMove,
     OutOfMap,
     Blocked,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub enum ActionResult {
-    Ok,
-    Completed,
-    Err(ActionError),
+    InvalidChallengeSolution,
+    SolveChallengeFirst,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -171,11 +166,7 @@ mod tests {
             )),
             Message::RadarView(RadarView("radar".to_string())),
             Message::Action(Action::MoveTo(Direction::Right)),
-            Message::ActionResult(ActionResult::Ok),
-            Message::ActionResult(ActionResult::Completed),
-            Message::ActionResult(ActionResult::Err(ActionError::InvalidMove)),
-            Message::ActionResult(ActionResult::Err(ActionError::OutOfMap)),
-            Message::ActionResult(ActionResult::Err(ActionError::Blocked)),
+            Message::Action(Action::SolveChallenge { answer: "answer".to_string() }),
             Message::MessageError(MessageError { message: "error".to_string() }),
         ];
 
@@ -186,7 +177,7 @@ mod tests {
                 | Message::SubscribePlayerResult(_)
                 | Message::RadarView(_)
                 | Message::Action(_)
-                | Message::ActionResult(_)
+                | Message::ActionError(_)
                 | Message::MessageError(_));
         }
     }
