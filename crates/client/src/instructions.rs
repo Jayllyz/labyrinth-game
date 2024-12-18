@@ -1,17 +1,21 @@
 use std::collections::{HashMap, HashSet};
 
 use shared::maze::Cell;
-use shared::messages::{self, Direction};
+use shared::messages::{self, Direction, Message};
 use shared::radar::{CellType, Passages, Radar};
 
 use crate::data_structures::maze_graph::{CellStatus, MazeGraph};
 use crate::maze_parser::Player;
 
-pub fn tremeaux_solver(radar_view: &Radar, player: &mut Player, graph: &mut MazeGraph) {
+pub fn tremeaux_solver(
+    radar_view: &Radar,
+    player: &mut Player,
+    graph: &mut MazeGraph,
+) -> messages::Action {
     let Some(player_cell) = graph.get_cell(player.position.clone()) else {
-        return;
+        return messages::Action::MoveTo(messages::Direction::Front);
     };
-
+    let mut message: messages::Action = messages::Action::MoveTo(messages::Direction::Front);
     let neighbor_positions: HashSet<Cell> = player_cell.neighbors.clone();
 
     let mut visited: Vec<Cell> = Vec::new();
@@ -26,31 +30,23 @@ pub fn tremeaux_solver(radar_view: &Radar, player: &mut Player, graph: &mut Maze
             let next_direction = player.get_next_direction(&neighbor_position);
             if next_direction == Direction::Left {
                 player.turn_left();
-            }
-            if next_direction == Direction::Right {
+                message = messages::Action::MoveTo(messages::Direction::Left);
+            } else if next_direction == Direction::Right {
                 player.turn_right();
-            }
-            if next_direction == Direction::Back {
+                message = messages::Action::MoveTo(messages::Direction::Right);
+            } else if next_direction == Direction::Back {
                 player.turn_back();
+                message = messages::Action::MoveTo(messages::Direction::Back);
+            } else {
+                message = messages::Action::MoveTo(messages::Direction::Front);
             }
             player.move_forward();
-            return;
+            return message;
         }
 
         if neighbor_cell.status == CellStatus::VISITED {
             visited.push(neighbor_position);
         }
-        let next_direction = player.get_next_direction(&neighbor_position);
-        if next_direction == Direction::Left {
-            player.turn_left();
-        }
-        if next_direction == Direction::Right {
-            player.turn_right();
-        }
-        if next_direction == Direction::Back {
-            player.turn_back();
-        }
-        player.move_forward();
     }
 
     let back_status = graph.get_cell_status(player.get_back_position());
@@ -59,16 +55,20 @@ pub fn tremeaux_solver(radar_view: &Radar, player: &mut Player, graph: &mut Maze
         let next_direction = player.get_next_direction(&visited[0]);
         if next_direction == Direction::Left {
             player.turn_left();
+            message = messages::Action::MoveTo(messages::Direction::Left);
         }
         if next_direction == Direction::Right {
             player.turn_right();
+            message = messages::Action::MoveTo(messages::Direction::Right);
         }
     } else {
         graph.update_cell_status(player.position, CellStatus::DeadEnd);
         player.turn_back();
+        message = messages::Action::MoveTo(messages::Direction::Back);
     }
 
     player.move_forward();
+    message
 }
 
 pub fn right_hand_solver(radar_view: &Radar, player: &mut Player) -> messages::Action {

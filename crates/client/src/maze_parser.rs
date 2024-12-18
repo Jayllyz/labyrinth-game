@@ -79,7 +79,7 @@ impl Player {
             return Direction::Left;
         };
         if cell_mask[5] == diff {
-            return Direction::Left;
+            return Direction::Right;
         };
         if cell_mask[7] == diff {
             return Direction::Back;
