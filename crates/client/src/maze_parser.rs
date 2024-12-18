@@ -1,3 +1,6 @@
+use shared::maze::{Maze, PositionType};
+use shared::messages::Direction;
+use shared::radar::RadarView;
 use shared::{
     maze::Cell,
     radar::{CellType, Passages},
@@ -24,69 +27,103 @@ fn rotate_right_90(cells: &mut Vec<Cell>) {
 }
 
 pub struct Player {
-    pub direction: String,
+    pub direction: Direction,
     pub position: Cell,
 }
 
-pub fn maze_to_graph(
-    (horizontal, vertical, cells): (Vec<Passages>, Vec<Passages>, Vec<CellType>),
-    player: &Player,
-    maze_graph: &mut MazeGraph,
-) {
+impl Player {
+    pub fn move_forward(&mut self) {
+        self.position = match self.direction {
+            Direction::Front => Cell { row: self.position.row, column: self.position.column - 1 },
+            Direction::Right => Cell { row: self.position.row + 1, column: self.position.column },
+            Direction::Back => Cell { row: self.position.row, column: self.position.column + 1 },
+            Direction::Left => Cell { row: self.position.row - 1, column: self.position.column },
+        }
+    }
+
+    pub fn turn_right(&mut self) {
+        self.direction = match self.direction {
+            Direction::Front => Direction::Right,
+            Direction::Right => Direction::Back,
+            Direction::Back => Direction::Left,
+            Direction::Left => Direction::Front,
+        };
+    }
+
+    pub fn turn_left(&mut self) {
+        self.direction = match self.direction {
+            Direction::Front => Direction::Left,
+            Direction::Right => Direction::Front,
+            Direction::Back => Direction::Right,
+            Direction::Left => Direction::Back,
+        };
+    }
+
+    pub fn turn_back(&mut self) {
+        self.direction = match self.direction {
+            Direction::Front => Direction::Back,
+            Direction::Right => Direction::Left,
+            Direction::Back => Direction::Front,
+            Direction::Left => Direction::Right,
+        };
+    }
+}
+
+pub fn maze_to_graph(radar_view: &RadarView, player: &Player, maze_graph: &mut MazeGraph) {
     let directions_mask = get_direction_mask(player);
 
-    for cell_id in 0..cells.len() {
-        if cells[cell_id] == CellType::INVALID {
+    for cell_id in 0..radar_view.cells.len() {
+        if radar_view.cells[cell_id] == CellType::INVALID {
             continue;
         }
 
         let cell_pos = player.position + directions_mask[cell_id];
 
         if !maze_graph.contains(&cell_pos) {
-            maze_graph.add(cell_pos, cells[cell_id].clone());
+            maze_graph.add(cell_pos, radar_view.cells[cell_id].clone());
         }
 
         let mut neigbors_to_add: Vec<Cell> = Vec::new();
 
-        if is_top_cell_accessible(cell_id, &horizontal) {
+        if is_top_cell_accessible(cell_id, &radar_view.horizontal) {
             let top_cell_id = cell_id - 3;
             let top_cell = player.position + directions_mask[top_cell_id];
 
             if !maze_graph.contains(&top_cell) {
-                maze_graph.add(top_cell, cells[top_cell_id].clone());
+                maze_graph.add(top_cell, radar_view.cells[top_cell_id].clone());
             }
 
             neigbors_to_add.push(top_cell);
         }
 
-        if is_bottom_cell_accessible(cell_id, &horizontal) {
+        if is_bottom_cell_accessible(cell_id, &radar_view.horizontal) {
             let bottom_cell_id = cell_id + 3;
             let bottom_cell = player.position + directions_mask[bottom_cell_id];
 
             if !maze_graph.contains(&bottom_cell) {
-                maze_graph.add(bottom_cell, cells[bottom_cell_id].clone());
+                maze_graph.add(bottom_cell, radar_view.cells[bottom_cell_id].clone());
             }
 
             neigbors_to_add.push(bottom_cell);
         }
 
-        if is_left_cell_accessible(cell_id, &vertical) {
+        if is_left_cell_accessible(cell_id, &radar_view.vertical) {
             let left_cell_id = cell_id - 1;
             let left_cell = player.position + directions_mask[left_cell_id];
 
             if !maze_graph.contains(&left_cell) {
-                maze_graph.add(left_cell, cells[left_cell_id].clone());
+                maze_graph.add(left_cell, radar_view.cells[left_cell_id].clone());
             }
 
             neigbors_to_add.push(left_cell);
         }
 
-        if is_right_cell_accessible(cell_id, &vertical) {
+        if is_right_cell_accessible(cell_id, &radar_view.vertical) {
             let right_cell_id = cell_id + 1;
             let right_cell = player.position + directions_mask[right_cell_id];
 
             if !maze_graph.contains(&right_cell) {
-                maze_graph.add(right_cell, cells[right_cell_id].clone());
+                maze_graph.add(right_cell, radar_view.cells[right_cell_id].clone());
             }
 
             neigbors_to_add.push(right_cell);
@@ -128,17 +165,57 @@ fn get_direction_mask(player: &Player) -> Vec<Cell> {
         Cell { row: 1, column: 1 },
     ];
 
-    if player.direction == "right" {
+    if player.direction == Direction::Right {
         rotate_left_90(&mut cell_mask);
     }
-    if player.direction == "left" {
+    if player.direction == Direction::Left {
         rotate_right_90(&mut cell_mask);
     }
-    if player.direction == "back" {
+    if player.direction == Direction::Back {
         rotate_right_90(&mut cell_mask);
         rotate_right_90(&mut cell_mask);
     }
     cell_mask
+}
+
+pub fn maze_parser(input: &str) -> Maze {
+    if input.is_empty() {
+        return Maze::new(Vec::new(), Cell { row: 0, column: 0 }, Cell { row: 0, column: 0 });
+    }
+
+    let lines: Vec<&str> =
+        input.lines().skip_while(|line| line.chars().all(char::is_whitespace)).collect();
+    let (height, width) = (lines.len(), lines[0].len());
+
+    let map = vec![vec![0u16; width]; height];
+    let entry = Cell { row: 0, column: 0 };
+    let exit = Cell { row: 0, column: 0 };
+    let mut maze = Maze::new(map, entry, exit);
+
+    for (row, line) in lines.iter().enumerate() {
+        for (col, char) in line.chars().enumerate() {
+            match char {
+                ' ' => {
+                    maze.map[row][col] = PositionType::SPACE;
+                }
+                '2' => {
+                    maze.map[row][col] = PositionType::ENTRY;
+                    maze.entry.row = row as i16;
+                    maze.entry.column = col as i16;
+                }
+                '3' => {
+                    maze.map[row][col] = PositionType::EXIT;
+                    maze.exit.row = row as i16;
+                    maze.exit.column = col as i16;
+                }
+                _ => {
+                    maze.map[row][col] = PositionType::WALL;
+                }
+            }
+        }
+    }
+
+    maze
 }
 
 #[cfg(test)]
@@ -152,18 +229,18 @@ mod tests {
         let decoded = radar::decode_base64("Hjeikcyc/W8a8pa");
         let data = radar::extract_data(&decoded);
 
-        let mut p = Player { position: Cell { row: 0, column: 0 }, direction: "front".to_string() };
+        let mut p = Player { position: Cell { row: 0, column: 0 }, direction: Direction::Front };
         let mut m = MazeGraph::new();
-        maze_to_graph(data, &p, &mut m);
+        maze_to_graph(&data, &p, &mut m);
 
         println!("{:?}", m);
 
-        p.direction = "right".to_string();
+        p.direction = Direction::Right;
         p.position = p.position + Cell { row: 1, column: 0 };
 
         let decoded = radar::decode_base64("kOuczzGa//apaaa");
         let data = radar::extract_data(&decoded);
-        maze_to_graph(data, &p, &mut m);
+        maze_to_graph(&data, &p, &mut m);
 
         println!("{:?}", m);
     }

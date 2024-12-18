@@ -58,11 +58,11 @@ fn main() {
     if args.offline {
         println!("Running in offline mode (no connection to the server)");
         println!("Not implemented yet, exiting...");
-        let decoded = radar::decode_base64("jivbQjIad/apapa");
-        let data = radar::extract_data(&decoded);
-        println!("{:?}", data.0);
-        println!("{:?}", data.1);
-        println!("{:?}", data.2);
+        let decoded = radar::decode_base64("giLbMjIad/apapa");
+        let radar_view = radar::extract_data(&decoded);
+        println!("{:?}", radar_view.horizontal);
+        println!("{:?}", radar_view.vertical);
+        println!("{:?}", radar_view.cells);
         return;
     }
 

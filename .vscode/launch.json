@@ -15,7 +15,7 @@
             "request": "launch",
             "name": "Debug Client",
             "program": "${workspaceFolder}/target/debug/client",
-            "args": ["--offline"],
+            "args": ["--players", "1"],
             "cwd": "${workspaceFolder}",
             "preLaunchTask": "cargo build client"
         }

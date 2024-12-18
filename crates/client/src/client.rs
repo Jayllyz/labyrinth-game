@@ -1,4 +1,8 @@
 use crate::instructions;
+use crate::maze_parser::maze_to_graph;
+use crate::{data_structures::maze_graph::MazeGraph, maze_parser::Player};
+use shared::maze::Cell;
+use shared::messages::Direction;
 use shared::{
     logger::Logger,
     messages::{
@@ -63,11 +67,9 @@ impl GameClient {
 
     pub fn run(&self, max_retries: u8, num_agents: u8) -> Result<(), Box<dyn Error>> {
         let logger = Logger::get_instance();
-
         let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries);
         let register_msg =
             Message::RegisterTeam(RegisterTeam { name: self.config.team_name.clone() });
-
         send_message(&mut stream, &register_msg)?;
 
         let token = match receive_message(&mut stream)? {
@@ -78,7 +80,6 @@ impl GameClient {
         };
 
         let mut handles = vec![];
-
         for i in 0..num_agents {
             let config = self.config.clone();
             let agent_token = token.clone();
@@ -88,6 +89,10 @@ impl GameClient {
                 secrets: Arc::clone(&self.challenge_secret_sum.secrets),
             };
 
+            let mut graph = MazeGraph::new();
+            let mut player =
+                Player { position: Cell { row: 0, column: 0 }, direction: Direction::Front };
+
             let handle = thread::Builder::new()
                 .name(agent_name.clone())
                 .spawn(move || {
@@ -96,26 +101,31 @@ impl GameClient {
                         name: agent_name.clone(),
                         registration_token: agent_token,
                     });
-
                     match send_message(&mut stream, &subscribe_msg) {
                         Ok(_) => {}
                         Err(e) => {
                             logger.error(&format!("Failed to send message: {}", e));
                         }
                     }
-
                     while let Ok(msg) = receive_message(&mut stream) {
-                        Self::handle_server_message(&mut stream, &agent_name, msg, &secrets_sum);
+                        Self::handle_server_message(
+                            &mut stream,
+                            &agent_name,
+                            msg,
+                            &secrets_sum,
+                            &mut graph,
+                            &mut player,
+                        );
                     }
                 })
                 .map_err(|e| format!("Failed to spawn thread: {}", e))?;
-
             handles.push(handle);
         }
 
         for handle in handles {
             handle.join().map_err(|e| format!("Thread panicked: {:?}", e))?;
         }
+
         Ok(())
     }
 
@@ -124,6 +134,8 @@ impl GameClient {
         thread_name: &str,
         message: Message,
         secrets_sum: &SecretSumModulo,
+        graph: &mut MazeGraph,
+        player: &mut Player,
     ) {
         let logger = Logger::get_instance();
         let thread = std::thread::current();
@@ -140,7 +152,7 @@ impl GameClient {
                 }
             },
             Message::RadarView(view) => {
-                Self::handle_radar_view(stream, logger, thread_name, view);
+                Self::handle_radar_view(stream, logger, thread_name, view, graph, player);
             }
             Message::Hint(hint) => {
                 if let Hint::Secret(secret) = hint {
@@ -212,16 +224,20 @@ impl GameClient {
         logger: &Logger,
         thread_name: &str,
         view: messages::RadarView,
+        graph: &mut MazeGraph,
+        player: &mut Player,
     ) {
-        let (horizontal, vertical, cells) = extract_data(&decode_base64(&view.0));
-        let action = instructions::right_hand_solver(horizontal, vertical);
+        let radar_view = extract_data(&decode_base64(&view.0));
+        maze_to_graph(&radar_view, player, graph);
+        let action = instructions::right_hand_solver(&radar_view, player);
         if let Err(e) = send_message(stream, &Message::Action(action.clone())) {
             logger.error(&format!("{} failed to send action: {}", thread_name, e));
         }
 
-        let is_win = instructions::check_win_condition(cells, action);
+        let is_win = instructions::check_win_condition(&radar_view.cells, action);
         if is_win {
             logger.info(&format!("{} has found the exit!", thread_name));
+            print!("{:?}", graph);
         }
     }
 }
@@ -263,6 +279,9 @@ mod tests {
         let mut stream = TcpStream::connect(addr).unwrap();
 
         let message = Message::SubscribePlayerResult(SubscribePlayerResult::Ok);
+        let mut graph = MazeGraph::new();
+        let mut player =
+            Player { position: Cell { row: 0, column: 0 }, direction: Direction::Front };
 
         GameClient::handle_server_message(
             &mut stream,
@@ -272,6 +291,8 @@ mod tests {
                 sum: Arc::new(Mutex::new(0)),
                 secrets: Arc::new(Mutex::new(HashMap::new())),
             },
+            &mut graph,
+            &mut player,
         );
     }
 
@@ -304,11 +325,17 @@ mod tests {
 
         let message = Message::Challenge(messages::Challenge::SecretSumModulo(10));
 
+        let mut graph = MazeGraph::new();
+        let mut player =
+            Player { position: Cell { row: 0, column: 0 }, direction: Direction::Front };
+
         GameClient::handle_server_message(
             &mut stream,
             "Player1",
             message,
             &SecretSumModulo { sum: secret_sum, secrets },
+            &mut graph,
+            &mut player,
         );
     }
 
@@ -324,6 +351,10 @@ mod tests {
 
         let message = Message::RadarView(messages::RadarView("bKgGjsIyap8p8aa".to_string()));
 
+        let mut graph = MazeGraph::new();
+        let mut player =
+            Player { position: Cell { row: 0, column: 0 }, direction: Direction::Front };
+
         GameClient::handle_server_message(
             &mut stream,
             "Player1",
@@ -332,6 +363,8 @@ mod tests {
                 sum: Arc::new(Mutex::new(0)),
                 secrets: Arc::new(Mutex::new(HashMap::new())),
             },
+            &mut graph,
+            &mut player,
         );
     }
 }

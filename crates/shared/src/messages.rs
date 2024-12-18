@@ -59,7 +59,7 @@ pub enum SubscribePlayerResult {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RadarView(pub String);
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Direction {
     Right,
     Left,

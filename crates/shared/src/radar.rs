@@ -23,6 +23,13 @@ pub enum CellType {
     INVALID = 15,
 }
 
+#[derive(Debug)]
+pub struct RadarView {
+    pub horizontal: Vec<Passages>,
+    pub vertical: Vec<Passages>,
+    pub cells: Vec<CellType>,
+}
+
 pub trait ToBinary {
     fn to_binary(&self) -> String;
 }
@@ -231,11 +238,11 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec
     (horizontal_data, vertical_data)
 }
 
-pub fn extract_data<T: ToBinary>(input: T) -> (Vec<Passages>, Vec<Passages>, Vec<CellType>) {
+pub fn extract_data<T: ToBinary>(input: T) -> RadarView {
     let binary = input.to_binary();
 
     if binary.len() < 88 {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return RadarView { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() };
     }
 
     // 3 first octets are for horizontal, 3 next for vertical, and the last 5 for cells
@@ -251,7 +258,7 @@ pub fn extract_data<T: ToBinary>(input: T) -> (Vec<Passages>, Vec<Passages>, Vec
     let (horizontal, vertical) = retrieve_passage(&horizontal_bits, &vertical_bits);
     let cells = retrieve_cell(cell_bits);
 
-    (horizontal, vertical, cells)
+    RadarView { horizontal, vertical, cells }
 }
 
 #[cfg(test)]
@@ -465,10 +472,10 @@ mod tests {
     #[test]
     fn test_extract_data() {
         let input = decode_base64("jivbQjIad/apapa");
-        let (horizontal, vertical, cells) = extract_data(&input);
-        assert_eq!(horizontal.len(), 12);
-        assert_eq!(vertical.len(), 12);
-        assert_eq!(cells.len(), 9);
+        let radar_view = extract_data(&input);
+        assert_eq!(radar_view.horizontal.len(), 12);
+        assert_eq!(radar_view.vertical.len(), 12);
+        assert_eq!(radar_view.cells.len(), 9);
 
         assert_eq!(
             vec![
@@ -485,7 +492,7 @@ mod tests {
                 Passages::OPEN,
                 Passages::UNDEFINED
             ],
-            horizontal
+            radar_view.horizontal
         );
 
         assert_eq!(
@@ -503,7 +510,7 @@ mod tests {
                 Passages::WALL,
                 Passages::UNDEFINED,
             ],
-            vertical
+            radar_view.vertical
         );
 
         assert_eq!(
@@ -518,7 +525,7 @@ mod tests {
                 CellType::NOTHING,
                 CellType::INVALID
             ],
-            cells
+            radar_view.cells
         );
     }
 
