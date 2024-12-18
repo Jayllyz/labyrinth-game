@@ -1,35 +1,44 @@
 use std::collections::HashMap;
 
 use shared::messages::{self};
-use shared::radar::{Cells, Passages};
+use shared::radar::{CellType, Passages, RadarView};
 
-pub fn right_hand_solver(horizontal: Vec<Passages>, vertical: Vec<Passages>) -> messages::Action {
+use crate::maze_parser::Player;
+
+pub fn right_hand_solver(radar_view: &RadarView, player: &mut Player) -> messages::Action {
     let messages;
 
-    if let Some(vertical) = vertical.get(6) {
+    if let Some(vertical) = radar_view.vertical.get(6) {
         if *vertical == Passages::OPEN {
             messages = messages::Action::MoveTo(messages::Direction::Right);
+            player.turn_right();
+            player.move_forward();
             return messages;
         }
     }
 
-    if let Some(horizontal) = horizontal.get(4) {
+    if let Some(horizontal) = radar_view.horizontal.get(4) {
         if *horizontal == Passages::OPEN {
             messages = messages::Action::MoveTo(messages::Direction::Front);
+            player.move_forward();
             return messages;
         }
     }
 
-    if let Some(vertical) = vertical.get(5) {
+    if let Some(vertical) = radar_view.vertical.get(5) {
         if *vertical == Passages::OPEN {
             messages = messages::Action::MoveTo(messages::Direction::Left);
+            player.turn_left();
+            player.move_forward();
             return messages;
         }
     }
 
-    if let Some(horizontal) = horizontal.get(7) {
+    if let Some(horizontal) = radar_view.horizontal.get(7) {
         if *horizontal == Passages::OPEN {
             messages = messages::Action::MoveTo(messages::Direction::Back);
+            player.turn_back();
+            player.move_forward();
             return messages;
         }
     }
@@ -37,7 +46,7 @@ pub fn right_hand_solver(horizontal: Vec<Passages>, vertical: Vec<Passages>) -> 
     messages::Action::MoveTo(messages::Direction::Right)
 }
 
-pub fn check_win_condition(cells: Vec<Cells>, direction: messages::Action) -> bool {
+pub fn check_win_condition(cells: &[CellType], direction: messages::Action) -> bool {
     let index = match direction {
         messages::Action::MoveTo(messages::Direction::Right) => 5,
         messages::Action::MoveTo(messages::Direction::Left) => 3,
@@ -47,7 +56,7 @@ pub fn check_win_condition(cells: Vec<Cells>, direction: messages::Action) -> bo
     };
 
     if let Some(cell) = cells.get(index) {
-        if *cell == Cells::OBJECTIVE {
+        if *cell == CellType::OBJECTIVE {
             return true;
         }
     }
@@ -71,99 +80,104 @@ mod tests {
 
     use super::*;
     use messages::RadarView;
-    use shared::radar::{decode_base64, extract_data};
+    use shared::{
+        maze::Cell,
+        radar::{decode_base64, extract_data},
+    };
 
     #[test]
     fn test_right_hand_solver() {
         let view = RadarView("swfGkIAyap8a8aa".to_owned());
-        let (horizontal, vertical, _cells) = extract_data(&decode_base64(&view.0));
-        let result = right_hand_solver(horizontal, vertical);
+        let mut player =
+            Player { position: Cell { row: 0, column: 0 }, direction: messages::Direction::Front };
+        let radar_view = extract_data(&decode_base64(&view.0));
+        let result = right_hand_solver(&radar_view, &mut player);
         assert!(matches!(result, messages::Action::MoveTo(messages::Direction::Right)));
     }
 
     #[test]
     fn test_check_win_condition_right() {
         let cells = vec![
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::OBJECTIVE,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::OBJECTIVE,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
         ];
         let direction = messages::Action::MoveTo(messages::Direction::Right);
-        assert!(check_win_condition(cells, direction));
+        assert!(check_win_condition(&cells, direction));
     }
 
     #[test]
     fn test_check_win_condition_left() {
         let cells = vec![
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::OBJECTIVE,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::OBJECTIVE,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
         ];
         let direction = messages::Action::MoveTo(messages::Direction::Left);
-        assert!(check_win_condition(cells, direction));
+        assert!(check_win_condition(&cells, direction));
     }
 
     #[test]
     fn test_check_win_condition_front() {
         let cells = vec![
-            Cells::NOTHING,
-            Cells::OBJECTIVE,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
+            CellType::NOTHING,
+            CellType::OBJECTIVE,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
         ];
         let direction = messages::Action::MoveTo(messages::Direction::Front);
-        assert!(check_win_condition(cells, direction));
+        assert!(check_win_condition(&cells, direction));
     }
 
     #[test]
     fn test_check_win_condition_back() {
         let cells = vec![
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::OBJECTIVE,
-            Cells::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::OBJECTIVE,
+            CellType::NOTHING,
         ];
         let direction = messages::Action::MoveTo(messages::Direction::Back);
-        assert!(check_win_condition(cells, direction));
+        assert!(check_win_condition(&cells, direction));
     }
 
     #[test]
     fn test_check_win_condition_no_objective() {
         let cells = vec![
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
-            Cells::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
+            CellType::NOTHING,
         ];
         let direction = messages::Action::MoveTo(messages::Direction::Right);
-        assert!(!check_win_condition(cells, direction));
+        assert!(!check_win_condition(&cells, direction));
     }
 
     #[test]

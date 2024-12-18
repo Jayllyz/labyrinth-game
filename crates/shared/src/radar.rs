@@ -12,7 +12,7 @@ pub enum Passages {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Cells {
+pub enum CellType {
     NOTHING = 0,
     ALLY = 1,
     ENEMY = 2,
@@ -21,6 +21,13 @@ pub enum Cells {
     OBJECTIVE = 8,
     ObjectiveMonster = 11,
     INVALID = 15,
+}
+
+#[derive(Debug)]
+pub struct RadarView {
+    pub horizontal: Vec<Passages>,
+    pub vertical: Vec<Passages>,
+    pub cells: Vec<CellType>,
 }
 
 pub trait ToBinary {
@@ -161,7 +168,7 @@ pub fn decode_base64(input: &str) -> String {
     decoded
 }
 
-pub fn retrieve_cell(octet: &str) -> Vec<Cells> {
+pub fn retrieve_cell(octet: &str) -> Vec<CellType> {
     const NUM_CELLS: usize = 9; // 4 bits per cell, remove the last 4 bits (padding)
     let mut data = Vec::with_capacity(NUM_CELLS);
 
@@ -173,14 +180,14 @@ pub fn retrieve_cell(octet: &str) -> Vec<Cells> {
         };
 
         let cell = match value {
-            0 => Cells::NOTHING,
-            1 => Cells::ALLY,
-            2 => Cells::ENEMY,
-            3 => Cells::MONSTER,
-            4 => Cells::HELP,
-            8 => Cells::OBJECTIVE,
-            11 => Cells::ObjectiveMonster,
-            15 => Cells::INVALID,
+            0 => CellType::NOTHING,
+            1 => CellType::ALLY,
+            2 => CellType::ENEMY,
+            3 => CellType::MONSTER,
+            4 => CellType::HELP,
+            8 => CellType::OBJECTIVE,
+            11 => CellType::ObjectiveMonster,
+            15 => CellType::INVALID,
             _ => continue,
         };
         data.push(cell);
@@ -231,11 +238,11 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec
     (horizontal_data, vertical_data)
 }
 
-pub fn extract_data<T: ToBinary>(input: T) -> (Vec<Passages>, Vec<Passages>, Vec<Cells>) {
+pub fn extract_data<T: ToBinary>(input: T) -> RadarView {
     let binary = input.to_binary();
 
     if binary.len() < 88 {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return RadarView { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() };
     }
 
     // 3 first octets are for horizontal, 3 next for vertical, and the last 5 for cells
@@ -251,7 +258,7 @@ pub fn extract_data<T: ToBinary>(input: T) -> (Vec<Passages>, Vec<Passages>, Vec
     let (horizontal, vertical) = retrieve_passage(&horizontal_bits, &vertical_bits);
     let cells = retrieve_cell(cell_bits);
 
-    (horizontal, vertical, cells)
+    RadarView { horizontal, vertical, cells }
 }
 
 #[cfg(test)]
@@ -342,45 +349,45 @@ mod tests {
         assert_eq!(
             retrieve_cell("1111111111111111000011111111000000000000"),
             vec![
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::NOTHING
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::NOTHING
             ]
         );
 
         assert_eq!(
             retrieve_cell("1111111111110000000011110000000011110000"),
             vec![
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::NOTHING,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::NOTHING,
-                Cells::INVALID
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::NOTHING,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::NOTHING,
+                CellType::INVALID
             ]
         );
 
         assert_eq!(
             retrieve_cell("1111111111110000000011110000000011110000"),
             vec![
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::NOTHING,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::NOTHING,
-                Cells::INVALID
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::NOTHING,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::NOTHING,
+                CellType::INVALID
             ]
         );
     }
@@ -465,10 +472,10 @@ mod tests {
     #[test]
     fn test_extract_data() {
         let input = decode_base64("jivbQjIad/apapa");
-        let (horizontal, vertical, cells) = extract_data(&input);
-        assert_eq!(horizontal.len(), 12);
-        assert_eq!(vertical.len(), 12);
-        assert_eq!(cells.len(), 9);
+        let radar_view = extract_data(&input);
+        assert_eq!(radar_view.horizontal.len(), 12);
+        assert_eq!(radar_view.vertical.len(), 12);
+        assert_eq!(radar_view.cells.len(), 9);
 
         assert_eq!(
             vec![
@@ -485,7 +492,7 @@ mod tests {
                 Passages::OPEN,
                 Passages::UNDEFINED
             ],
-            horizontal
+            radar_view.horizontal
         );
 
         assert_eq!(
@@ -503,22 +510,22 @@ mod tests {
                 Passages::WALL,
                 Passages::UNDEFINED,
             ],
-            vertical
+            radar_view.vertical
         );
 
         assert_eq!(
             vec![
-                Cells::NOTHING,
-                Cells::INVALID,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::NOTHING,
-                Cells::INVALID,
-                Cells::NOTHING,
-                Cells::NOTHING,
-                Cells::INVALID
+                CellType::NOTHING,
+                CellType::INVALID,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::NOTHING,
+                CellType::INVALID,
+                CellType::NOTHING,
+                CellType::NOTHING,
+                CellType::INVALID
             ],
-            cells
+            radar_view.cells
         );
     }
 
