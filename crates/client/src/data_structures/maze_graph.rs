@@ -18,6 +18,7 @@ pub struct MazeCell {
     pub neighbors: HashSet<Cell>,
     pub status: CellStatus,
     pub walls: u8,
+    pub parent: Cell,
 }
 #[derive(Debug)]
 pub struct MazeGraph {
@@ -45,6 +46,7 @@ impl MazeGraph {
                 cell_type,
                 neighbors: HashSet::new(),
                 status: CellStatus::NotVisited,
+                parent: cell,
                 walls: 0,
             },
         );
@@ -73,6 +75,14 @@ impl MazeGraph {
         };
 
         cell.walls = max(cell.walls, walls);
+    }
+
+    pub fn set_parent(&mut self, position: Cell, parent: Cell) {
+        let Some(cell) = self.cell_map.get_mut(&position) else {
+            return;
+        };
+
+        cell.parent = parent;
     }
 
     pub fn get_size(&self) -> usize {

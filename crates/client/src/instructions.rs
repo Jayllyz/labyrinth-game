@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use shared::maze::Cell;
 use shared::messages::{self, Direction};
@@ -8,11 +8,14 @@ use crate::data_structures::maze_graph::{CellStatus, MazeGraph};
 use crate::maze_parser::Player;
 
 pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::Action {
-    let Some(player_cell) = graph.get_cell(player.position) else {
-        return messages::Action::MoveTo(messages::Direction::Front);
-    };
     let mut message: messages::Action = messages::Action::MoveTo(messages::Direction::Front);
-    let neighbor_positions: HashSet<Cell> = player_cell.neighbors.clone();
+
+    let (neighbor_positions, parent) = {
+        let Some(player_cell) = graph.get_cell(player.position) else {
+            return messages::Action::MoveTo(messages::Direction::Front);
+        };
+        (player_cell.neighbors.clone(), player_cell.parent)
+    };
 
     let mut visited: Vec<Cell> = Vec::new();
 
@@ -49,6 +52,7 @@ pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::
                 _ => messages::Action::MoveTo(messages::Direction::Front),
             };
 
+            graph.set_parent(neighbor_position, player.position);
             player.move_forward();
             return message;
         }
@@ -58,26 +62,25 @@ pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::
         }
     }
 
-    let back_status = graph.get_cell_status(player.get_back_position());
-
-    if back_status == CellStatus::DeadEnd {
-        let next_direction = player.get_next_direction(&visited[0]);
-
-        message = match next_direction {
-            Direction::Left => {
-                player.turn_left();
-                messages::Action::MoveTo(messages::Direction::Left)
-            }
-            Direction::Right => {
-                player.turn_right();
-                messages::Action::MoveTo(messages::Direction::Right)
-            }
-            _ => message,
-        };
+    let parent_status = graph.get_cell_status(parent);
+    let next_direction;
+    if parent_status == CellStatus::DeadEnd || parent == player.position {
+        next_direction = player.get_next_direction(&visited[0]);
     } else {
-        player.turn_back();
-        message = messages::Action::MoveTo(messages::Direction::Back);
+        next_direction = player.get_next_direction(&parent);
     }
+
+    message = match next_direction {
+        Direction::Left => {
+            player.turn_left();
+            messages::Action::MoveTo(messages::Direction::Left)
+        }
+        Direction::Right => {
+            player.turn_right();
+            messages::Action::MoveTo(messages::Direction::Right)
+        }
+        _ => message,
+    };
 
     graph.update_cell_status(player.position, CellStatus::DeadEnd);
     player.move_forward();
