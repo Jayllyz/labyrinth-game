@@ -111,11 +111,14 @@ mod tests {
     fn test_game_result_type() {
         let success: GameResult<i32> = Ok(42);
         assert!(success.is_ok());
-        assert_eq!(success.unwrap(), 42);
+        match success {
+            Ok(value) => assert_eq!(value, 42),
+            Err(_) => panic!("Expected Ok(42)"),
+        }
 
         let failure: GameResult<i32> = Err(GameError::MessageError("test error".to_string()));
         assert!(failure.is_err());
-        assert!(matches!(failure.unwrap_err(), GameError::MessageError(_)));
+        assert!(matches!(failure, Err(GameError::MessageError(_))));
     }
 
     #[test]
@@ -141,7 +144,7 @@ mod tests {
         ];
 
         for error in errors {
-            error.log_error(&logger);
+            error.log_error(logger);
         }
     }
 }

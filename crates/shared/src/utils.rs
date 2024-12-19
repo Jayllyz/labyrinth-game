@@ -42,7 +42,7 @@ mod tests {
 
     #[test]
     fn test_print_log() {
-        for color in vec![Color::Red, Color::Orange, Color::Blue, Color::Green] {
+        for color in [Color::Red, Color::Orange, Color::Blue, Color::Green] {
             print_log("Log message", color);
         }
     }
