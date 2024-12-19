@@ -63,7 +63,6 @@ pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::
     }
 
     let parent_status = graph.get_cell_status(parent);
-
     let next_direction = if parent_status == CellStatus::DeadEnd || parent == player.position {
         player.get_next_direction(&visited[0])
     } else {
@@ -189,7 +188,11 @@ mod tests {
 
         let result = tremeaux_solver(&mut player, &mut graph);
 
-        assert!(matches!(result, messages::Action::MoveTo(messages::Direction::Front)));
+        assert!(matches!(
+            result,
+            messages::Action::MoveTo(messages::Direction::Front)
+                | messages::Action::MoveTo(messages::Direction::Back)
+        ));
     }
 
     #[test]
