@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    cmp::max,
+    collections::{HashMap, HashSet},
+};
 
 use shared::{maze::Cell, radar::CellType};
 
@@ -14,6 +17,7 @@ pub struct MazeCell {
     pub cell_type: CellType,
     pub neighbors: HashSet<Cell>,
     pub status: CellStatus,
+    pub walls: u8,
 }
 #[derive(Debug)]
 pub struct MazeGraph {
@@ -37,7 +41,12 @@ impl MazeGraph {
     pub fn add(&mut self, cell: Cell, cell_type: CellType) {
         self.cell_map.insert(
             cell,
-            MazeCell { cell_type, neighbors: HashSet::new(), status: CellStatus::NotVisited },
+            MazeCell {
+                cell_type,
+                neighbors: HashSet::new(),
+                status: CellStatus::NotVisited,
+                walls: 0,
+            },
         );
     }
 
@@ -56,6 +65,14 @@ impl MazeGraph {
         };
 
         cell.status = status;
+    }
+
+    pub fn update_walls(&mut self, position: Cell, walls: u8) {
+        let Some(cell) = self.cell_map.get_mut(&position) else {
+            return;
+        };
+
+        cell.walls = max(cell.walls, walls);
     }
 
     pub fn get_size(&self) -> usize {

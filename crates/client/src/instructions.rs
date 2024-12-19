@@ -21,30 +21,43 @@ pub fn tremeaux_solver(
     let mut visited: Vec<Cell> = Vec::new();
 
     for neighbor_position in neighbor_positions {
-        let Some(neighbor_cell) = graph.get_cell(neighbor_position.clone()) else {
-            continue;
+        let (walls, mut status, cell_type) = {
+            let Some(neighbor_cell) = graph.get_cell(neighbor_position.clone()) else {
+                continue;
+            };
+            (neighbor_cell.walls, neighbor_cell.status.clone(), neighbor_cell.cell_type.clone())
         };
 
-        if neighbor_cell.status == CellStatus::NotVisited {
+        if walls == 3 && !(cell_type == CellType::OBJECTIVE || cell_type == CellType::HELP) {
+            graph.update_cell_status(neighbor_position.clone(), CellStatus::DeadEnd);
+            status = CellStatus::DeadEnd;
+        }
+
+        if status == CellStatus::NotVisited {
             graph.update_cell_status(player.position, CellStatus::VISITED);
             let next_direction = player.get_next_direction(&neighbor_position);
-            if next_direction == Direction::Left {
-                player.turn_left();
-                message = messages::Action::MoveTo(messages::Direction::Left);
-            } else if next_direction == Direction::Right {
-                player.turn_right();
-                message = messages::Action::MoveTo(messages::Direction::Right);
-            } else if next_direction == Direction::Back {
-                player.turn_back();
-                message = messages::Action::MoveTo(messages::Direction::Back);
-            } else {
-                message = messages::Action::MoveTo(messages::Direction::Front);
-            }
+
+            message = match next_direction {
+                Direction::Left => {
+                    player.turn_left();
+                    messages::Action::MoveTo(messages::Direction::Left)
+                }
+                Direction::Right => {
+                    player.turn_right();
+                    messages::Action::MoveTo(messages::Direction::Right)
+                }
+                Direction::Back => {
+                    player.turn_back();
+                    messages::Action::MoveTo(messages::Direction::Back)
+                }
+                _ => messages::Action::MoveTo(messages::Direction::Front),
+            };
+
             player.move_forward();
             return message;
         }
 
-        if neighbor_cell.status == CellStatus::VISITED {
+        if status == CellStatus::VISITED {
             visited.push(neighbor_position);
         }
     }
@@ -53,14 +66,18 @@ pub fn tremeaux_solver(
 
     if back_status == CellStatus::DeadEnd {
         let next_direction = player.get_next_direction(&visited[0]);
-        if next_direction == Direction::Left {
-            player.turn_left();
-            message = messages::Action::MoveTo(messages::Direction::Left);
-        }
-        if next_direction == Direction::Right {
-            player.turn_right();
-            message = messages::Action::MoveTo(messages::Direction::Right);
-        }
+
+        message = match next_direction {
+            Direction::Left => {
+                player.turn_left();
+                messages::Action::MoveTo(messages::Direction::Left)
+            }
+            Direction::Right => {
+                player.turn_right();
+                messages::Action::MoveTo(messages::Direction::Right)
+            }
+            _ => message,
+        };
     } else {
         player.turn_back();
         message = messages::Action::MoveTo(messages::Direction::Back);
