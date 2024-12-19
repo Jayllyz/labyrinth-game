@@ -70,7 +70,7 @@ fn main() {
     let agents_count = args.players.unwrap_or(3);
 
     if let Err(e) = client.run(args.retries, agents_count) {
-        e.log_error(&logger);
+        e.log_error(logger);
         std::process::exit(1);
     }
 

@@ -1,6 +1,7 @@
 use crate::instructions;
 use crate::maze_parser::maze_to_graph;
 use crate::{data_structures::maze_graph::MazeGraph, maze_parser::Player};
+use shared::utils::print_error;
 use shared::{
     errors::{GameError, GameResult},
     logger::Logger,
@@ -50,6 +51,7 @@ impl GameClient {
             match TcpStream::connect(address) {
                 Ok(stream) => return Ok(stream),
                 Err(e) => {
+                    print_error(&e.to_string());
                     if max_retries == 1 {
                         return Err(GameError::ConnectionError(e));
                     }
@@ -73,7 +75,7 @@ impl GameClient {
                 registration_token
             }
             Message::RegisterTeamResult(RegisterTeamResult::Err(err)) => {
-                return Err(GameError::RegistrationError(format!("{:?}", err)));
+                return Err(GameError::TeamRegistrationError(format!("{:?}", err)));
             }
             _ => return Err(GameError::MessageError("Invalid registration response".into())),
         };
@@ -148,7 +150,7 @@ impl GameClient {
                 }
                 SubscribePlayerResult::Err(err) => {
                     logger.error(&format!("{} failed to subscribe: {:?}", thread_name, err));
-                    return Err(GameError::SubscriptionError(format!("{:?}", err)));
+                    return Err(GameError::AgentSubscriptionError(format!("{:?}", err)));
                 }
             },
             Message::RadarView(view) => {

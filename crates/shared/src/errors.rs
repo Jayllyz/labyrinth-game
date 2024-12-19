@@ -6,13 +6,10 @@ use std::io;
 #[derive(Debug)]
 pub enum GameError {
     ConnectionError(io::Error),
-    RegistrationError(String),
-    SubscriptionError(String),
+    TeamRegistrationError(String),
+    AgentSubscriptionError(String),
     MessageError(String),
-    ChallengeError(String),
     ThreadError(String),
-    RadarError(String),
-    ActionError { action_type: String, details: String },
     SerializationError(String),
 }
 
@@ -20,15 +17,12 @@ impl fmt::Display for GameError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             GameError::ConnectionError(err) => write!(f, "Connection error: {}", err),
-            GameError::RegistrationError(msg) => write!(f, "Registration error: {}", msg),
-            GameError::SubscriptionError(msg) => write!(f, "Subscription error: {}", msg),
-            GameError::MessageError(msg) => write!(f, "Message error: {}", msg),
-            GameError::ChallengeError(msg) => write!(f, "Challenge error: {}", msg),
-            GameError::ThreadError(msg) => write!(f, "Thread error: {}", msg),
-            GameError::RadarError(msg) => write!(f, "Radar error: {}", msg),
-            GameError::ActionError { action_type, details } => {
-                write!(f, "Action error ({}): {}", action_type, details)
+            GameError::TeamRegistrationError(msg) => write!(f, "Team registration error: {}", msg),
+            GameError::AgentSubscriptionError(msg) => {
+                write!(f, "Agent subscription error: {}", msg)
             }
+            GameError::MessageError(msg) => write!(f, "Message error: {}", msg),
+            GameError::ThreadError(msg) => write!(f, "Thread error: {}", msg),
             GameError::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
         }
     }
