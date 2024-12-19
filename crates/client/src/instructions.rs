@@ -79,6 +79,10 @@ pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::
             player.turn_right();
             messages::Action::MoveTo(messages::Direction::Right)
         }
+        Direction::Back => {
+            player.turn_back();
+            messages::Action::MoveTo(messages::Direction::Back)
+        }
         _ => message,
     };
 
