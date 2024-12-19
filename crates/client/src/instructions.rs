@@ -63,12 +63,12 @@ pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::
     }
 
     let parent_status = graph.get_cell_status(parent);
-    let next_direction;
-    if parent_status == CellStatus::DeadEnd || parent == player.position {
-        next_direction = player.get_next_direction(&visited[0]);
+
+    let next_direction = if parent_status == CellStatus::DeadEnd || parent == player.position {
+        player.get_next_direction(&visited[0])
     } else {
-        next_direction = player.get_next_direction(&parent);
-    }
+        player.get_next_direction(&parent)
+    };
 
     message = match next_direction {
         Direction::Left => {
@@ -164,18 +164,16 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
+    use crate::maze_parser::maze_to_graph;
+
     use super::*;
     use messages::RadarView;
-    use shared::{
-        maze::Cell,
-        radar::{decode_base64, extract_data},
-    };
+    use shared::radar::{decode_base64, extract_data};
 
     #[test]
     fn test_right_hand_solver() {
         let view = RadarView("swfGkIAyap8a8aa".to_owned());
-        let mut player =
-            Player { position: Cell { row: 0, column: 0 }, direction: messages::Direction::Front };
+        let mut player = Player::new();
         let radar_view = extract_data(&decode_base64(&view.0));
         let result = right_hand_solver(&radar_view, &mut player);
         assert!(matches!(result, messages::Action::MoveTo(messages::Direction::Right)));
