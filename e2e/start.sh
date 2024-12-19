@@ -10,7 +10,7 @@ sleep 1
 
 # Start the server in background
 /usr/local/bin/server run &
-sleep 5
+sleep 3
 
 # Start the client
 RUST_BACKTRACE=1 /usr/local/bin/client
