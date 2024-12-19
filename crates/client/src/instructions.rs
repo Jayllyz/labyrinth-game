@@ -190,8 +190,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            messages::Action::MoveTo(messages::Direction::Front)
-                | messages::Action::MoveTo(messages::Direction::Back)
+            messages::Action::MoveTo(messages::Direction::Front | messages::Direction::Back)
         ));
     }
 
