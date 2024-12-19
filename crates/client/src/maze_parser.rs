@@ -31,6 +31,10 @@ pub struct Player {
 }
 
 impl Player {
+    pub fn new() -> Self {
+        Self { position: Cell { row: 0, column: 0 }, direction: Direction::Front }
+    }
+
     pub fn move_forward(&mut self) {
         self.position = match self.direction {
             Direction::Front => Cell { row: self.position.row, column: self.position.column - 1 },
@@ -101,6 +105,12 @@ impl Player {
             Direction::Back => Cell { row: self.position.row, column: self.position.column + 1 },
             Direction::Left => Cell { row: self.position.row - 1, column: self.position.column },
         }
+    }
+}
+
+impl Default for Player {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

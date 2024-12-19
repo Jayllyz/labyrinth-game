@@ -1,20 +1,18 @@
 use crate::instructions;
 use crate::maze_parser::maze_to_graph;
 use crate::{data_structures::maze_graph::MazeGraph, maze_parser::Player};
-use shared::maze::Cell;
-use shared::messages::Direction;
+use shared::utils::print_error;
 use shared::{
+    errors::{GameError, GameResult},
     logger::Logger,
     messages::{
         self, receive_message, send_message, Action, Challenge, Hint, Message, RegisterTeam,
         RegisterTeamResult, SubscribePlayer, SubscribePlayerResult,
     },
     radar::{decode_base64, extract_data},
-    utils::print_error,
 };
 use std::{
     collections::HashMap,
-    error::Error,
     net::TcpStream,
     sync::{Arc, Mutex},
     thread::{self, ThreadId},
@@ -48,15 +46,14 @@ impl GameClient {
         }
     }
 
-    fn connect_to_server(address: &str, mut max_retries: u8) -> TcpStream {
+    fn connect_to_server(address: &str, mut max_retries: u8) -> GameResult<TcpStream> {
         loop {
             match TcpStream::connect(address) {
-                Ok(stream) => return stream,
+                Ok(stream) => return Ok(stream),
                 Err(e) => {
-                    print_error(&format!("Failed to connect to server: {}", e));
+                    print_error(&e.to_string());
                     if max_retries == 1 {
-                        println!("Max retries reached, exiting...");
-                        std::process::exit(1);
+                        return Err(GameError::ConnectionError(e));
                     }
                     max_retries -= 1;
                     std::thread::sleep(std::time::Duration::from_secs(2));
@@ -65,21 +62,26 @@ impl GameClient {
         }
     }
 
-    pub fn run(&self, max_retries: u8, num_agents: u8) -> Result<(), Box<dyn Error>> {
-        let logger = Logger::get_instance();
-        let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries);
-        let register_msg =
-            Message::RegisterTeam(RegisterTeam { name: self.config.team_name.clone() });
-        send_message(&mut stream, &register_msg)?;
+    pub fn run(&self, max_retries: u8, num_agents: u8) -> GameResult<()> {
+        let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries)?;
+
+        send_message(
+            &mut stream,
+            &Message::RegisterTeam(RegisterTeam { name: self.config.team_name.clone() }),
+        )?;
 
         let token = match receive_message(&mut stream)? {
             Message::RegisterTeamResult(RegisterTeamResult::Ok { registration_token, .. }) => {
                 registration_token
             }
-            _ => return Err("Failed to register team".into()),
+            Message::RegisterTeamResult(RegisterTeamResult::Err(err)) => {
+                return Err(GameError::TeamRegistrationError(format!("{:?}", err)));
+            }
+            _ => return Err(GameError::MessageError("Invalid registration response".into())),
         };
 
-        let mut handles = vec![];
+        let mut handles = Vec::with_capacity(num_agents as usize);
+
         for i in 0..num_agents {
             let config = self.config.clone();
             let agent_token = token.clone();
@@ -89,21 +91,19 @@ impl GameClient {
                 secrets: Arc::clone(&self.challenge_secret_sum.secrets),
             };
 
-            let mut graph = MazeGraph::new();
-            let mut player =
-                Player { position: Cell { row: 0, column: 0 }, direction: Direction::Front };
+            let handle = thread::Builder::new().name(agent_name.clone()).spawn(
+                move || -> GameResult<()> {
+                    let mut stream = Self::connect_to_server(&config.server_addr, max_retries)?;
+                    let mut graph = MazeGraph::new();
+                    let mut player = Player::new();
 
-            let handle = thread::Builder::new()
-                .name(agent_name.clone())
-                .spawn(move || {
-                    let mut stream = Self::connect_to_server(&config.server_addr, max_retries);
-                    let subscribe_msg = Message::SubscribePlayer(SubscribePlayer {
-                        name: agent_name.clone(),
-                        registration_token: agent_token,
-                    });
-                    if let Err(e) = send_message(&mut stream, &subscribe_msg) {
-                        logger.error(&format!("{} failed to subscribe: {}", agent_name, e));
-                    }
+                    send_message(
+                        &mut stream,
+                        &Message::SubscribePlayer(SubscribePlayer {
+                            name: agent_name.clone(),
+                            registration_token: agent_token,
+                        }),
+                    )?;
 
                     while let Ok(msg) = receive_message(&mut stream) {
                         Self::handle_server_message(
@@ -113,16 +113,19 @@ impl GameClient {
                             &secrets_sum,
                             &mut graph,
                             &mut player,
-                        );
+                        )?;
                     }
-                })
-                .map_err(|e| format!("Failed to spawn thread: {}", e))?;
+                    Ok(())
+                },
+            )?;
+
             handles.push(handle);
         }
 
-        for handle in handles {
-            handle.join().map_err(|e| format!("Thread panicked: {:?}", e))?;
-        }
+        handles
+            .into_iter()
+            .map(|handle| handle.join().map_err(|e| GameError::ThreadError(format!("{:?}", e)))?)
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(())
     }
@@ -134,7 +137,7 @@ impl GameClient {
         secrets_sum: &SecretSumModulo,
         graph: &mut MazeGraph,
         player: &mut Player,
-    ) {
+    ) -> GameResult<()> {
         let logger = Logger::get_instance();
         let thread = std::thread::current();
 
@@ -147,10 +150,11 @@ impl GameClient {
                 }
                 SubscribePlayerResult::Err(err) => {
                     logger.error(&format!("{} failed to subscribe: {:?}", thread_name, err));
+                    return Err(GameError::AgentSubscriptionError(format!("{:?}", err)));
                 }
             },
             Message::RadarView(view) => {
-                Self::handle_radar_view(stream, logger, thread_name, view, graph, player);
+                Self::handle_radar_view(stream, logger, thread_name, view, graph, player)?;
             }
             Message::Hint(hint) => {
                 if let Hint::Secret(secret) = hint {
@@ -169,7 +173,7 @@ impl GameClient {
                             &secrets_sum.secrets,
                             &secrets_sum.sum,
                             Some(challenge),
-                        );
+                        )?;
                     }
                 }
             }
@@ -181,7 +185,7 @@ impl GameClient {
                         &secrets_sum.secrets,
                         &secrets_sum.sum,
                         None,
-                    );
+                    )?;
                 }
                 messages::ActionError::InvalidMove => todo!(),
                 messages::ActionError::OutOfMap => todo!(),
@@ -195,6 +199,8 @@ impl GameClient {
                 logger.warn(&format!("Unhandled message: {:?}", message));
             }
         }
+
+        Ok(())
     }
 
     fn handle_secret_sum_modulo(
@@ -202,19 +208,17 @@ impl GameClient {
         secrets: &Arc<Mutex<HashMap<ThreadId, u128>>>,
         secret_sum: &Arc<Mutex<u128>>,
         new_sum: Option<u128>,
-    ) {
+    ) -> GameResult<()> {
         if let Ok(mut sum) = secret_sum.lock() {
             if let Some(new_sum) = new_sum {
                 *sum = new_sum;
             }
             if let Ok(secrets) = secrets.lock() {
                 let result = instructions::solve_sum_modulo(*sum, &secrets);
-                let _ = send_message(
-                    stream,
-                    &Message::Action(Action::SolveChallenge { answer: result }),
-                );
+                send_message(stream, &Message::Action(Action::SolveChallenge { answer: result }))?;
             }
         }
+        Ok(())
     }
 
     fn handle_radar_view(
@@ -224,18 +228,17 @@ impl GameClient {
         view: messages::RadarView,
         graph: &mut MazeGraph,
         player: &mut Player,
-    ) {
+    ) -> GameResult<()> {
         let radar_view = extract_data(&decode_base64(&view.0));
         maze_to_graph(&radar_view, player, graph);
         let action = instructions::tremeaux_solver(player, graph);
-        if let Err(e) = send_message(stream, &Message::Action(action.clone())) {
-            logger.error(&format!("{} failed to send action: {}", thread_name, e));
-        }
+        send_message(stream, &Message::Action(action.clone()))?;
 
         let is_win = instructions::check_win_condition(&radar_view.cells, action);
         if is_win {
             logger.info(&format!("{} has found the exit!", thread_name));
         }
+        Ok(())
     }
 }
 
@@ -277,8 +280,7 @@ mod tests {
 
         let message = Message::SubscribePlayerResult(SubscribePlayerResult::Ok);
         let mut graph = MazeGraph::new();
-        let mut player =
-            Player { position: Cell { row: 0, column: 0 }, direction: Direction::Front };
+        let mut player = Player::new();
 
         GameClient::handle_server_message(
             &mut stream,
@@ -290,7 +292,8 @@ mod tests {
             },
             &mut graph,
             &mut player,
-        );
+        )
+        .unwrap();
     }
 
     #[test]
@@ -323,8 +326,7 @@ mod tests {
         let message = Message::Challenge(messages::Challenge::SecretSumModulo(10));
 
         let mut graph = MazeGraph::new();
-        let mut player =
-            Player { position: Cell { row: 0, column: 0 }, direction: Direction::Front };
+        let mut player = Player::new();
 
         GameClient::handle_server_message(
             &mut stream,
@@ -333,7 +335,8 @@ mod tests {
             &SecretSumModulo { sum: secret_sum, secrets },
             &mut graph,
             &mut player,
-        );
+        )
+        .unwrap();
     }
 
     #[test]
@@ -349,8 +352,7 @@ mod tests {
         let message = Message::RadarView(messages::RadarView("bKgGjsIyap8p8aa".to_string()));
 
         let mut graph = MazeGraph::new();
-        let mut player =
-            Player { position: Cell { row: 0, column: 0 }, direction: Direction::Front };
+        let mut player = Player::new();
 
         GameClient::handle_server_message(
             &mut stream,
@@ -362,6 +364,7 @@ mod tests {
             },
             &mut graph,
             &mut player,
-        );
+        )
+        .unwrap();
     }
 }
