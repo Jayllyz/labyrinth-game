@@ -234,7 +234,6 @@ impl GameClient {
 
         let is_win = instructions::check_win_condition(&radar_view.cells, action);
         if is_win {
-            println!("GRAPH SIZE IS {}", graph.get_size());
             logger.info(&format!("{} has found the exit!", thread_name));
         }
     }
