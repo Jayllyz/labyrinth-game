@@ -4,6 +4,8 @@ use std::{
     net::{SocketAddr, TcpStream},
 };
 
+use crate::errors::{GameError, GameResult};
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Message {
     RegisterTeam(RegisterTeam),
@@ -111,40 +113,40 @@ pub struct Teams {
     pub registration_token: String,
 }
 
-pub fn receive_message(stream: &mut TcpStream) -> io::Result<Message> {
+pub fn receive_message(stream: &mut TcpStream) -> GameResult<Message> {
     let mut buf_len = [0u8; 4];
-    stream.read_exact(&mut buf_len)?;
+    stream.read_exact(&mut buf_len).map_err(|e| match e.kind() {
+        io::ErrorKind::UnexpectedEof => GameError::MessageError("Incomplete message length".into()),
+        _ => GameError::ConnectionError(e),
+    })?;
 
     let len = u32::from_le_bytes(buf_len) as usize;
     const MAX_MESSAGE_SIZE: usize = 1024 * 1024; // 1MB
     if len > MAX_MESSAGE_SIZE {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "message too large"));
+        return Err(GameError::MessageError("Message too large".into()));
     }
 
     let mut buf = vec![0u8; len];
-    stream.read_exact(&mut buf)?;
+    stream.read_exact(&mut buf).map_err(GameError::ConnectionError)?;
 
-    let str = String::from_utf8_lossy(&buf);
-    let json: Message =
-        serde_json::from_str(&str).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let str = match String::from_utf8(buf) {
+        Ok(s) => s,
+        Err(e) => return Err(GameError::MessageError(format!("Invalid UTF-8: {}", e))),
+    };
 
-    Ok(json)
+    serde_json::from_str(&str).map_err(|e| GameError::MessageError(format!("Invalid JSON: {}", e)))
 }
 
-pub fn send_message(stream: &mut TcpStream, msg: &Message) -> io::Result<()> {
+pub fn send_message(stream: &mut TcpStream, msg: &Message) -> GameResult<()> {
     let json =
-        serde_json::to_string(msg).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        serde_json::to_string(msg).map_err(|e| GameError::SerializationError(e.to_string()))?;
 
-    let json_size = json.len() as u32;
-
-    let mut buffer = Vec::with_capacity(4 + json.len());
-    buffer.extend_from_slice(&json_size.to_le_bytes());
+    let len = json.len();
+    let mut buffer = Vec::with_capacity(4 + len);
+    buffer.extend_from_slice(&(len as u32).to_le_bytes());
     buffer.extend_from_slice(json.as_bytes());
 
-    stream.write_all(&buffer)?;
-    stream.flush()?;
-
-    Ok(())
+    stream.write_all(&buffer).and_then(|_| stream.flush()).map_err(GameError::ConnectionError)
 }
 
 #[cfg(test)]

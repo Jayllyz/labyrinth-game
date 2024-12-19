@@ -111,7 +111,7 @@ impl GameClient {
                             &secrets_sum,
                             &mut graph,
                             &mut player,
-                        );
+                        )?;
                     }
                     Ok(())
                 },
@@ -135,7 +135,7 @@ impl GameClient {
         secrets_sum: &SecretSumModulo,
         graph: &mut MazeGraph,
         player: &mut Player,
-    ) {
+    ) -> GameResult<()> {
         let logger = Logger::get_instance();
         let thread = std::thread::current();
 
@@ -148,10 +148,11 @@ impl GameClient {
                 }
                 SubscribePlayerResult::Err(err) => {
                     logger.error(&format!("{} failed to subscribe: {:?}", thread_name, err));
+                    return Err(GameError::SubscriptionError(format!("{:?}", err)));
                 }
             },
             Message::RadarView(view) => {
-                Self::handle_radar_view(stream, logger, thread_name, view, graph, player);
+                Self::handle_radar_view(stream, logger, thread_name, view, graph, player)?;
             }
             Message::Hint(hint) => {
                 if let Hint::Secret(secret) = hint {
@@ -170,7 +171,7 @@ impl GameClient {
                             &secrets_sum.secrets,
                             &secrets_sum.sum,
                             Some(challenge),
-                        );
+                        )?;
                     }
                 }
             }
@@ -182,7 +183,7 @@ impl GameClient {
                         &secrets_sum.secrets,
                         &secrets_sum.sum,
                         None,
-                    );
+                    )?;
                 }
                 messages::ActionError::InvalidMove => todo!(),
                 messages::ActionError::OutOfMap => todo!(),
@@ -196,6 +197,8 @@ impl GameClient {
                 logger.warn(&format!("Unhandled message: {:?}", message));
             }
         }
+
+        Ok(())
     }
 
     fn handle_secret_sum_modulo(
@@ -203,19 +206,17 @@ impl GameClient {
         secrets: &Arc<Mutex<HashMap<ThreadId, u128>>>,
         secret_sum: &Arc<Mutex<u128>>,
         new_sum: Option<u128>,
-    ) {
+    ) -> GameResult<()> {
         if let Ok(mut sum) = secret_sum.lock() {
             if let Some(new_sum) = new_sum {
                 *sum = new_sum;
             }
             if let Ok(secrets) = secrets.lock() {
                 let result = instructions::solve_sum_modulo(*sum, &secrets);
-                let _ = send_message(
-                    stream,
-                    &Message::Action(Action::SolveChallenge { answer: result }),
-                );
+                send_message(stream, &Message::Action(Action::SolveChallenge { answer: result }))?;
             }
         }
+        Ok(())
     }
 
     fn handle_radar_view(
@@ -225,18 +226,17 @@ impl GameClient {
         view: messages::RadarView,
         graph: &mut MazeGraph,
         player: &mut Player,
-    ) {
+    ) -> GameResult<()> {
         let radar_view = extract_data(&decode_base64(&view.0));
         maze_to_graph(&radar_view, player, graph);
         let action = instructions::tremeaux_solver(player, graph);
-        if let Err(e) = send_message(stream, &Message::Action(action.clone())) {
-            logger.error(&format!("{} failed to send action: {}", thread_name, e));
-        }
+        send_message(stream, &Message::Action(action.clone()))?;
 
         let is_win = instructions::check_win_condition(&radar_view.cells, action);
         if is_win {
             logger.info(&format!("{} has found the exit!", thread_name));
         }
+        Ok(())
     }
 }
 
@@ -290,7 +290,8 @@ mod tests {
             },
             &mut graph,
             &mut player,
-        );
+        )
+        .unwrap();
     }
 
     #[test]
@@ -332,7 +333,8 @@ mod tests {
             &SecretSumModulo { sum: secret_sum, secrets },
             &mut graph,
             &mut player,
-        );
+        )
+        .unwrap();
     }
 
     #[test]
@@ -360,6 +362,7 @@ mod tests {
             },
             &mut graph,
             &mut player,
-        );
+        )
+        .unwrap();
     }
 }
