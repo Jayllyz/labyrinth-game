@@ -66,6 +66,42 @@ impl Player {
             Direction::Left => Direction::Right,
         };
     }
+
+    pub fn get_next_direction(&mut self, target: &Cell) -> Direction {
+        let diff = Cell {
+            row: target.row - self.position.row,
+            column: target.column - self.position.column,
+        };
+
+        let cell_mask: Vec<Cell> = get_direction_mask(self);
+
+        if cell_mask[3] == diff {
+            return Direction::Left;
+        };
+        if cell_mask[5] == diff {
+            return Direction::Right;
+        };
+        if cell_mask[7] == diff {
+            return Direction::Back;
+        };
+        Direction::Front
+    }
+
+    pub fn get_back_position(&self) -> Cell {
+        let d = match self.direction {
+            Direction::Front => Direction::Back,
+            Direction::Right => Direction::Left,
+            Direction::Back => Direction::Front,
+            Direction::Left => Direction::Right,
+        };
+
+        match d {
+            Direction::Front => Cell { row: self.position.row, column: self.position.column - 1 },
+            Direction::Right => Cell { row: self.position.row + 1, column: self.position.column },
+            Direction::Back => Cell { row: self.position.row, column: self.position.column + 1 },
+            Direction::Left => Cell { row: self.position.row - 1, column: self.position.column },
+        }
+    }
 }
 
 pub fn maze_to_graph(radar_view: &Radar, player: &Player, maze_graph: &mut MazeGraph) {
@@ -81,6 +117,9 @@ pub fn maze_to_graph(radar_view: &Radar, player: &Player, maze_graph: &mut MazeG
         if !maze_graph.contains(&cell_pos) {
             maze_graph.add(cell_pos, radar_view.cells[cell_id].clone());
         }
+
+        let walls = get_cell_walls(cell_id, &radar_view.horizontal, &radar_view.vertical);
+        maze_graph.update_walls(cell_pos, walls);
 
         let mut neigbors_to_add: Vec<Cell> = Vec::new();
 
@@ -149,6 +188,32 @@ fn is_bottom_cell_accessible(cell_id: usize, horizontal: &[Passages]) -> bool {
 
 fn is_top_cell_accessible(cell_id: usize, horizontal: &[Passages]) -> bool {
     cell_id > 2 && horizontal[cell_id] == Passages::OPEN
+}
+
+fn get_cell_walls(cell_id: usize, horizontal: &[Passages], vertical: &[Passages]) -> u8 {
+    let mut walls = 0;
+
+    // Top wall
+    if horizontal[cell_id] == Passages::WALL {
+        walls += 1;
+    }
+
+    // Right wall
+    if vertical[cell_id + cell_id / 3 + 1] == Passages::WALL {
+        walls += 1;
+    }
+
+    // Left wall
+    if vertical[cell_id + cell_id / 3] == Passages::WALL {
+        walls += 1;
+    }
+
+    // Bottom wall
+    if horizontal[cell_id + 3] == Passages::WALL {
+        walls += 1;
+    }
+
+    walls
 }
 
 fn get_direction_mask(player: &Player) -> Vec<Cell> {

@@ -227,7 +227,7 @@ impl GameClient {
     ) {
         let radar_view = extract_data(&decode_base64(&view.0));
         maze_to_graph(&radar_view, player, graph);
-        let action = instructions::right_hand_solver(&radar_view, player);
+        let action = instructions::tremeaux_solver(player, graph);
         if let Err(e) = send_message(stream, &Message::Action(action.clone())) {
             logger.error(&format!("{} failed to send action: {}", thread_name, e));
         }

@@ -1,9 +1,88 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use shared::messages::{self};
+use shared::maze::Cell;
+use shared::messages::{self, Direction};
 use shared::radar::{CellType, Passages, Radar};
 
+use crate::data_structures::maze_graph::{CellStatus, MazeGraph};
 use crate::maze_parser::Player;
+
+pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::Action {
+    let Some(player_cell) = graph.get_cell(player.position) else {
+        return messages::Action::MoveTo(messages::Direction::Front);
+    };
+    let mut message: messages::Action = messages::Action::MoveTo(messages::Direction::Front);
+    let neighbor_positions: HashSet<Cell> = player_cell.neighbors.clone();
+
+    let mut visited: Vec<Cell> = Vec::new();
+
+    for neighbor_position in neighbor_positions {
+        let (walls, mut status, cell_type) = {
+            let Some(neighbor_cell) = graph.get_cell(neighbor_position) else {
+                continue;
+            };
+            (neighbor_cell.walls, neighbor_cell.status.clone(), neighbor_cell.cell_type.clone())
+        };
+
+        if walls == 3 && !(cell_type == CellType::OBJECTIVE || cell_type == CellType::HELP) {
+            graph.update_cell_status(neighbor_position, CellStatus::DeadEnd);
+            status = CellStatus::DeadEnd;
+        }
+
+        if status == CellStatus::NotVisited {
+            graph.update_cell_status(player.position, CellStatus::VISITED);
+            let next_direction = player.get_next_direction(&neighbor_position);
+
+            message = match next_direction {
+                Direction::Left => {
+                    player.turn_left();
+                    messages::Action::MoveTo(messages::Direction::Left)
+                }
+                Direction::Right => {
+                    player.turn_right();
+                    messages::Action::MoveTo(messages::Direction::Right)
+                }
+                Direction::Back => {
+                    player.turn_back();
+                    messages::Action::MoveTo(messages::Direction::Back)
+                }
+                _ => messages::Action::MoveTo(messages::Direction::Front),
+            };
+
+            player.move_forward();
+            return message;
+        }
+
+        if status == CellStatus::VISITED {
+            visited.push(neighbor_position);
+        }
+    }
+
+    let back_status = graph.get_cell_status(player.get_back_position());
+
+    if back_status == CellStatus::DeadEnd {
+        let next_direction = player.get_next_direction(&visited[0]);
+
+        message = match next_direction {
+            Direction::Left => {
+                player.turn_left();
+                messages::Action::MoveTo(messages::Direction::Left)
+            }
+            Direction::Right => {
+                player.turn_right();
+                messages::Action::MoveTo(messages::Direction::Right)
+            }
+            _ => message,
+        };
+    } else {
+        player.turn_back();
+        message = messages::Action::MoveTo(messages::Direction::Back);
+    }
+
+    graph.update_cell_status(player.position, CellStatus::DeadEnd);
+    player.move_forward();
+    message
+}
 
 pub fn right_hand_solver(radar_view: &Radar, player: &mut Player) -> messages::Action {
     let messages;
