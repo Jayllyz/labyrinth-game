@@ -1,18 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
 use shared::maze::Cell;
-use shared::messages::{self, Direction, Message};
+use shared::messages::{self, Direction};
 use shared::radar::{CellType, Passages, Radar};
 
 use crate::data_structures::maze_graph::{CellStatus, MazeGraph};
 use crate::maze_parser::Player;
 
-pub fn tremeaux_solver(
-    radar_view: &Radar,
-    player: &mut Player,
-    graph: &mut MazeGraph,
-) -> messages::Action {
-    let Some(player_cell) = graph.get_cell(player.position.clone()) else {
+pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::Action {
+    let Some(player_cell) = graph.get_cell(player.position) else {
         return messages::Action::MoveTo(messages::Direction::Front);
     };
     let mut message: messages::Action = messages::Action::MoveTo(messages::Direction::Front);
@@ -22,14 +18,14 @@ pub fn tremeaux_solver(
 
     for neighbor_position in neighbor_positions {
         let (walls, mut status, cell_type) = {
-            let Some(neighbor_cell) = graph.get_cell(neighbor_position.clone()) else {
+            let Some(neighbor_cell) = graph.get_cell(neighbor_position) else {
                 continue;
             };
             (neighbor_cell.walls, neighbor_cell.status.clone(), neighbor_cell.cell_type.clone())
         };
 
         if walls == 3 && !(cell_type == CellType::OBJECTIVE || cell_type == CellType::HELP) {
-            graph.update_cell_status(neighbor_position.clone(), CellStatus::DeadEnd);
+            graph.update_cell_status(neighbor_position, CellStatus::DeadEnd);
             status = CellStatus::DeadEnd;
         }
 
