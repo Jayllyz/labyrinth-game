@@ -180,6 +180,19 @@ mod tests {
     }
 
     #[test]
+    fn test_tremeaux_solver() {
+        let view = RadarView("begGkcIyap8p8pa".to_owned());
+        let radar = extract_data(&decode_base64(&view.0));
+        let mut player = Player::new();
+        let mut graph = MazeGraph::new();
+        maze_to_graph(&radar, &player, &mut graph);
+
+        let result = tremeaux_solver(&mut player, &mut graph);
+
+        assert!(matches!(result, messages::Action::MoveTo(messages::Direction::Front)));
+    }
+
+    #[test]
     fn test_check_win_condition_right() {
         let cells = vec![
             CellType::NOTHING,
