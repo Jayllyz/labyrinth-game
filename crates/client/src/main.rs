@@ -68,10 +68,11 @@ fn main() {
 
     let client = GameClient::new(config);
     let agents_count = args.players.unwrap_or(3);
-    match client.run(args.retries, agents_count) {
-        Ok(_) => logger.info("All agents have exited successfully"),
-        Err(e) => {
-            logger.error(&format!("Error: {}", e));
-        }
+
+    if let Err(e) = client.run(args.retries, agents_count) {
+        logger.error(&e.to_string());
+        std::process::exit(1);
     }
+
+    logger.info("All agents have finished their tasks.");
 }
