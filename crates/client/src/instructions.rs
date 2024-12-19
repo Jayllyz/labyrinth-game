@@ -1,11 +1,9 @@
-use std::collections::HashMap;
-
+use crate::data_structures::maze_graph::{CellStatus, MazeGraph};
+use crate::maze_parser::Player;
 use shared::maze::Cell;
 use shared::messages::{self, Direction};
 use shared::radar::{CellType, Passages, Radar};
-
-use crate::data_structures::maze_graph::{CellStatus, MazeGraph};
-use crate::maze_parser::Player;
+use std::collections::HashMap;
 
 pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::Action {
     let mut message: messages::Action = messages::Action::MoveTo(messages::Direction::Front);
@@ -158,16 +156,14 @@ pub fn solve_sum_modulo<S: ::std::hash::BuildHasher>(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::maze_parser::maze_to_graph;
+    use messages::RadarView;
+    use shared::radar::{decode_base64, extract_data};
     use std::{
         collections::HashMap,
         sync::{Arc, Mutex},
     };
-
-    use crate::maze_parser::maze_to_graph;
-
-    use super::*;
-    use messages::RadarView;
-    use shared::radar::{decode_base64, extract_data};
 
     #[test]
     fn test_right_hand_solver() {

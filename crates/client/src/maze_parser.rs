@@ -299,7 +299,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn testo() {
+    fn test_maze_to_graph() {
         let decoded = radar::decode_base64("Hjeikcyc/W8a8pa");
         let data = radar::extract_data(&decoded);
 
@@ -307,16 +307,122 @@ mod tests {
         let mut m = MazeGraph::new();
         maze_to_graph(&data, &p, &mut m);
 
-        println!("{:?}", m);
-
         p.direction = Direction::Right;
         p.position = p.position + Cell { row: 1, column: 0 };
 
         let decoded = radar::decode_base64("kOuczzGa//apaaa");
         let data = radar::extract_data(&decoded);
         maze_to_graph(&data, &p, &mut m);
+    }
 
-        println!("{:?}", m);
+    #[test]
+    fn test_maze_parser() {
+        let input = "###\n# #\n###";
+        let expected = vec![vec![1, 1, 1], vec![1, 0, 1], vec![1, 1, 1]];
+        assert_eq!(maze_parser(input).map, expected);
+
+        let input = "#### \n#  ##\n#### ";
+        let expected = vec![vec![1, 1, 1, 1, 0], vec![1, 0, 0, 1, 1], vec![1, 1, 1, 1, 0]];
+        assert_eq!(maze_parser(input).map, expected);
+
+        let input = "#  # \n#  # \n#  # ";
+        let expected = vec![vec![1, 0, 0, 1, 0], vec![1, 0, 0, 1, 0], vec![1, 0, 0, 1, 0]];
+        assert_eq!(maze_parser(input).map, expected);
+    }
+
+    #[test]
+    fn test_get_cell_walls() {
+        let horizontal = vec![
+            Passages::WALL,
+            Passages::OPEN,
+            Passages::WALL,
+            Passages::OPEN,
+            Passages::WALL,
+            Passages::OPEN,
+            Passages::WALL,
+            Passages::OPEN,
+            Passages::WALL,
+        ];
+        let vertical = vec![
+            Passages::WALL,
+            Passages::OPEN,
+            Passages::WALL,
+            Passages::WALL,
+            Passages::WALL,
+            Passages::OPEN,
+        ];
+
+        let walls = get_cell_walls(0, &horizontal, &vertical);
+        assert_eq!(walls, 2);
+
+        let walls = get_cell_walls(1, &horizontal, &vertical);
+        assert_eq!(walls, 2);
+    }
+
+    #[test]
+    fn test_player_get_next_direction() {
+        let mut player = Player::new();
+
+        let target = Cell { row: -1, column: 0 }; // Left
+        assert_eq!(player.get_next_direction(&target), Direction::Left);
+
+        let target = Cell { row: 1, column: 0 }; // Right
+        assert_eq!(player.get_next_direction(&target), Direction::Right);
+
+        let target = Cell { row: 0, column: 1 }; // Back
+        assert_eq!(player.get_next_direction(&target), Direction::Back);
+
+        let target = Cell { row: 0, column: -1 }; // Front
+        assert_eq!(player.get_next_direction(&target), Direction::Front);
+    }
+
+    #[test]
+    fn test_player_get_back_position() {
+        let mut player = Player::new();
+
+        assert_eq!(player.get_back_position(), Cell { row: 0, column: 1 });
+
+        player.turn_right();
+        assert_eq!(player.get_back_position(), Cell { row: -1, column: 0 });
+
+        player.turn_right();
+        assert_eq!(player.get_back_position(), Cell { row: 0, column: -1 });
+
+        player.turn_right();
+        assert_eq!(player.get_back_position(), Cell { row: 1, column: 0 });
+    }
+
+    #[test]
+    fn test_get_direction_mask() {
+        let player = Player::new();
+        let mask = get_direction_mask(&player);
+        assert_eq!(mask.len(), 9);
+        assert_eq!(mask[4], Cell { row: 0, column: 0 });
+
+        let mut player_right = Player::new();
+        player_right.direction = Direction::Right;
+        let mask_right = get_direction_mask(&player_right);
+        assert_ne!(mask, mask_right);
+
+        let mut player_back = Player::new();
+        player_back.direction = Direction::Back;
+        let mask_back = get_direction_mask(&player_back);
+        assert_ne!(mask, mask_back);
+    }
+
+    #[test]
+    fn test_double_rotation() {
+        let cells = vec![Cell { row: -1, column: -1 }, Cell { row: 0, column: -1 }];
+
+        let mut cells_left = cells.clone();
+        rotate_left_90(&mut cells_left);
+        rotate_left_90(&mut cells_left);
+
+        let mut cells_right = cells.clone();
+        rotate_right_90(&mut cells_right);
+        rotate_right_90(&mut cells_right);
+
+        assert_eq!(cells_left, cells_right);
     }
 
     #[test]

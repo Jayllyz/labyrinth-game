@@ -42,6 +42,8 @@ mod tests {
 
     #[test]
     fn test_print_log() {
-        print_log("Log message", Color::Green);
+        for color in [Color::Red, Color::Orange, Color::Blue, Color::Green] {
+            print_log("Log message", color);
+        }
     }
 }
