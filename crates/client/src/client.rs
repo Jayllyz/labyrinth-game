@@ -367,4 +367,33 @@ mod tests {
         )
         .unwrap();
     }
+
+    #[test]
+    fn test_handle_hint() {
+        let (listener, addr) = setup_mock_server();
+
+        thread::spawn(move || {
+            listener.accept().unwrap();
+        });
+
+        let mut stream = TcpStream::connect(addr).unwrap();
+
+        let message = Message::Hint(Hint::Secret(10));
+
+        let mut graph = MazeGraph::new();
+        let mut player = Player::new();
+
+        GameClient::handle_server_message(
+            &mut stream,
+            "Player1",
+            message,
+            &SecretSumModulo {
+                sum: Arc::new(Mutex::new(0)),
+                secrets: Arc::new(Mutex::new(HashMap::new())),
+            },
+            &mut graph,
+            &mut player,
+        )
+        .unwrap();
+    }
 }
