@@ -46,7 +46,7 @@ pub fn sidewinder(width: usize, height: usize, print: bool, seed: u64) -> Maze {
 
             if row > 0 && (rng.gen_bool(0.5) || col == width - 1) {
                 let random_cell = match current.choose(&mut rng) {
-                    Some(cell) => cell.clone(),
+                    Some(cell) => *cell,
                     None => Cell { row: 0, column: 0 },
                 };
 
