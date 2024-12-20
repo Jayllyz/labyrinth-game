@@ -230,7 +230,7 @@ impl GameClient {
         player: &mut Player,
     ) -> GameResult<()> {
         let radar_view = extract_data(&decode_base64(&view.0))
-            .map_err(|_| GameError::MessageError("Failed to decode radar view".into()))?;
+            .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {}", e).into()))?;
 
         maze_to_graph(&radar_view, player, graph);
         let action = instructions::tremeaux_solver(player, graph);
