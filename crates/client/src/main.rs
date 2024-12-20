@@ -59,7 +59,13 @@ fn main() {
         println!("Running in offline mode (no connection to the server)");
         println!("Not implemented yet, exiting...");
         let decoded = radar::decode_base64("giLbMjIad/apapa");
-        let radar_view = radar::extract_data(&decoded);
+        let radar_view = match radar::extract_data(&decoded) {
+            Ok(view) => view,
+            Err(e) => {
+                logger.error(&format!("Error decoding radar view: {}", e));
+                std::process::exit(1);
+            }
+        };
         println!("{:?}", radar_view.horizontal);
         println!("{:?}", radar_view.vertical);
         println!("{:?}", radar_view.cells);

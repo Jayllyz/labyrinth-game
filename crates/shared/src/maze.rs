@@ -50,7 +50,7 @@ impl Maze {
     }
 
     pub fn print_visited(&self, visited_points: &[Vec<i32>]) {
-        let steps = *visited_points.iter().flatten().max().unwrap();
+        let steps = *visited_points.iter().flatten().max().unwrap_or(&0);
         let gradient: Vec<String> = (0..=steps)
             .map(|step| {
                 let gradient_value = 255 - (255 * step / steps);
@@ -89,7 +89,7 @@ impl Maze {
     }
 
     pub fn print_visited_number(&self, visited_points: &[Vec<i32>]) {
-        let steps = *visited_points.iter().flatten().max().unwrap();
+        let steps = *visited_points.iter().flatten().max().unwrap_or(&0);
         let gradient: Vec<String> = (0..=steps)
             .map(|step| {
                 let gradient_value = 255 - (255 * step / steps);

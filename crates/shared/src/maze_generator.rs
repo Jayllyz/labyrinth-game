@@ -45,7 +45,10 @@ pub fn sidewinder(width: usize, height: usize, print: bool, seed: u64) -> Maze {
             current.push(Cell { row: cell_row as i16, column: cell_col as i16 });
 
             if row > 0 && (rng.gen_bool(0.5) || col == width - 1) {
-                let random_cell = current.choose(&mut rng).unwrap();
+                let random_cell = match current.choose(&mut rng) {
+                    Some(cell) => cell.clone(),
+                    None => Cell { row: 0, column: 0 },
+                };
 
                 maze.map[random_cell.row as usize - 1][random_cell.column as usize] =
                     PositionType::SPACE;

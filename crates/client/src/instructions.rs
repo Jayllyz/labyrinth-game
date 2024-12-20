@@ -169,7 +169,7 @@ mod tests {
     fn test_right_hand_solver() {
         let view = RadarView("swfGkIAyap8a8aa".to_owned());
         let mut player = Player::new();
-        let radar_view = extract_data(&decode_base64(&view.0));
+        let radar_view = extract_data(&decode_base64(&view.0)).unwrap();
         let result = right_hand_solver(&radar_view, &mut player);
         assert!(matches!(result, messages::Action::MoveTo(messages::Direction::Right)));
     }
@@ -177,7 +177,7 @@ mod tests {
     #[test]
     fn test_tremeaux_solver() {
         let view = RadarView("begGkcIyap8p8pa".to_owned());
-        let radar = extract_data(&decode_base64(&view.0));
+        let radar = extract_data(&decode_base64(&view.0)).unwrap();
         let mut player = Player::new();
         let mut graph = MazeGraph::new();
         maze_to_graph(&radar, &player, &mut graph);
