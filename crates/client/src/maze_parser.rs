@@ -294,14 +294,13 @@ pub fn maze_parser(input: &str) -> Maze {
 
 #[cfg(test)]
 mod tests {
-    use shared::radar;
-
     use super::*;
+    use shared::radar;
 
     #[test]
     fn test_maze_to_graph() {
         let decoded = radar::decode_base64("Hjeikcyc/W8a8pa");
-        let data = radar::extract_data(&decoded);
+        let data = radar::extract_data(&decoded).unwrap();
 
         let mut p = Player { position: Cell { row: 0, column: 0 }, direction: Direction::Front };
         let mut m = MazeGraph::new();
@@ -311,7 +310,7 @@ mod tests {
         p.position = p.position + Cell { row: 1, column: 0 };
 
         let decoded = radar::decode_base64("kOuczzGa//apaaa");
-        let data = radar::extract_data(&decoded);
+        let data = radar::extract_data(&decoded).unwrap();
         maze_to_graph(&data, &p, &mut m);
     }
 

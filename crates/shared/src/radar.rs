@@ -31,41 +31,41 @@ pub struct Radar {
 }
 
 pub trait ToBinary {
-    fn to_binary(&self) -> String;
+    fn to_binary(&self) -> Result<String, std::fmt::Error>;
 }
 
 impl ToBinary for &str {
-    fn to_binary(&self) -> String {
-        self.chars().fold(String::with_capacity(self.len() * 8), |mut acc, c| {
-            write!(acc, "{:08b}", c as u8).unwrap();
-            acc
+    fn to_binary(&self) -> Result<String, std::fmt::Error> {
+        self.chars().try_fold(String::with_capacity(self.len() * 8), |mut acc, c| {
+            write!(acc, "{:08b}", c as u8)?;
+            Ok(acc)
         })
     }
 }
 
 impl ToBinary for &String {
-    fn to_binary(&self) -> String {
-        self.chars().fold(String::with_capacity(self.len() * 8), |mut acc, c| {
-            write!(acc, "{:08b}", c as u8).unwrap();
-            acc
+    fn to_binary(&self) -> Result<String, std::fmt::Error> {
+        self.chars().try_fold(String::with_capacity(self.len() * 8), |mut acc, c| {
+            write!(acc, "{:08b}", c as u8)?;
+            Ok(acc)
         })
     }
 }
 
 impl ToBinary for &[i32] {
-    fn to_binary(&self) -> String {
-        self.iter().fold(String::with_capacity(self.len() * 8), |mut acc, &d| {
-            write!(acc, "{:08b}", d as u8).unwrap();
-            acc
+    fn to_binary(&self) -> Result<String, std::fmt::Error> {
+        self.iter().try_fold(String::with_capacity(self.len() * 8), |mut acc, &d| {
+            write!(acc, "{:08b}", d as u8)?;
+            Ok(acc)
         })
     }
 }
 
 impl<const N: usize> ToBinary for &[i32; N] {
-    fn to_binary(&self) -> String {
-        self.iter().fold(String::with_capacity(N * 8), |mut acc, &d| {
-            write!(acc, "{:08b}", d as u8).unwrap();
-            acc
+    fn to_binary(&self) -> Result<String, std::fmt::Error> {
+        self.iter().try_fold(String::with_capacity(N * 8), |mut acc, &d| {
+            write!(acc, "{:08b}", d as u8)?;
+            Ok(acc)
         })
     }
 }
@@ -85,7 +85,10 @@ pub fn split_into_chunks(text: &str, chunk_size: usize) -> Vec<String> {
 }
 
 pub fn encode_base64<T: ToBinary>(input: T) -> String {
-    let binary_text = input.to_binary();
+    let binary_text = match input.to_binary() {
+        Ok(b) => b,
+        Err(_) => return String::new(),
+    };
     let subs = split_into_chunks(&binary_text, 6);
     let mut encoded = String::with_capacity(subs.len());
 
@@ -238,27 +241,32 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec
     (horizontal_data, vertical_data)
 }
 
-pub fn extract_data<T: ToBinary>(input: T) -> Radar {
-    let binary = input.to_binary();
+pub fn extract_data<T: ToBinary>(input: T) -> Result<Radar, std::fmt::Error> {
+    let binary = match input.to_binary() {
+        Ok(b) => b,
+        Err(_) => {
+            return Ok(Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() })
+        }
+    };
 
     if binary.len() < 88 {
-        return Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() };
+        return Ok(Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() });
     }
 
     // 3 first octets are for horizontal, 3 next for vertical, and the last 5 for cells
     // Horizontal and vertical are in little-endian order so we need to reverse them
     let mut horizontal_bits = String::with_capacity(24);
-    write!(horizontal_bits, "{}{}{}", &binary[16..24], &binary[8..16], &binary[0..8]).unwrap();
+    write!(horizontal_bits, "{}{}{}", &binary[16..24], &binary[8..16], &binary[0..8])?;
 
     let mut vertical_bits = String::with_capacity(24);
-    write!(vertical_bits, "{}{}{}", &binary[40..48], &binary[32..40], &binary[24..32]).unwrap();
+    write!(vertical_bits, "{}{}{}", &binary[40..48], &binary[32..40], &binary[24..32])?;
 
     let cell_bits = &binary[48..88];
 
     let (horizontal, vertical) = retrieve_passage(&horizontal_bits, &vertical_bits);
     let cells = retrieve_cell(cell_bits);
 
-    Radar { horizontal, vertical, cells }
+    Ok(Radar { horizontal, vertical, cells })
 }
 
 #[cfg(test)]
@@ -472,7 +480,7 @@ mod tests {
     #[test]
     fn test_extract_data() {
         let input = decode_base64("jivbQjIad/apapa");
-        let radar_view = extract_data(&input);
+        let radar_view = extract_data(&input).unwrap();
         assert_eq!(radar_view.horizontal.len(), 12);
         assert_eq!(radar_view.vertical.len(), 12);
         assert_eq!(radar_view.cells.len(), 9);
