@@ -1,5 +1,6 @@
 use clap::Parser;
 use client::client::{ClientConfig, GameClient};
+use client::tui;
 use shared::logger::Logger;
 use shared::radar;
 
@@ -75,7 +76,24 @@ fn main() {
     let client = GameClient::new(config);
     let agents_count = args.players.unwrap_or(3);
 
-    if let Err(e) = client.run(args.retries, agents_count) {
+    let mut tui = tui::Tui::new().expect("Failed to create TUI");
+    let tui_state = tui.get_state();
+
+    let num_agents = args.players.unwrap_or(3);
+    if let Ok(mut state) = tui_state.lock() {
+        for i in 0..num_agents {
+            state.register_agent(format!("Player{}", i + 1));
+        }
+    }
+
+    // Start TUI in separate thread
+    std::thread::spawn(move || {
+        if let Err(err) = tui.run() {
+            eprintln!("Error running TUI: {}", err);
+        }
+    });
+
+    if let Err(e) = client.run(args.retries, agents_count, Some(tui_state)) {
         e.log_error(logger);
         std::process::exit(1);
     }
