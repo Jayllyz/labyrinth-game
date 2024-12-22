@@ -52,12 +52,11 @@ impl AgentState {
 pub struct AppState {
     agents: HashMap<String, AgentState>,
     selected_tab: usize,
-    view_center: (i16, i16),
 }
 
 impl AppState {
     pub fn new() -> Self {
-        Self { agents: HashMap::new(), selected_tab: 0, view_center: (0, 0) }
+        Self { agents: HashMap::new(), selected_tab: 0 }
     }
 
     pub fn register_agent(&mut self, name: String) {
@@ -77,10 +76,6 @@ impl AppState {
                 state.graph = graph;
                 state.player = player.clone();
                 state.last_update = now;
-
-                if self.agents.keys().nth(self.selected_tab).map(|k| k == agent).unwrap_or(false) {
-                    self.view_center = (player.position.row, player.position.column);
-                }
             }
         }
     }
@@ -135,19 +130,11 @@ impl Tui {
                             let agent_count = state.agents.len();
                             if agent_count > 0 {
                                 state.selected_tab = (state.selected_tab + 1) % agent_count;
-                                if let Some(agent) = state.agents.values().nth(state.selected_tab) {
-                                    state.view_center =
-                                        (agent.player.position.row, agent.player.position.column);
-                                }
                             }
                         }
                         KeyCode::Left => {
                             if state.selected_tab > 0 {
                                 state.selected_tab -= 1;
-                                if let Some(agent) = state.agents.values().nth(state.selected_tab) {
-                                    state.view_center =
-                                        (agent.player.position.row, agent.player.position.column);
-                                }
                             }
                         }
                         _ => {}
