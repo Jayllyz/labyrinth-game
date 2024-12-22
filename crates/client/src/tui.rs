@@ -163,7 +163,7 @@ impl Tui {
             .split(full_layout[2]);
 
         let maze_area = content_layout[0];
-        let view_height = (maze_area.height as i16).saturating_sub(2);
+        let view_height = (maze_area.height as i16).saturating_sub(4);
         let view_width = (maze_area.width as i16).saturating_sub(4);
 
         let state = self.state.lock().unwrap();
@@ -315,13 +315,16 @@ impl Tui {
                 )
             },
         );
+        let view_height = height.min((bounds.1 - bounds.0 + 10).max(0));
+        let view_width = width.min((bounds.3 - bounds.2 + 10).max(0));
 
-        let (center_row, center_col) = (player.position.row, player.position.column);
+        let center_row = player.position.row;
+        let center_col = player.position.column;
 
-        let row_start = (center_row - height / 2).max(bounds.0);
-        let row_end = (center_row + height / 2).min(bounds.1);
-        let col_start = (center_col - width / 2).max(bounds.2);
-        let col_end = (center_col + width / 2).min(bounds.3);
+        let row_start = (center_row - view_height / 2).max(bounds.0);
+        let row_end = (center_row + view_height / 2).min(bounds.1);
+        let col_start = (center_col - view_width / 2).max(bounds.2);
+        let col_end = (center_col + view_width / 2).min(bounds.3);
 
         visualization.push_str("    ");
         for _col in col_start..=col_end {
