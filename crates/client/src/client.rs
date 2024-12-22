@@ -152,7 +152,6 @@ impl GameClient {
 
         if let Some(tui) = tui_state {
             if let Ok(mut state) = tui.lock() {
-                state.update_state(thread_name, graph.clone(), player.clone());
                 state.add_log(
                     thread_name,
                     format!("Received message: {:?}", message),
@@ -225,6 +224,12 @@ impl GameClient {
             }
             _ => {
                 logger.warn(&format!("Unhandled message: {:?}", message));
+            }
+        }
+
+        if let Some(tui) = tui_state {
+            if let Ok(mut state) = tui.lock() {
+                state.update_state(thread_name, graph.clone(), player.clone());
             }
         }
 
