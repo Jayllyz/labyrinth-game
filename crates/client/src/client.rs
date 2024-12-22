@@ -152,11 +152,7 @@ impl GameClient {
 
         if let Some(tui) = tui_state {
             if let Ok(mut state) = tui.lock() {
-                state.add_log(
-                    thread_name,
-                    format!("Received message: {:?}", message),
-                    LogLevel::Debug,
-                );
+                state.add_log(thread_name, format!("{:?}", message), LogLevel::Debug);
             }
         }
 
@@ -185,11 +181,7 @@ impl GameClient {
 
                 if let Some(tui) = tui_state {
                     if let Ok(mut state) = tui.lock() {
-                        state.add_log(
-                            thread_name,
-                            format!("Received challenge: {:?}", value),
-                            LogLevel::Info,
-                        );
+                        state.add_log(thread_name, format!("{:?}", value), LogLevel::Info);
                     }
                 }
 
@@ -206,7 +198,15 @@ impl GameClient {
             }
             Message::ActionError(err) => match err {
                 messages::ActionError::InvalidChallengeSolution => {
-                    logger.info(&format!("{} failed to solve challenge, retrying...", thread_name));
+                    if let Some(tui) = tui_state {
+                        if let Ok(mut state) = tui.lock() {
+                            state.add_log(
+                                thread_name,
+                                "Invalid challenge solution, retrying...".to_string(),
+                                LogLevel::Error,
+                            );
+                        }
+                    }
                     Self::handle_secret_sum_modulo(
                         stream,
                         &secrets_sum.secrets,

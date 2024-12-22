@@ -22,8 +22,6 @@ use std::{
 };
 
 const UPDATE_INTERVAL: Duration = Duration::from_millis(100);
-const VIEW_HEIGHT: i16 = 30;
-const VIEW_WIDTH: i16 = 60;
 
 #[derive(Clone)]
 pub enum LogLevel {
@@ -106,7 +104,8 @@ impl Tui {
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
-        let terminal = Terminal::new(backend)?;
+        let mut terminal = Terminal::new(backend)?;
+        terminal.clear()?;
         let state = Arc::new(Mutex::new(AppState::new()));
         Ok(Self { terminal, state })
     }
@@ -162,25 +161,54 @@ impl Tui {
     }
 
     fn draw(&mut self) -> io::Result<()> {
+        let terminal_size = self.terminal.size()?;
+        let area = ratatui::layout::Rect::new(0, 0, terminal_size.width, terminal_size.height);
+
+        let full_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([Constraint::Length(3), Constraint::Length(3), Constraint::Min(10)])
+            .split(area);
+
+        let content_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+            .split(full_layout[2]);
+
+        let maze_area = content_layout[0];
+        let view_height = (maze_area.height as i16).saturating_sub(2);
+        let view_width = (maze_area.width as i16).saturating_sub(4);
+
         let state = self.state.lock().unwrap();
         let agent_names: Vec<String> = state.agents.keys().cloned().collect();
+        let selected_tab = state.selected_tab;
 
-        let maze_viz = if let Some(agent_name) = agent_names.get(state.selected_tab) {
+        let (maze_viz, agent_data) = if let Some(agent_name) = agent_names.get(selected_tab) {
             if let Some(agent) = state.agents.get(agent_name) {
-                self.create_maze_visualization(&agent.graph, &agent.player, state.view_center)
+                (
+                    self.create_maze_visualization(
+                        &agent.graph,
+                        &agent.player,
+                        view_width,
+                        view_height,
+                    ),
+                    Some((self.create_stats(agent), agent.logs.clone())),
+                )
             } else {
-                String::new()
+                (String::new(), None)
             }
         } else {
-            String::new()
+            (String::new(), None)
         };
+
+        drop(state);
 
         self.terminal.draw(|f| {
             let size = f.area();
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(1)
-                .constraints([Constraint::Length(3), Constraint::Min(10)])
+                .constraints([Constraint::Length(3), Constraint::Length(3), Constraint::Min(10)])
                 .split(size);
 
             let tabs = Tabs::new(
@@ -188,7 +216,7 @@ impl Tui {
                     .iter()
                     .enumerate()
                     .map(|(i, name)| {
-                        if i == state.selected_tab {
+                        if i == selected_tab {
                             Line::from(vec![Span::styled(
                                 name.trim(),
                                 Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
@@ -200,55 +228,91 @@ impl Tui {
                     .collect::<Vec<_>>(),
             )
             .block(Block::default().borders(Borders::ALL).title("Agents"))
-            .select(state.selected_tab);
+            .select(selected_tab);
 
             f.render_widget(tabs, chunks[0]);
 
-            if let Some(agent_name) = agent_names.get(state.selected_tab) {
-                if let Some(agent) = state.agents.get(agent_name) {
-                    let agent_chunks = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-                        .split(chunks[1]);
+            if let Some((stats, logs)) = agent_data {
+                let stats_widget = Paragraph::new(stats)
+                    .block(Block::default().borders(Borders::ALL).title("Statistics"));
+                f.render_widget(stats_widget, chunks[1]);
 
-                    let maze_widget = Paragraph::new(maze_viz)
-                        .block(Block::default().borders(Borders::ALL).title("Maze"));
-                    f.render_widget(maze_widget, agent_chunks[0]);
+                let content_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+                    .split(chunks[2]);
 
-                    let log_lines: Vec<Line> = agent
-                        .logs
-                        .iter()
-                        .rev()
-                        .map(|(msg, level)| {
-                            let (color, prefix) = match level {
-                                LogLevel::Info => (Color::Green, "INFO "),
-                                LogLevel::Debug => (Color::Blue, "DEBUG"),
-                                LogLevel::Warning => (Color::Yellow, "WARN "),
-                                LogLevel::Error => (Color::Red, "ERROR"),
-                            };
-                            Line::from(vec![
-                                Span::styled(prefix, Style::default().fg(color)),
-                                Span::raw(" │ "),
-                                Span::styled(msg, Style::default().fg(Color::White)),
-                            ])
-                        })
-                        .collect();
+                let maze_widget = Paragraph::new(maze_viz)
+                    .block(Block::default().borders(Borders::ALL).title("Maze"));
+                f.render_widget(maze_widget, content_chunks[0]);
 
-                    let logs = Paragraph::new(log_lines)
-                        .scroll((10, 0))
-                        .block(Block::default().borders(Borders::ALL).title("Logs"));
-                    f.render_widget(logs, agent_chunks[1]);
-                }
+                let log_height = content_chunks[1].height.saturating_sub(2) as usize;
+                let log_lines: Vec<Line> = logs
+                    .iter()
+                    .rev()
+                    .take(log_height)
+                    .map(|(msg, level)| {
+                        let (color, prefix) = match level {
+                            LogLevel::Info => (Color::Green, "INFO "),
+                            LogLevel::Debug => (Color::Blue, "DEBUG"),
+                            LogLevel::Warning => (Color::Yellow, "WARN "),
+                            LogLevel::Error => (Color::Red, "ERROR"),
+                        };
+                        Line::from(vec![
+                            Span::styled(prefix, Style::default().fg(color)),
+                            Span::raw(" │ "),
+                            Span::styled(msg, Style::default().fg(Color::White)),
+                        ])
+                    })
+                    .collect();
+
+                let logs_widget = Paragraph::new(log_lines)
+                    .block(Block::default().borders(Borders::ALL).title("Logs"));
+                f.render_widget(logs_widget, content_chunks[1]);
             }
         })?;
+
         Ok(())
+    }
+
+    fn create_stats(&self, agent: &AgentState) -> String {
+        let graph = &agent.graph;
+        let cells = &graph.cell_map;
+
+        let total_cells = cells.len();
+        let visited_cells =
+            cells.values().filter(|cell| cell.status == CellStatus::VISITED).count();
+        let dead_ends = cells.values().filter(|cell| cell.status == CellStatus::DeadEnd).count();
+        let not_visited =
+            cells.values().filter(|cell| cell.status == CellStatus::NotVisited).count();
+
+        let explored_percent = if total_cells > 0 {
+            (visited_cells as f64 / total_cells as f64 * 100.0) as u32
+        } else {
+            0
+        };
+
+        let memory_usage = std::mem::size_of_val(graph) + graph.get_size();
+
+        format!(
+            "Pos: [{}, {}] | Explored: {}% ({}/{}) | Dead ends: {} | Not visited: {} | Graph memory: {} Bytes",
+            agent.player.position.row,
+            agent.player.position.column,
+            explored_percent,
+            visited_cells,
+            total_cells,
+            dead_ends,
+            not_visited,
+            memory_usage,
+        )
     }
 
     fn create_maze_visualization(
         &self,
         graph: &MazeGraph,
         player: &Player,
-        center: (i16, i16),
+        width: i16,
+        height: i16,
     ) -> String {
         let mut visualization = String::new();
         let cells = &graph.cell_map;
@@ -265,16 +329,12 @@ impl Tui {
             },
         );
 
-        let (center_row, center_col) = center;
-        let row_start = (center_row - VIEW_HEIGHT / 2).max(bounds.0);
-        let row_end = (center_row + VIEW_HEIGHT / 2).min(bounds.1);
-        let col_start = (center_col - VIEW_WIDTH / 2).max(bounds.2);
-        let col_end = (center_col + VIEW_WIDTH / 2).min(bounds.3);
+        let (center_row, center_col) = (player.position.row, player.position.column);
 
-        visualization.push_str(&format!(
-            "Position: [{}, {}]\n\n",
-            player.position.row, player.position.column
-        ));
+        let row_start = (center_row - height / 2).max(bounds.0);
+        let row_end = (center_row + height / 2).min(bounds.1);
+        let col_start = (center_col - width / 2).max(bounds.2);
+        let col_end = (center_col + width / 2).min(bounds.3);
 
         visualization.push_str("    ");
         for _col in col_start..=col_end {
