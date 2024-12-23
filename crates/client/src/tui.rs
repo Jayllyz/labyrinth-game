@@ -97,10 +97,11 @@ impl Tui {
     }
 
     pub fn run(&mut self) -> io::Result<()> {
-        let mut last_draw = Instant::now();
+        let update_interval = Duration::from_millis(self.refresh_rate);
+        let mut last_draw = Instant::now() - update_interval;
 
         loop {
-            if last_draw.elapsed() >= Duration::from_millis(self.refresh_rate) {
+            if last_draw.elapsed() >= update_interval {
                 self.draw()?;
                 last_draw = Instant::now();
             }
@@ -117,11 +118,15 @@ impl Tui {
                             let agent_count = state.agents.len();
                             if agent_count > 0 {
                                 state.selected_tab = (state.selected_tab + 1) % agent_count;
+                            } else {
+                                state.selected_tab = 0;
                             }
                         }
                         KeyCode::Left => {
                             if state.selected_tab > 0 {
                                 state.selected_tab -= 1;
+                            } else {
+                                state.selected_tab = state.agents.len() - 1;
                             }
                         }
                         _ => {}

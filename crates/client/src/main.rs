@@ -29,9 +29,9 @@ struct Args {
     #[arg(help_heading = "PLAYER OPTIONS")]
     team: String,
 
-    #[arg(long, help = "Number of players in the team.")]
+    #[arg(long, help = "Number of players in the team.", default_value = "3")]
     #[arg(help_heading = "PLAYER OPTIONS")]
-    players: Option<u8>,
+    players: u8,
 
     #[arg(long, help = "Run the client in offline mode.")]
     offline: bool,
@@ -51,23 +51,21 @@ fn main() {
     Logger::init(args.debug);
     let logger = Logger::get_instance();
 
-    let config =
-        ClientConfig { server_addr: format!("{}:{}", args.host, args.port), team_name: args.team };
-
     if args.offline {
         logger.info("Running in offline mode.");
         return;
     }
 
+    let config =
+        ClientConfig { server_addr: format!("{}:{}", args.host, args.port), team_name: args.team };
     let client = GameClient::new(config);
-    let agents_count = args.players.unwrap_or(3);
 
     if args.tui {
         let mut tui = tui::Tui::new(args.refresh_rate).expect("Failed to initialize TUI.");
         let tui_state = tui.get_state();
 
         if let Ok(mut state) = tui_state.lock() {
-            for i in 0..agents_count {
+            for i in 0..args.players {
                 state.register_agent(format!("Player{}", i + 1));
             }
         }
@@ -79,7 +77,7 @@ fn main() {
             }
         });
 
-        if let Err(e) = client.run(args.retries, agents_count, Some(tui_state)) {
+        if let Err(e) = client.run(args.retries, args.players, Some(tui_state)) {
             e.log_error(logger);
             std::process::exit(1);
         }
@@ -88,7 +86,7 @@ fn main() {
             logger.error(&format!("TUI thread error: {:?}", e));
         }
     } else {
-        if let Err(e) = client.run(args.retries, agents_count, None) {
+        if let Err(e) = client.run(args.retries, args.players, None) {
             e.log_error(logger);
             std::process::exit(1);
         }
