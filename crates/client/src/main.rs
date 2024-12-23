@@ -2,7 +2,6 @@ use clap::Parser;
 use client::client::{ClientConfig, GameClient};
 use client::tui;
 use shared::logger::Logger;
-use shared::radar;
 
 #[derive(Parser, Debug)]
 #[command(name = "Labyrinth-client")]
@@ -41,8 +40,11 @@ struct Args {
     #[arg(long, help = "Run the client in offline mode.")]
     offline: bool,
 
-    #[arg(long, help = "Enable debug mode.", default_value = "false")]
+    #[arg(long, help = "Enable debug logs.", default_value = "false")]
     debug: bool,
+
+    #[arg(long, help = "Enable terminal user interface.", default_value = "false")]
+    tui: bool,
 }
 
 fn main() {
@@ -57,46 +59,44 @@ fn main() {
     };
 
     if args.offline {
-        println!("Running in offline mode (no connection to the server)");
-        println!("Not implemented yet, exiting...");
-        let decoded = radar::decode_base64("giLbMjIad/apapa");
-        let radar_view = match radar::extract_data(&decoded) {
-            Ok(view) => view,
-            Err(e) => {
-                logger.error(&format!("Error decoding radar view: {}", e));
-                std::process::exit(1);
-            }
-        };
-        println!("{:?}", radar_view.horizontal);
-        println!("{:?}", radar_view.vertical);
-        println!("{:?}", radar_view.cells);
+        logger.info("Running in offline mode.");
         return;
     }
 
     let client = GameClient::new(config);
     let agents_count = args.players.unwrap_or(3);
 
-    let mut tui = tui::Tui::new().expect("Failed to create TUI");
-    let tui_state = tui.get_state();
+    if args.tui {
+        let mut tui = tui::Tui::new().expect("Failed to create TUI");
+        let tui_state = tui.get_state();
 
-    let num_agents = args.players.unwrap_or(3);
-    if let Ok(mut state) = tui_state.lock() {
-        for i in 0..num_agents {
-            state.register_agent(format!("Player{}", i + 1));
+        if let Ok(mut state) = tui_state.lock() {
+            for i in 0..agents_count {
+                state.register_agent(format!("Player{}", i + 1));
+            }
         }
-    }
 
-    // Start TUI in separate thread
-    std::thread::spawn(move || {
-        if let Err(err) = tui.run() {
-            eprintln!("Error running TUI: {}", err);
+        let tui_handle = std::thread::spawn(move || {
+            if let Err(err) = tui.run() {
+                logger.error(&format!("TUI error: {}", err));
+                std::process::exit(1);
+            }
+        });
+
+        if let Err(e) = client.run(args.retries, agents_count, Some(tui_state)) {
+            e.log_error(logger);
+            std::process::exit(1);
         }
-    });
 
-    if let Err(e) = client.run(args.retries, agents_count, Some(tui_state)) {
-        e.log_error(logger);
-        std::process::exit(1);
+        if let Err(e) = tui_handle.join() {
+            logger.error(&format!("TUI thread error: {:?}", e));
+        }
+    } else {
+        if let Err(e) = client.run(args.retries, agents_count, None) {
+            e.log_error(logger);
+            std::process::exit(1);
+        }
+
+        logger.info("All agents have finished their tasks.");
     }
-
-    logger.info("All agents have finished their tasks.");
 }

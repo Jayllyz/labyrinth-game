@@ -150,19 +150,43 @@ impl GameClient {
         let logger = Logger::get_instance();
         let thread = std::thread::current();
 
-        if let Some(tui) = tui_state {
-            if let Ok(mut state) = tui.lock() {
-                state.add_log(thread_name, format!("{:?}", message), LogLevel::Debug);
+        if logger.is_debug_enabled() {
+            if let Some(tui) = tui_state {
+                if let Ok(mut state) = tui.lock() {
+                    state.add_log(thread_name, format!("{:?}", message), LogLevel::Debug);
+                }
+            } else {
+                logger.debug(&format!("{} received message: {:?}", thread_name, message));
             }
         }
 
         match message {
             Message::SubscribePlayerResult(result) => match result {
                 SubscribePlayerResult::Ok => {
-                    //logger.info(&format!("{} has successfully subscribed to game", thread_name));
+                    if let Some(tui) = tui_state {
+                        if let Ok(mut state) = tui.lock() {
+                            state.add_log(
+                                thread_name,
+                                "Subscribed to game".to_string(),
+                                LogLevel::Info,
+                            );
+                        }
+                    } else {
+                        logger.info(&format!("{} subscribed to game", thread_name));
+                    }
                 }
                 SubscribePlayerResult::Err(err) => {
-                    logger.error(&format!("{} failed to subscribe: {:?}", thread_name, err));
+                    if let Some(tui) = tui_state {
+                        if let Ok(mut state) = tui.lock() {
+                            state.add_log(
+                                thread_name,
+                                format!("Failed to subscribe: {:?}", err),
+                                LogLevel::Error,
+                            );
+                        }
+                    } else {
+                        logger.error(&format!("{} failed to subscribe: {:?}", thread_name, err));
+                    }
                     return Err(GameError::AgentSubscriptionError(format!("{:?}", err)));
                 }
             },
@@ -177,12 +201,12 @@ impl GameClient {
                 }
             }
             Message::Challenge(value) => {
-                //logger.info(&format!("{} received challenge: {:?}", thread_name, value));
-
                 if let Some(tui) = tui_state {
                     if let Ok(mut state) = tui.lock() {
                         state.add_log(thread_name, format!("{:?}", value), LogLevel::Info);
                     }
+                } else {
+                    logger.info(&format!("{} received challenge: {:?}", thread_name, value));
                 }
 
                 match value {
@@ -206,7 +230,13 @@ impl GameClient {
                                 LogLevel::Error,
                             );
                         }
+                    } else {
+                        logger.error(&format!(
+                            "{} invalid challenge solution, retrying...",
+                            thread_name
+                        ));
                     }
+
                     Self::handle_secret_sum_modulo(
                         stream,
                         &secrets_sum.secrets,
@@ -271,158 +301,162 @@ impl GameClient {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use std::net::{TcpListener, TcpStream};
-//     use std::thread;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{TcpListener, TcpStream};
+    use std::thread;
 
-//     fn setup_mock_server() -> (TcpListener, String) {
-//         Logger::init(true);
-//         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-//         let addr = listener.local_addr().unwrap();
-//         (listener, format!("127.0.0.1:{}", addr.port()))
-//     }
+    fn setup_mock_server() -> (TcpListener, String) {
+        Logger::init(true);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        (listener, format!("127.0.0.1:{}", addr.port()))
+    }
 
-//     #[test]
-//     fn test_connect_to_server() {
-//         let (listener, addr) = setup_mock_server();
+    #[test]
+    fn test_connect_to_server() {
+        let (listener, addr) = setup_mock_server();
 
-//         thread::spawn(move || {
-//             listener.accept().unwrap();
-//         });
+        thread::spawn(move || {
+            listener.accept().unwrap();
+        });
 
-//         let register_msg = Message::RegisterTeam(RegisterTeam { name: "team".to_string() });
+        let register_msg = Message::RegisterTeam(RegisterTeam { name: "team".to_string() });
 
-//         let mut stream = TcpStream::connect(addr).unwrap();
-//         send_message(&mut stream, &register_msg).unwrap();
-//     }
+        let mut stream = TcpStream::connect(addr).unwrap();
+        send_message(&mut stream, &register_msg).unwrap();
+    }
 
-//     #[test]
-//     fn test_handle_server_message_subscribe_success() {
-//         let (listener, addr) = setup_mock_server();
+    #[test]
+    fn test_handle_server_message_subscribe_success() {
+        let (listener, addr) = setup_mock_server();
 
-//         thread::spawn(move || {
-//             listener.accept().unwrap();
-//         });
-//         let mut stream = TcpStream::connect(addr).unwrap();
+        thread::spawn(move || {
+            listener.accept().unwrap();
+        });
+        let mut stream = TcpStream::connect(addr).unwrap();
 
-//         let message = Message::SubscribePlayerResult(SubscribePlayerResult::Ok);
-//         let mut graph = MazeGraph::new();
-//         let mut player = Player::new();
+        let message = Message::SubscribePlayerResult(SubscribePlayerResult::Ok);
+        let mut graph = MazeGraph::new();
+        let mut player = Player::new();
 
-//         GameClient::handle_server_message(
-//             &mut stream,
-//             "Player1",
-//             message,
-//             &SecretSumModulo {
-//                 sum: Arc::new(Mutex::new(0)),
-//                 secrets: Arc::new(Mutex::new(HashMap::new())),
-//             },
-//             &mut graph,
-//             &mut player,
-//         )
-//         .unwrap();
-//     }
+        GameClient::handle_server_message(
+            &mut stream,
+            "Player1",
+            message,
+            &SecretSumModulo {
+                sum: Arc::new(Mutex::new(0)),
+                secrets: Arc::new(Mutex::new(HashMap::new())),
+            },
+            &mut graph,
+            &mut player,
+            None,
+        )
+        .unwrap();
+    }
 
-//     #[test]
-//     fn test_new_client() {
-//         let config = ClientConfig {
-//             server_addr: "addr".to_string(),
-//             team_name: "team".to_string(),
-//             token: None,
-//         };
+    #[test]
+    fn test_new_client() {
+        let config = ClientConfig {
+            server_addr: "addr".to_string(),
+            team_name: "team".to_string(),
+            token: None,
+        };
 
-//         let client = GameClient::new(config.clone());
-//         assert_eq!(client.config.server_addr, config.server_addr);
-//         assert_eq!(client.config.team_name, config.team_name);
-//     }
+        let client = GameClient::new(config.clone());
+        assert_eq!(client.config.server_addr, config.server_addr);
+        assert_eq!(client.config.team_name, config.team_name);
+    }
 
-//     #[test]
-//     fn test_handle_secret_sum_modulo() {
-//         let (listener, addr) = setup_mock_server();
+    #[test]
+    fn test_handle_secret_sum_modulo() {
+        let (listener, addr) = setup_mock_server();
 
-//         thread::spawn(move || {
-//             listener.accept().unwrap();
-//         });
+        thread::spawn(move || {
+            listener.accept().unwrap();
+        });
 
-//         let mut stream = TcpStream::connect(addr).unwrap();
+        let mut stream = TcpStream::connect(addr).unwrap();
 
-//         let secrets = Arc::new(Mutex::new(HashMap::new()));
+        let secrets = Arc::new(Mutex::new(HashMap::new()));
 
-//         let secret_sum = Arc::new(Mutex::new(0));
+        let secret_sum = Arc::new(Mutex::new(0));
 
-//         let message = Message::Challenge(messages::Challenge::SecretSumModulo(10));
+        let message = Message::Challenge(messages::Challenge::SecretSumModulo(10));
 
-//         let mut graph = MazeGraph::new();
-//         let mut player = Player::new();
+        let mut graph = MazeGraph::new();
+        let mut player = Player::new();
 
-//         GameClient::handle_server_message(
-//             &mut stream,
-//             "Player1",
-//             message,
-//             &SecretSumModulo { sum: secret_sum, secrets },
-//             &mut graph,
-//             &mut player,
-//         )
-//         .unwrap();
-//     }
+        GameClient::handle_server_message(
+            &mut stream,
+            "Player1",
+            message,
+            &SecretSumModulo { sum: secret_sum, secrets },
+            &mut graph,
+            &mut player,
+            None,
+        )
+        .unwrap();
+    }
 
-//     #[test]
-//     fn test_handle_radar_view() {
-//         let (listener, addr) = setup_mock_server();
+    #[test]
+    fn test_handle_radar_view() {
+        let (listener, addr) = setup_mock_server();
 
-//         thread::spawn(move || {
-//             listener.accept().unwrap();
-//         });
+        thread::spawn(move || {
+            listener.accept().unwrap();
+        });
 
-//         let mut stream = TcpStream::connect(addr).unwrap();
+        let mut stream = TcpStream::connect(addr).unwrap();
 
-//         let message = Message::RadarView(messages::RadarView("bKgGjsIyap8p8aa".to_string()));
+        let message = Message::RadarView(messages::RadarView("bKgGjsIyap8p8aa".to_string()));
 
-//         let mut graph = MazeGraph::new();
-//         let mut player = Player::new();
+        let mut graph = MazeGraph::new();
+        let mut player = Player::new();
 
-//         GameClient::handle_server_message(
-//             &mut stream,
-//             "Player1",
-//             message,
-//             &SecretSumModulo {
-//                 sum: Arc::new(Mutex::new(0)),
-//                 secrets: Arc::new(Mutex::new(HashMap::new())),
-//             },
-//             &mut graph,
-//             &mut player,
-//         )
-//         .unwrap();
-//     }
+        GameClient::handle_server_message(
+            &mut stream,
+            "Player1",
+            message,
+            &SecretSumModulo {
+                sum: Arc::new(Mutex::new(0)),
+                secrets: Arc::new(Mutex::new(HashMap::new())),
+            },
+            &mut graph,
+            &mut player,
+            None,
+        )
+        .unwrap();
+    }
 
-//     #[test]
-//     fn test_handle_hint() {
-//         let (listener, addr) = setup_mock_server();
+    #[test]
+    fn test_handle_hint() {
+        let (listener, addr) = setup_mock_server();
 
-//         thread::spawn(move || {
-//             listener.accept().unwrap();
-//         });
+        thread::spawn(move || {
+            listener.accept().unwrap();
+        });
 
-//         let mut stream = TcpStream::connect(addr).unwrap();
+        let mut stream = TcpStream::connect(addr).unwrap();
 
-//         let message = Message::Hint(Hint::Secret(10));
+        let message = Message::Hint(Hint::Secret(10));
 
-//         let mut graph = MazeGraph::new();
-//         let mut player = Player::new();
+        let mut graph = MazeGraph::new();
+        let mut player = Player::new();
 
-//         GameClient::handle_server_message(
-//             &mut stream,
-//             "Player1",
-//             message,
-//             &SecretSumModulo {
-//                 sum: Arc::new(Mutex::new(0)),
-//                 secrets: Arc::new(Mutex::new(HashMap::new())),
-//             },
-//             &mut graph,
-//             &mut player,
-//         )
-//         .unwrap();
-//     }
-// }
+        GameClient::handle_server_message(
+            &mut stream,
+            "Player1",
+            message,
+            &SecretSumModulo {
+                sum: Arc::new(Mutex::new(0)),
+                secrets: Arc::new(Mutex::new(HashMap::new())),
+            },
+            &mut graph,
+            &mut player,
+            None,
+        )
+        .unwrap();
+    }
+}
