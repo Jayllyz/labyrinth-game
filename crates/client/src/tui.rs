@@ -288,10 +288,8 @@ impl Tui {
             0
         };
 
-        let memory_usage = std::mem::size_of_val(graph) + graph.get_size();
-
         format!(
-            "Pos: [{}, {}] | Explored: {}% ({}/{}) | Dead ends: {} | Not visited: {} | Graph memory: {} Bytes",
+            "Pos: [{}, {}] | Explored: {}% ({}/{}) | Dead ends: {} | Not visited: {}",
             agent.player.position.row,
             agent.player.position.column,
             explored_percent,
@@ -299,7 +297,6 @@ impl Tui {
             total_cells,
             dead_ends,
             not_visited,
-            memory_usage,
         )
     }
 

@@ -191,7 +191,20 @@ impl GameClient {
                 }
             },
             Message::RadarView(view) => {
-                Self::handle_radar_view(stream, view, graph, player)?;
+                if Self::handle_radar_view(stream, view, graph, player)? {
+                    if let Some(tui) = tui_state {
+                        if let Ok(mut state) = tui.lock() {
+                            state.add_log(
+                                thread_name,
+                                "Found the exit!".to_string(),
+                                LogLevel::Info,
+                            );
+                        }
+                    } else {
+                        logger.info(&format!("{} found the exit!", thread_name));
+                    }
+                    return Ok(());
+                }
             }
             Message::Hint(hint) => {
                 if let Hint::Secret(secret) = hint {
@@ -289,7 +302,7 @@ impl GameClient {
         view: messages::RadarView,
         graph: &mut MazeGraph,
         player: &mut Player,
-    ) -> GameResult<()> {
+    ) -> GameResult<bool> {
         let radar_view = extract_data(&decode_base64(&view.0))
             .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {}", e)))?;
 
@@ -297,7 +310,12 @@ impl GameClient {
         let action = instructions::tremeaux_solver(player, graph);
         send_message(stream, &Message::Action(action.clone()))?;
 
-        Ok(())
+        let is_win = instructions::check_win_condition(&radar_view.cells, action);
+        if is_win {
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 }
 
