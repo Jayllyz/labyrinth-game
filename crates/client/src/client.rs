@@ -23,7 +23,6 @@ use std::{
 pub struct ClientConfig {
     pub server_addr: String,
     pub team_name: String,
-    pub token: Option<String>,
 }
 
 struct SecretSumModulo {
@@ -376,11 +375,8 @@ mod tests {
 
     #[test]
     fn test_new_client() {
-        let config = ClientConfig {
-            server_addr: "addr".to_string(),
-            team_name: "team".to_string(),
-            token: None,
-        };
+        let config =
+            ClientConfig { server_addr: "addr".to_string(), team_name: "team".to_string() };
 
         let client = GameClient::new(config.clone());
         assert_eq!(client.config.server_addr, config.server_addr);

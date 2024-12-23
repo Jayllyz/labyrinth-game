@@ -33,10 +33,6 @@ struct Args {
     #[arg(help_heading = "PLAYER OPTIONS")]
     players: Option<u8>,
 
-    #[arg(long, help = "Token to register the player.")]
-    #[arg(help_heading = "PLAYER OPTIONS")]
-    token: Option<String>,
-
     #[arg(long, help = "Run the client in offline mode.")]
     offline: bool,
 
@@ -45,6 +41,9 @@ struct Args {
 
     #[arg(long, help = "Enable terminal user interface.", default_value = "false")]
     tui: bool,
+
+    #[arg(long, help = "TUI refresh rate in milliseconds.", default_value = "100")]
+    refresh_rate: u64,
 }
 
 fn main() {
@@ -52,11 +51,8 @@ fn main() {
     Logger::init(args.debug);
     let logger = Logger::get_instance();
 
-    let config = ClientConfig {
-        server_addr: format!("{}:{}", args.host, args.port),
-        team_name: args.team,
-        token: args.token,
-    };
+    let config =
+        ClientConfig { server_addr: format!("{}:{}", args.host, args.port), team_name: args.team };
 
     if args.offline {
         logger.info("Running in offline mode.");
@@ -67,7 +63,7 @@ fn main() {
     let agents_count = args.players.unwrap_or(3);
 
     if args.tui {
-        let mut tui = tui::Tui::new().expect("Failed to create TUI");
+        let mut tui = tui::Tui::new(args.refresh_rate).expect("Failed to initialize TUI.");
         let tui_state = tui.get_state();
 
         if let Ok(mut state) = tui_state.lock() {

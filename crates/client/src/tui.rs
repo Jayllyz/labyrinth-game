@@ -22,8 +22,6 @@ use std::{
     time::Duration,
 };
 
-const UPDATE_INTERVAL: Duration = Duration::from_millis(125);
-
 pub struct AgentState {
     pub logs: Vec<(String, LogLevel)>,
     pub graph: MazeGraph,
@@ -79,10 +77,11 @@ impl AppState {
 pub struct Tui {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
     state: Arc<Mutex<AppState>>,
+    refresh_rate: u64,
 }
 
 impl Tui {
-    pub fn new() -> io::Result<Self> {
+    pub fn new(refresh_rate: u64) -> io::Result<Self> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen)?;
@@ -90,7 +89,7 @@ impl Tui {
         let mut terminal = Terminal::new(backend)?;
         terminal.clear()?;
         let state = Arc::new(Mutex::new(AppState::new()));
-        Ok(Self { terminal, state })
+        Ok(Self { terminal, state, refresh_rate })
     }
 
     pub fn get_state(&self) -> Arc<Mutex<AppState>> {
@@ -101,7 +100,7 @@ impl Tui {
         let mut last_draw = Instant::now();
 
         loop {
-            if last_draw.elapsed() >= UPDATE_INTERVAL {
+            if last_draw.elapsed() >= Duration::from_millis(self.refresh_rate) {
                 self.draw()?;
                 last_draw = Instant::now();
             }
