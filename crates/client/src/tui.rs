@@ -38,6 +38,12 @@ pub struct AgentState {
     pub last_update: Instant,
 }
 
+impl Default for AgentState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AgentState {
     pub fn new() -> Self {
         Self {
@@ -52,6 +58,12 @@ impl AgentState {
 pub struct AppState {
     agents: HashMap<String, AgentState>,
     selected_tab: usize,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AppState {
@@ -81,10 +93,7 @@ impl AppState {
     }
 
     pub fn needs_update(&self, agent: &str) -> bool {
-        self.agents
-            .get(agent)
-            .map(|state| state.last_update.elapsed() >= UPDATE_INTERVAL)
-            .unwrap_or(false)
+        self.agents.get(agent).is_some_and(|state| state.last_update.elapsed() >= UPDATE_INTERVAL)
     }
 }
 
@@ -298,8 +307,8 @@ impl Tui {
         &self,
         graph: &MazeGraph,
         player: &Player,
-        width: i16,
-        height: i16,
+        available_width: i16,
+        available_height: i16,
     ) -> String {
         let mut visualization = String::new();
         let cells = &graph.cell_map;
@@ -315,16 +324,32 @@ impl Tui {
                 )
             },
         );
-        let view_height = height.min((bounds.1 - bounds.0 + 10).max(0));
-        let view_width = width.min((bounds.3 - bounds.2 + 10).max(0));
 
-        let center_row = player.position.row;
-        let center_col = player.position.column;
+        let width = (available_width / 4).max(1);
+        let height = (available_height / 2).max(1);
 
-        let row_start = (center_row - view_height / 2).max(bounds.0);
-        let row_end = (center_row + view_height / 2).min(bounds.1);
-        let col_start = (center_col - view_width / 2).max(bounds.2);
-        let col_end = (center_col + view_width / 2).min(bounds.3);
+        let total_rows = bounds.1 - bounds.0 + 1;
+        let total_cols = bounds.3 - bounds.2 + 1;
+
+        let view_height = height.min(total_rows);
+        let view_width = width.min(total_cols);
+
+        let row_start = if total_rows <= view_height {
+            bounds.0
+        } else {
+            let center_offset = view_height / 2;
+            (player.position.row - center_offset).max(bounds.0).min(bounds.1 - view_height + 1)
+        };
+
+        let col_start = if total_cols <= view_width {
+            bounds.2
+        } else {
+            let center_offset = view_width / 2;
+            (player.position.column - center_offset).max(bounds.2).min(bounds.3 - view_width + 1)
+        };
+
+        let row_end = (row_start + view_height - 1).min(bounds.1);
+        let col_end = (col_start + view_width - 1).min(bounds.3);
 
         visualization.push_str("    ");
         for _col in col_start..=col_end {
