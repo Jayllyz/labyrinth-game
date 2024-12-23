@@ -1,11 +1,11 @@
 use crate::instructions;
 use crate::maze_parser::maze_to_graph;
-use crate::tui::{AppState, LogLevel};
+use crate::tui::AppState;
 use crate::{data_structures::maze_graph::MazeGraph, maze_parser::Player};
 use shared::utils::print_error;
 use shared::{
     errors::{GameError, GameResult},
-    logger::Logger,
+    logger::{LogLevel, Logger},
     messages::{
         self, receive_message, send_message, Action, Challenge, Hint, Message, RegisterTeam,
         RegisterTeamResult, SubscribePlayer, SubscribePlayerResult,

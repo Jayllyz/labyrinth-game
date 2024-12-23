@@ -13,6 +13,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Tabs},
     Terminal,
 };
+use shared::logger::LogLevel;
 use std::time::Instant;
 use std::{
     collections::HashMap,
@@ -21,21 +22,12 @@ use std::{
     time::Duration,
 };
 
-const UPDATE_INTERVAL: Duration = Duration::from_millis(100);
-
-#[derive(Clone)]
-pub enum LogLevel {
-    Info,
-    Debug,
-    Warning,
-    Error,
-}
+const UPDATE_INTERVAL: Duration = Duration::from_millis(125);
 
 pub struct AgentState {
     pub logs: Vec<(String, LogLevel)>,
     pub graph: MazeGraph,
     pub player: Player,
-    pub last_update: Instant,
 }
 
 impl Default for AgentState {
@@ -46,12 +38,7 @@ impl Default for AgentState {
 
 impl AgentState {
     pub fn new() -> Self {
-        Self {
-            logs: Vec::new(),
-            graph: MazeGraph::new(),
-            player: Player::new(),
-            last_update: Instant::now(),
-        }
+        Self { logs: Vec::new(), graph: MazeGraph::new(), player: Player::new() }
     }
 }
 
@@ -83,17 +70,9 @@ impl AppState {
 
     pub fn update_state(&mut self, agent: &str, graph: MazeGraph, player: Player) {
         if let Some(state) = self.agents.get_mut(agent) {
-            let now = Instant::now();
-            if now.duration_since(state.last_update) >= UPDATE_INTERVAL {
-                state.graph = graph;
-                state.player = player.clone();
-                state.last_update = now;
-            }
+            state.graph = graph;
+            state.player = player.clone();
         }
-    }
-
-    pub fn needs_update(&self, agent: &str) -> bool {
-        self.agents.get(agent).is_some_and(|state| state.last_update.elapsed() >= UPDATE_INTERVAL)
     }
 }
 
