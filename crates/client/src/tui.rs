@@ -172,7 +172,7 @@ impl Tui {
             .split(full_layout[2]);
 
         let maze_area = content_layout[0];
-        let view_height = (maze_area.height as i16).saturating_sub(4);
+        let view_height = (maze_area.height as i16).saturating_sub(2);
         let view_width = (maze_area.width as i16).saturating_sub(4);
 
         let state = self.state.lock().unwrap();
