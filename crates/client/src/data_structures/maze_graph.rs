@@ -17,7 +17,7 @@ pub struct MazeCell {
     pub cell_type: CellType,
     pub neighbors: HashSet<Cell>,
     pub status: CellStatus,
-    pub walls: u8,
+    pub walls: usize,
     pub parent: Cell,
 }
 #[derive(Debug)]
@@ -69,7 +69,7 @@ impl MazeGraph {
         }
     }
 
-    pub fn update_walls(&mut self, position: Cell, walls: u8) {
+    pub fn update_walls(&mut self, position: Cell, walls: usize) {
         if let Some(cell) = self.cell_map.get_mut(&position) {
             cell.walls = max(cell.walls, walls);
         }

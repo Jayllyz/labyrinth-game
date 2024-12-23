@@ -233,7 +233,7 @@ impl GameClient {
             .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {}", e)))?;
 
         maze_to_graph(&radar_view, player, graph);
-        let action = instructions::tremeaux_solver(player, graph);
+        let action = instructions::alian_solver(player, graph);
         send_message(stream, &Message::Action(action.clone()))?;
 
         let is_win = instructions::check_win_condition(&radar_view.cells, action);
