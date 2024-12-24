@@ -150,58 +150,46 @@ impl GameClient {
         let thread = std::thread::current();
 
         if logger.is_debug_enabled() {
-            if let Some(tui) = tui_state {
-                if let Ok(mut state) = tui.lock() {
-                    state.add_log(thread_name, format!("{:?}", message), LogLevel::Debug);
-                }
-            } else {
-                logger.debug(&format!("{} received message: {:?}", thread_name, message));
-            }
+            Self::log_handler(
+                tui_state,
+                thread_name,
+                logger,
+                &format!("Received message: {:?}", message),
+                LogLevel::Debug,
+            );
         }
 
         match message {
             Message::SubscribePlayerResult(result) => match result {
                 SubscribePlayerResult::Ok => {
-                    if let Some(tui) = tui_state {
-                        if let Ok(mut state) = tui.lock() {
-                            state.add_log(
-                                thread_name,
-                                "Subscribed to game".to_string(),
-                                LogLevel::Info,
-                            );
-                        }
-                    } else {
-                        logger.info(&format!("{} subscribed to game", thread_name));
-                    }
+                    Self::log_handler(
+                        tui_state,
+                        thread_name,
+                        logger,
+                        "Subscribed successfully",
+                        LogLevel::Info,
+                    );
                 }
                 SubscribePlayerResult::Err(err) => {
-                    if let Some(tui) = tui_state {
-                        if let Ok(mut state) = tui.lock() {
-                            state.add_log(
-                                thread_name,
-                                format!("Failed to subscribe: {:?}", err),
-                                LogLevel::Error,
-                            );
-                        }
-                    } else {
-                        logger.error(&format!("{} failed to subscribe: {:?}", thread_name, err));
-                    }
+                    Self::log_handler(
+                        tui_state,
+                        thread_name,
+                        logger,
+                        &format!("Failed to subscribe: {:?}", err),
+                        LogLevel::Error,
+                    );
                     return Err(GameError::AgentSubscriptionError(format!("{:?}", err)));
                 }
             },
             Message::RadarView(view) => {
                 if Self::handle_radar_view(stream, view, graph, player)? {
-                    if let Some(tui) = tui_state {
-                        if let Ok(mut state) = tui.lock() {
-                            state.add_log(
-                                thread_name,
-                                "Found the exit!".to_string(),
-                                LogLevel::Info,
-                            );
-                        }
-                    } else {
-                        logger.info(&format!("{} found the exit!", thread_name));
-                    }
+                    Self::log_handler(
+                        tui_state,
+                        thread_name,
+                        logger,
+                        "Found the exit!",
+                        LogLevel::Info,
+                    );
                     return Ok(());
                 }
             }
@@ -213,13 +201,13 @@ impl GameClient {
                 }
             }
             Message::Challenge(value) => {
-                if let Some(tui) = tui_state {
-                    if let Ok(mut state) = tui.lock() {
-                        state.add_log(thread_name, format!("{:?}", value), LogLevel::Info);
-                    }
-                } else {
-                    logger.info(&format!("{} received challenge: {:?}", thread_name, value));
-                }
+                Self::log_handler(
+                    tui_state,
+                    thread_name,
+                    logger,
+                    &format!("{:?}", value),
+                    LogLevel::Info,
+                );
 
                 match value {
                     Challenge::SecretSumModulo(challenge) => {
@@ -234,21 +222,13 @@ impl GameClient {
             }
             Message::ActionError(err) => match err {
                 messages::ActionError::InvalidChallengeSolution => {
-                    if let Some(tui) = tui_state {
-                        if let Ok(mut state) = tui.lock() {
-                            state.add_log(
-                                thread_name,
-                                "Invalid challenge solution, retrying...".to_string(),
-                                LogLevel::Error,
-                            );
-                        }
-                    } else {
-                        logger.error(&format!(
-                            "{} invalid challenge solution, retrying...",
-                            thread_name
-                        ));
-                    }
-
+                    Self::log_handler(
+                        tui_state,
+                        thread_name,
+                        logger,
+                        "Invalid challenge solution, retrying...",
+                        LogLevel::Error,
+                    );
                     Self::handle_secret_sum_modulo(
                         stream,
                         &secrets_sum.secrets,
@@ -262,18 +242,26 @@ impl GameClient {
                 messages::ActionError::SolveChallengeFirst => todo!(),
             },
             Message::MessageError(err) => {
-                logger.error(&format!("Server error: {}", err.message));
+                Self::log_handler(
+                    tui_state,
+                    thread_name,
+                    logger,
+                    &format!("Server error: {:?}", err),
+                    LogLevel::Error,
+                );
             }
             _ => {
-                logger.warn(&format!("Unhandled message: {:?}", message));
+                Self::log_handler(
+                    tui_state,
+                    thread_name,
+                    logger,
+                    &format!("Unhandled message: {:?}", message),
+                    LogLevel::Warning,
+                );
             }
         }
 
-        if let Some(tui) = tui_state {
-            if let Ok(mut state) = tui.lock() {
-                state.update_state(thread_name, graph.clone(), player.clone());
-            }
-        }
+        Self::refresh_tui(tui_state, thread_name, graph, player);
 
         Ok(())
     }
@@ -315,6 +303,41 @@ impl GameClient {
         }
 
         Ok(false)
+    }
+
+    fn refresh_tui(
+        tui_state: Option<&Arc<Mutex<AppState>>>,
+        thread_name: &str,
+        graph: &MazeGraph,
+        player: &Player,
+    ) {
+        if let Some(tui) = tui_state {
+            if let Ok(mut state) = tui.lock() {
+                state.update_state(thread_name, graph.clone(), player.clone());
+            }
+        }
+    }
+
+    fn log_handler(
+        tui_state: Option<&Arc<Mutex<AppState>>>,
+        thread_name: &str,
+        logger: &Logger,
+        message: impl Into<String>,
+        level: LogLevel,
+    ) {
+        match tui_state {
+            Some(tui) => {
+                if let Ok(mut state) = tui.lock() {
+                    state.add_log(thread_name, message.into(), level)
+                }
+            }
+            None => match level {
+                LogLevel::Debug => logger.debug(&format!("{} {}", thread_name, message.into())),
+                LogLevel::Info => logger.info(&format!("{} {}", thread_name, message.into())),
+                LogLevel::Error => logger.error(&format!("{} {}", thread_name, message.into())),
+                LogLevel::Warning => logger.warn(&format!("{} {}", thread_name, message.into())),
+            },
+        }
     }
 }
 
