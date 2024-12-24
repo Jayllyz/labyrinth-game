@@ -232,9 +232,9 @@ impl Tui {
                     .take(log_height)
                     .map(|(msg, level)| {
                         let (color, prefix) = match level {
-                            LogLevel::Info => (Color::Green, "INFO "),
+                            LogLevel::Info => (Color::Green, "INFO"),
                             LogLevel::Debug => (Color::Blue, "DEBUG"),
-                            LogLevel::Warning => (Color::Yellow, "WARN "),
+                            LogLevel::Warning => (Color::Yellow, "WARN"),
                             LogLevel::Error => (Color::Red, "ERROR"),
                         };
                         Line::from(vec![
@@ -333,12 +333,14 @@ impl Tui {
 
         visualization.push_str("    ");
         for _col in col_start..=col_end {
-            visualization.push_str("───");
+            visualization.push_str("────");
         }
         visualization.push('\n');
 
         for row in row_start..=row_end {
-            if row % 5 == 0 {
+            if row % 5 == 0 && (row <= -100) {
+                visualization.push_str(&format!("{:3}│", row));
+            } else if row % 5 == 0 {
                 visualization.push_str(&format!("{:3} │", row));
             } else {
                 visualization.push_str("    │");
