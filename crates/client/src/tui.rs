@@ -232,9 +232,9 @@ impl Tui {
                     .take(log_height)
                     .map(|(msg, level)| {
                         let (color, prefix) = match level {
-                            LogLevel::Info => (Color::Green, "INFO"),
+                            LogLevel::Info => (Color::Green, "INFO "),
                             LogLevel::Debug => (Color::Blue, "DEBUG"),
-                            LogLevel::Warning => (Color::Yellow, "WARN"),
+                            LogLevel::Warning => (Color::Yellow, "WARN "),
                             LogLevel::Error => (Color::Red, "ERROR"),
                         };
                         Line::from(vec![
