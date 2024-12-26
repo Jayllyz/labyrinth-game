@@ -1,9 +1,10 @@
 use crate::data_structures::maze_graph::{CellStatus, MazeGraph};
 use crate::maze_parser::Player;
-use crossterm::{
-    event::{self, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+use ratatui::backend::CrosstermBackend as Backend;
+use ratatui::crossterm::{
+    cursor,
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -40,18 +41,18 @@ impl AgentState {
     }
 }
 
-pub struct AppState {
+pub struct GameState {
     agents: HashMap<String, AgentState>,
     selected_tab: usize,
 }
 
-impl Default for AppState {
+impl Default for GameState {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl AppState {
+impl GameState {
     pub fn new() -> Self {
         Self { agents: HashMap::new(), selected_tab: 0 }
     }
@@ -76,23 +77,42 @@ impl AppState {
 
 pub struct Tui {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
-    state: Arc<Mutex<AppState>>,
+    state: Arc<Mutex<GameState>>,
     refresh_rate: u64,
 }
 
 impl Tui {
-    pub fn new(refresh_rate: u64) -> io::Result<Self> {
-        enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
-        terminal.clear()?;
-        let state = Arc::new(Mutex::new(AppState::new()));
+    pub fn new(refresh_rate: u64) -> Result<Self, std::io::Error> {
+        let terminal = ratatui::Terminal::new(Backend::new(std::io::stdout()))?;
+        let state = Arc::new(Mutex::new(GameState::new()));
         Ok(Self { terminal, state, refresh_rate })
     }
 
-    pub fn get_state(&self) -> Arc<Mutex<AppState>> {
+    pub fn enter(&self) -> Result<(), std::io::Error> {
+        crossterm::terminal::enable_raw_mode()?;
+        crossterm::execute!(
+            std::io::stdout(),
+            EnterAlternateScreen,
+            EnableMouseCapture,
+            cursor::Hide
+        )?;
+        Ok(())
+    }
+
+    pub fn exit(&self) -> Result<(), std::io::Error> {
+        if crossterm::terminal::is_raw_mode_enabled()? {
+            crossterm::execute!(
+                std::io::stdout(),
+                LeaveAlternateScreen,
+                DisableMouseCapture,
+                cursor::Show
+            )?;
+            crossterm::terminal::disable_raw_mode()?;
+        }
+        Ok(())
+    }
+
+    pub fn get_state(&self) -> Arc<Mutex<GameState>> {
         Arc::clone(&self.state)
     }
 
@@ -109,34 +129,44 @@ impl Tui {
             if event::poll(Duration::from_millis(100))? {
                 if let Event::Key(key) = event::read()? {
                     if let KeyCode::Char('q') = key.code {
+                        self.exit()?;
                         break;
                     }
 
-                    let mut state = self.state.lock().unwrap();
+                    let mut state = match self.state.lock() {
+                        Ok(state) => state,
+                        Err(_) => continue,
+                    };
+                    let agent_count = state.agents.len();
                     match key.code {
                         KeyCode::Right => {
-                            let agent_count = state.agents.len();
-                            if agent_count > 0 {
-                                state.selected_tab = (state.selected_tab + 1) % agent_count;
-                            } else {
-                                state.selected_tab = 0;
-                            }
+                            Self::select_agent_increment(&mut state, agent_count);
                         }
                         KeyCode::Left => {
-                            if state.selected_tab > 0 {
-                                state.selected_tab -= 1;
-                            } else {
-                                state.selected_tab = state.agents.len() - 1;
-                            }
+                            Self::select_agent_decrement(&mut state, agent_count);
                         }
                         _ => {}
                     }
                 }
             }
-
-            std::thread::sleep(Duration::from_millis(50));
         }
         Ok(())
+    }
+
+    fn select_agent_increment(state: &mut GameState, agent_count: usize) {
+        if agent_count > 0 {
+            state.selected_tab = (state.selected_tab + 1) % agent_count;
+        } else {
+            state.selected_tab = 0;
+        }
+    }
+
+    fn select_agent_decrement(state: &mut GameState, agent_count: usize) {
+        if state.selected_tab > 0 {
+            state.selected_tab -= 1;
+        } else {
+            state.selected_tab = agent_count.saturating_sub(1);
+        }
     }
 
     fn draw(&mut self) -> io::Result<()> {
@@ -425,7 +455,8 @@ impl Tui {
 
 impl Drop for Tui {
     fn drop(&mut self) {
-        disable_raw_mode().unwrap();
-        execute!(self.terminal.backend_mut(), LeaveAlternateScreen,).unwrap();
+        if let Err(e) = self.exit() {
+            eprintln!("Failed to exit TUI: {}", e);
+        }
     }
 }

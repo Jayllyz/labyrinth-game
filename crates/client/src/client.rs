@@ -1,6 +1,6 @@
 use crate::instructions;
 use crate::maze_parser::maze_to_graph;
-use crate::tui::AppState;
+use crate::tui::GameState;
 use crate::{data_structures::maze_graph::MazeGraph, maze_parser::Player};
 use shared::utils::print_error;
 use shared::{
@@ -66,7 +66,7 @@ impl GameClient {
         &self,
         max_retries: u8,
         num_agents: u8,
-        tui_state: Option<Arc<Mutex<AppState>>>,
+        tui_state: Option<Arc<Mutex<GameState>>>,
     ) -> GameResult<()> {
         let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries)?;
 
@@ -144,7 +144,7 @@ impl GameClient {
         secrets_sum: &SecretSumModulo,
         graph: &mut MazeGraph,
         player: &mut Player,
-        tui_state: Option<&Arc<Mutex<AppState>>>,
+        tui_state: Option<&Arc<Mutex<GameState>>>,
     ) -> GameResult<()> {
         let logger = Logger::get_instance();
         let thread = std::thread::current();
@@ -306,7 +306,7 @@ impl GameClient {
     }
 
     fn refresh_tui(
-        tui_state: Option<&Arc<Mutex<AppState>>>,
+        tui_state: Option<&Arc<Mutex<GameState>>>,
         thread_name: &str,
         graph: &MazeGraph,
         player: &Player,
@@ -319,7 +319,7 @@ impl GameClient {
     }
 
     fn log_handler(
-        tui_state: Option<&Arc<Mutex<AppState>>>,
+        tui_state: Option<&Arc<Mutex<GameState>>>,
         thread_name: &str,
         logger: &Logger,
         message: impl Into<String>,

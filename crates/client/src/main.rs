@@ -42,7 +42,7 @@ struct Args {
     #[arg(long, help = "Enable terminal user interface.", default_value = "false")]
     tui: bool,
 
-    #[arg(long, help = "TUI refresh rate in milliseconds.", default_value = "100")]
+    #[arg(long, help = "TUI refresh rate in milliseconds.", default_value = "150")]
     refresh_rate: u64,
 }
 
@@ -70,6 +70,7 @@ fn main() {
             }
         }
 
+        tui.enter().expect("Failed to enter TUI.");
         let tui_handle = std::thread::spawn(move || {
             if let Err(err) = tui.run() {
                 logger.error(&format!("TUI error: {}", err));
