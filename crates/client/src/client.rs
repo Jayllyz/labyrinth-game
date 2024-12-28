@@ -154,7 +154,7 @@ impl GameClient {
                 tui_state,
                 thread_name,
                 logger,
-                &format!("Received message: {:?}", message),
+                format!("Received message: {:?}", message),
                 LogLevel::Debug,
             );
         }
@@ -175,7 +175,7 @@ impl GameClient {
                         tui_state,
                         thread_name,
                         logger,
-                        &format!("Failed to subscribe: {:?}", err),
+                        format!("Failed to subscribe: {:?}", err),
                         LogLevel::Error,
                     );
                     return Err(GameError::AgentSubscriptionError(format!("{:?}", err)));
@@ -205,7 +205,7 @@ impl GameClient {
                     tui_state,
                     thread_name,
                     logger,
-                    &format!("{:?}", value),
+                    format!("{:?}", value),
                     LogLevel::Info,
                 );
 
@@ -246,7 +246,7 @@ impl GameClient {
                     tui_state,
                     thread_name,
                     logger,
-                    &format!("Server error: {:?}", err),
+                    format!("Server error: {:?}", err),
                     LogLevel::Error,
                 );
             }
@@ -255,7 +255,7 @@ impl GameClient {
                     tui_state,
                     thread_name,
                     logger,
-                    &format!("Unhandled message: {:?}", message),
+                    format!("Unhandled message: {:?}", message),
                     LogLevel::Warning,
                 );
             }

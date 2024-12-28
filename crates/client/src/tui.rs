@@ -388,6 +388,7 @@ impl Tui {
                         CellType::OBJECTIVE => visualization.push_str(" ✅ "),
                         CellType::ENEMY => visualization.push_str(" ⚠️ "),
                         CellType::HELP => visualization.push_str(" 🆘 "),
+                        CellType::ALLY => visualization.push_str(" 🟢 "),
                         CellType::NOTHING => match cell.status {
                             CellStatus::VISITED => visualization.push_str(" · "),
                             CellStatus::DeadEnd => visualization.push_str(" 🔸"),
