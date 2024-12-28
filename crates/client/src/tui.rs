@@ -461,3 +461,158 @@ impl Drop for Tui {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shared::{logger::LogLevel, maze::Cell, radar::CellType};
+
+    fn create_test_agent(position: Cell, cells: Vec<(Cell, CellStatus)>) -> AgentState {
+        let mut graph = MazeGraph::new();
+
+        for (cell, status) in cells {
+            graph.add(cell, CellType::NOTHING);
+            graph.update_cell_status(cell, status);
+        }
+
+        AgentState {
+            logs: vec![],
+            graph,
+            player: Player { position, direction: shared::messages::Direction::Front },
+        }
+    }
+
+    #[test]
+    fn test_game_state_new() {
+        let game_state = GameState::new();
+        assert_eq!(game_state.agents.len(), 0);
+        assert_eq!(game_state.selected_tab, 0);
+    }
+
+    #[test]
+    fn test_game_state_register_agent() {
+        let mut game_state = GameState::new();
+        game_state.register_agent("agent1".to_string());
+        game_state.register_agent("agent2".to_string());
+
+        assert!(game_state.agents.contains_key("agent1"));
+        assert!(game_state.agents.contains_key("agent2"));
+        assert_eq!(game_state.agents.len(), 2);
+    }
+
+    #[test]
+    fn test_game_state_add_log() {
+        let mut game_state = GameState::new();
+        game_state.register_agent("agent1".to_string());
+
+        game_state.add_log("agent1", "Test log".to_string(), LogLevel::Info);
+        game_state.add_log("agent1", "Warning log".to_string(), LogLevel::Warning);
+
+        let agent_state = &game_state.agents["agent1"];
+        assert_eq!(agent_state.logs.len(), 2);
+    }
+
+    #[test]
+    fn test_game_state_update_state() {
+        let mut game_state = GameState::new();
+        game_state.register_agent("agent1".to_string());
+
+        let mut graph = MazeGraph::new();
+        let cell = Cell { row: 1, column: 1 };
+        graph.add(cell, CellType::NOTHING);
+
+        let player = Player { position: cell, direction: shared::messages::Direction::Front };
+
+        game_state.update_state("agent1", graph.clone(), player.clone());
+
+        let agent_state = &game_state.agents["agent1"];
+        assert_eq!(agent_state.player.position, cell);
+        assert!(agent_state.graph.contains(&cell));
+    }
+
+    #[test]
+    fn test_select_agent_increment() {
+        let mut game_state = GameState::new();
+        game_state.register_agent("agent1".to_string());
+        game_state.register_agent("agent2".to_string());
+
+        assert_eq!(game_state.selected_tab, 0);
+        Tui::select_agent_increment(&mut game_state, 2);
+        assert_eq!(game_state.selected_tab, 1);
+        Tui::select_agent_increment(&mut game_state, 2);
+        assert_eq!(game_state.selected_tab, 0);
+    }
+
+    #[test]
+    fn test_select_agent_decrement() {
+        let mut game_state = GameState::new();
+        game_state.register_agent("agent1".to_string());
+        game_state.register_agent("agent2".to_string());
+        game_state.selected_tab = 1;
+
+        assert_eq!(game_state.selected_tab, 1);
+        Tui::select_agent_decrement(&mut game_state, 2);
+        assert_eq!(game_state.selected_tab, 0);
+        Tui::select_agent_decrement(&mut game_state, 2);
+        assert_eq!(game_state.selected_tab, 1);
+    }
+
+    #[test]
+    fn test_empty_maze() {
+        let agent = create_test_agent(Cell { row: 0, column: 0 }, vec![]);
+        let tui = Tui::new(100).unwrap();
+
+        let stats = tui.create_stats(&agent);
+        assert_eq!(stats, "Pos: [0, 0] | Explored: 0% (0/0) | Dead ends: 0 | Not visited: 0");
+    }
+
+    #[test]
+    fn test_fully_explored_maze() {
+        let agent = create_test_agent(
+            Cell { row: 1, column: -2 },
+            vec![
+                (Cell { row: 0, column: 0 }, CellStatus::VISITED),
+                (Cell { row: 0, column: 1 }, CellStatus::VISITED),
+                (Cell { row: 1, column: 0 }, CellStatus::VISITED),
+                (Cell { row: 1, column: 1 }, CellStatus::VISITED),
+            ],
+        );
+        let tui = Tui::new(100).unwrap();
+
+        let stats = tui.create_stats(&agent);
+        assert_eq!(stats, "Pos: [1, -2] | Explored: 100% (4/4) | Dead ends: 0 | Not visited: 0");
+    }
+
+    #[test]
+    fn test_partially_explored_maze() {
+        let agent = create_test_agent(
+            Cell { row: 5, column: 5 },
+            vec![
+                (Cell { row: 0, column: 0 }, CellStatus::VISITED),
+                (Cell { row: 0, column: 1 }, CellStatus::NotVisited),
+                (Cell { row: 1, column: 0 }, CellStatus::DeadEnd),
+                (Cell { row: 1, column: 1 }, CellStatus::VISITED),
+            ],
+        );
+        let tui = Tui::new(100).unwrap();
+
+        let stats = tui.create_stats(&agent);
+        assert_eq!(stats, "Pos: [5, 5] | Explored: 50% (2/4) | Dead ends: 1 | Not visited: 1");
+    }
+
+    #[test]
+    fn test_all_dead_ends() {
+        let agent = create_test_agent(
+            Cell { row: 0, column: 0 },
+            vec![
+                (Cell { row: 0, column: 0 }, CellStatus::DeadEnd),
+                (Cell { row: 0, column: 1 }, CellStatus::DeadEnd),
+                (Cell { row: 1, column: 0 }, CellStatus::DeadEnd),
+            ],
+        );
+        let tui = Tui::new(100).unwrap();
+
+        let stats = tui.create_stats(&agent);
+        assert_eq!(stats, "Pos: [0, 0] | Explored: 0% (0/3) | Dead ends: 3 | Not visited: 0");
+    }
+}
