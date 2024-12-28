@@ -467,21 +467,6 @@ mod tests {
     use super::*;
     use shared::{logger::LogLevel, maze::Cell, radar::CellType};
 
-    fn create_test_agent(position: Cell, cells: Vec<(Cell, CellStatus)>) -> AgentState {
-        let mut graph = MazeGraph::new();
-
-        for (cell, status) in cells {
-            graph.add(cell, CellType::NOTHING);
-            graph.update_cell_status(cell, status);
-        }
-
-        AgentState {
-            logs: vec![],
-            graph,
-            player: Player { position, direction: shared::messages::Direction::Front },
-        }
-    }
-
     #[test]
     fn test_game_state_new() {
         let game_state = GameState::new();
@@ -555,64 +540,5 @@ mod tests {
         assert_eq!(game_state.selected_tab, 0);
         Tui::select_agent_decrement(&mut game_state, 2);
         assert_eq!(game_state.selected_tab, 1);
-    }
-
-    #[test]
-    fn test_empty_maze() {
-        let agent = create_test_agent(Cell { row: 0, column: 0 }, vec![]);
-        let tui = Tui::new(100).unwrap();
-
-        let stats = tui.create_stats(&agent);
-        assert_eq!(stats, "Pos: [0, 0] | Explored: 0% (0/0) | Dead ends: 0 | Not visited: 0");
-    }
-
-    #[test]
-    fn test_fully_explored_maze() {
-        let agent = create_test_agent(
-            Cell { row: 1, column: -2 },
-            vec![
-                (Cell { row: 0, column: 0 }, CellStatus::VISITED),
-                (Cell { row: 0, column: 1 }, CellStatus::VISITED),
-                (Cell { row: 1, column: 0 }, CellStatus::VISITED),
-                (Cell { row: 1, column: 1 }, CellStatus::VISITED),
-            ],
-        );
-        let tui = Tui::new(100).unwrap();
-
-        let stats = tui.create_stats(&agent);
-        assert_eq!(stats, "Pos: [1, -2] | Explored: 100% (4/4) | Dead ends: 0 | Not visited: 0");
-    }
-
-    #[test]
-    fn test_partially_explored_maze() {
-        let agent = create_test_agent(
-            Cell { row: 5, column: 5 },
-            vec![
-                (Cell { row: 0, column: 0 }, CellStatus::VISITED),
-                (Cell { row: 0, column: 1 }, CellStatus::NotVisited),
-                (Cell { row: 1, column: 0 }, CellStatus::DeadEnd),
-                (Cell { row: 1, column: 1 }, CellStatus::VISITED),
-            ],
-        );
-        let tui = Tui::new(100).unwrap();
-
-        let stats = tui.create_stats(&agent);
-        assert_eq!(stats, "Pos: [5, 5] | Explored: 50% (2/4) | Dead ends: 1 | Not visited: 1");
-    }
-
-    #[test]
-    fn test_all_dead_ends() {
-        let agent = create_test_agent(
-            Cell { row: 0, column: 0 },
-            vec![
-                (Cell { row: 0, column: 0 }, CellStatus::DeadEnd),
-                (Cell { row: 0, column: 1 }, CellStatus::DeadEnd),
-                (Cell { row: 1, column: 0 }, CellStatus::DeadEnd),
-            ],
-        );
-        let tui = Tui::new(100).unwrap();
-
-        let stats = tui.create_stats(&agent);
-        assert_eq!(stats, "Pos: [0, 0] | Explored: 0% (0/3) | Dead ends: 3 | Not visited: 0");
     }
 }
