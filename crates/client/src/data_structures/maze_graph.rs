@@ -20,9 +20,9 @@ pub struct MazeCell {
     pub walls: u8,
     pub parent: Cell,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MazeGraph {
-    cell_map: HashMap<Cell, MazeCell>,
+    pub cell_map: HashMap<Cell, MazeCell>,
 }
 
 impl Default for MazeGraph {
