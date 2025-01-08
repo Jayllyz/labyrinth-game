@@ -213,3 +213,98 @@ impl Directions {
     pub const WEST: Cell = Cell { row: 0, column: -1 };
     pub const EAST: Cell = Cell { row: 0, column: 1 };
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_maze_new() {
+        let map = vec![
+            vec![PositionType::WALL, PositionType::SPACE],
+            vec![PositionType::SPACE, PositionType::WALL],
+        ];
+        let entry = Cell { row: 0, column: 1 };
+        let exit = Cell { row: 1, column: 0 };
+
+        let maze = Maze::new(map.clone(), entry, exit);
+
+        assert_eq!(maze.row_len, 2);
+        assert_eq!(maze.col_len, 2);
+        assert_eq!(maze.map, map);
+        assert_eq!(maze.entry, entry);
+        assert_eq!(maze.exit, exit);
+    }
+
+    #[test]
+    fn test_maze_new_empty() {
+        let map = Vec::new();
+        let entry = Cell { row: 0, column: 0 };
+        let exit = Cell { row: 0, column: 0 };
+
+        let maze = Maze::new(map, entry, exit);
+
+        assert_eq!(maze.row_len, 0);
+        assert_eq!(maze.col_len, 0);
+    }
+
+    #[test]
+    fn test_cell_addition() {
+        let cell1 = Cell { row: 1, column: 2 };
+        let cell2 = Cell { row: 3, column: 4 };
+
+        let result = cell1 + cell2;
+
+        assert_eq!(result.row, 4);
+        assert_eq!(result.column, 6);
+    }
+
+    #[test]
+    fn test_is_cell_out_of_bound() {
+        let map = vec![
+            vec![PositionType::WALL, PositionType::SPACE],
+            vec![PositionType::SPACE, PositionType::WALL],
+        ];
+        let maze = Maze::new(map, Cell { row: 0, column: 0 }, Cell { row: 1, column: 1 });
+
+        // Test boundaries
+        assert!(maze.is_cell_out_of_bound(&Cell { row: -1, column: 0 }));
+        assert!(maze.is_cell_out_of_bound(&Cell { row: 0, column: -1 }));
+        assert!(maze.is_cell_out_of_bound(&Cell { row: 2, column: 0 }));
+        assert!(maze.is_cell_out_of_bound(&Cell { row: 0, column: 2 }));
+        // Test valid cells
+        assert!(!maze.is_cell_out_of_bound(&Cell { row: 0, column: 0 }));
+        assert!(!maze.is_cell_out_of_bound(&Cell { row: 1, column: 1 }));
+    }
+
+    #[test]
+    fn test_is_cell_walkable() {
+        let map = vec![
+            vec![PositionType::WALL, PositionType::SPACE],
+            vec![PositionType::SPACE, PositionType::WALL],
+        ];
+        let maze = Maze::new(map, Cell { row: 0, column: 0 }, Cell { row: 1, column: 1 });
+
+        let mut visited_points = vec![vec![-1; 2]; 2];
+        visited_points[0][1] = 1; // Mark as visited
+
+        // Test walkable space
+        assert!(maze.is_cell_walkable(&Cell { row: 1, column: 0 }, &visited_points));
+        // Test wall
+        assert!(!maze.is_cell_walkable(&Cell { row: 0, column: 0 }, &visited_points));
+        // Test visited cell
+        assert!(!maze.is_cell_walkable(&Cell { row: 0, column: 1 }, &visited_points));
+    }
+
+    #[test]
+    fn test_maze_generate() {
+        let width = 5;
+        let height = 10;
+        let maze = Maze::generate(GeneratorAlgorithm::Sidewinder, width, height, false, 0);
+
+        assert_eq!(maze.row_len, height * 2 + 1);
+        assert_eq!(maze.col_len, width * 2 + 1);
+        assert!(!maze.is_cell_out_of_bound(&maze.entry));
+        assert!(!maze.is_cell_out_of_bound(&maze.exit));
+    }
+}
