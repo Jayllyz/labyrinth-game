@@ -35,6 +35,8 @@ jobs:
         persist-credentials: false
 
     - uses: moonrepo/setup-rust@v1
+      with:
+        cache-base: main
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -6,6 +6,7 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.ref_name != 'main' }}
@@ -29,6 +30,8 @@ jobs:
 
     - name: Install Rust toolchain
       uses: moonrepo/setup-rust@v1
+      with:
+        cache-base: main
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
