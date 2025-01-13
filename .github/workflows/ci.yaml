@@ -6,6 +6,7 @@ on:
     branches: [ main ]
   pull_request:
 
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.ref_name != 'main' }}
@@ -57,5 +58,12 @@ jobs:
     - name: Check
       run: cargo check --all-targets --all-features
 
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-nextest
+
     - name: Run tests
-      run: cargo test
+      run: cargo nextest run --profile ci
+
+    - name: Run doc tests
+      run: cargo test --doc
