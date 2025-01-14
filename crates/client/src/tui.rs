@@ -1,13 +1,11 @@
 use crate::data_structures::maze_graph::{CellStatus, MazeCell, MazeGraph};
 use crate::maze_parser::Player;
-use ratatui::backend::CrosstermBackend as Backend;
 use ratatui::crossterm::{
     cursor,
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
-    backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
@@ -76,15 +74,31 @@ impl GameState {
     }
 }
 
+#[cfg(not(test))]
 pub struct Tui {
-    terminal: Terminal<CrosstermBackend<io::Stdout>>,
+    terminal: Terminal<ratatui::prelude::CrosstermBackend<io::Stdout>>,
+    state: Arc<Mutex<GameState>>,
+    refresh_rate: u64,
+}
+
+#[cfg(test)]
+pub struct Tui {
+    terminal: Terminal<ratatui::backend::TestBackend>,
     state: Arc<Mutex<GameState>>,
     refresh_rate: u64,
 }
 
 impl Tui {
+    #[cfg(not(test))]
     pub fn new(refresh_rate: u64) -> Result<Self, std::io::Error> {
-        let terminal = ratatui::Terminal::new(Backend::new(std::io::stdout()))?;
+        let terminal = Terminal::new(ratatui::backend::CrosstermBackend::new(std::io::stdout()))?;
+        let state = Arc::new(Mutex::new(GameState::new()));
+        Ok(Self { terminal, state, refresh_rate })
+    }
+
+    #[cfg(test)]
+    pub fn new(refresh_rate: u64) -> Result<Self, std::io::Error> {
+        let terminal = Terminal::new(ratatui::backend::TestBackend::new(10, 10))?;
         let state = Arc::new(Mutex::new(GameState::new()));
         Ok(Self { terminal, state, refresh_rate })
     }
