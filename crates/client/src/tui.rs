@@ -1,4 +1,4 @@
-use crate::data_structures::maze_graph::{CellStatus, MazeGraph};
+use crate::data_structures::maze_graph::{CellStatus, MazeCell, MazeGraph};
 use crate::maze_parser::Player;
 use ratatui::backend::CrosstermBackend as Backend;
 use ratatui::crossterm::{
@@ -15,6 +15,7 @@ use ratatui::{
     Terminal,
 };
 use shared::logger::LogLevel;
+use shared::maze::Cell;
 use std::time::Instant;
 use std::{
     collections::HashMap,
@@ -313,6 +314,132 @@ impl Tui {
         )
     }
 
+    fn calculate_bounds(cells: &HashMap<Cell, MazeCell>) -> (i16, i16, i16, i16) {
+        cells.keys().fold(
+            (i16::MAX, i16::MIN, i16::MAX, i16::MIN),
+            |(min_row, max_row, min_col, max_col), cell| {
+                (
+                    min_row.min(cell.row),
+                    max_row.max(cell.row),
+                    min_col.min(cell.column),
+                    max_col.max(cell.column),
+                )
+            },
+        )
+    }
+
+    fn calculate_view_bounds(
+        bounds: (i16, i16, i16, i16),
+        player: &Player,
+        available_width: i16,
+        available_height: i16,
+    ) -> (i16, i16, i16, i16) {
+        let width = (available_width / 4).max(1);
+        let height = (available_height / 2).max(1);
+
+        let total_rows = if bounds.1 >= bounds.0 {
+            bounds.1.saturating_sub(bounds.0).saturating_add(1)
+        } else {
+            0
+        };
+        let total_cols = if bounds.3 >= bounds.2 {
+            bounds.3.saturating_sub(bounds.2).saturating_add(1)
+        } else {
+            0
+        };
+
+        let view_height = height.min(total_rows);
+        let view_width = width.min(total_cols);
+
+        let row_start = if total_rows <= view_height {
+            bounds.0
+        } else {
+            let center_offset = view_height.saturating_div(2);
+            let player_offset = player.position.row.saturating_sub(bounds.0);
+            let max_start = total_rows.saturating_sub(view_height);
+
+            bounds.0.saturating_add(player_offset.saturating_sub(center_offset).clamp(0, max_start))
+        };
+
+        let col_start = if total_cols <= view_width {
+            bounds.2
+        } else {
+            let center_offset = view_width / 2;
+            bounds.2.saturating_add(
+                (player.position.column - bounds.2)
+                    .saturating_sub(center_offset)
+                    .clamp(0, total_cols.saturating_sub(view_width)),
+            )
+        };
+
+        let row_end = row_start.saturating_add(view_height.saturating_sub(1)).min(bounds.1);
+        let col_end = col_start.saturating_add(view_width.saturating_sub(1)).min(bounds.3);
+
+        (row_start, row_end, col_start, col_end)
+    }
+
+    fn render_cell(cell: &MazeCell) -> String {
+        use shared::radar::CellType;
+
+        match cell.cell_type {
+            CellType::OBJECTIVE => " ✅ ".to_string(),
+            CellType::ENEMY => " ⚠️ ".to_string(),
+            CellType::HELP => " 🆘 ".to_string(),
+            CellType::ALLY => " 🟢 ".to_string(),
+            CellType::NOTHING => match cell.status {
+                CellStatus::VISITED => " · ".to_string(),
+                CellStatus::DeadEnd => " 🔸".to_string(),
+                CellStatus::NotVisited => "   ".to_string(),
+            },
+            _ => " # ".to_string(),
+        }
+    }
+
+    fn render_horizontal_wall(
+        cells: &HashMap<Cell, MazeCell>,
+        row: i16,
+        col: i16,
+        col_end: i16,
+    ) -> String {
+        let mut wall = String::new();
+        wall.push_str("    │");
+
+        for current_col in col..=col_end {
+            let pos = Cell { row, column: current_col };
+            let below_pos = Cell { row: row + 1, column: current_col };
+
+            if let Some(cell) = cells.get(&pos) {
+                if !cell.neighbors.contains(&below_pos) {
+                    wall.push_str("───");
+                } else {
+                    wall.push_str("   ");
+                }
+
+                let right_pos = Cell { row, column: current_col + 1 };
+                if current_col < col_end {
+                    if !cell.neighbors.contains(&right_pos) {
+                        if !cell.neighbors.contains(&below_pos) {
+                            wall.push('┼');
+                        } else {
+                            wall.push('│');
+                        }
+                    } else if !cell.neighbors.contains(&below_pos) {
+                        wall.push('─');
+                    } else {
+                        wall.push(' ');
+                    }
+                }
+            } else {
+                wall.push_str("   ");
+                if current_col < col_end {
+                    wall.push(' ');
+                }
+            }
+        }
+        wall.push('\n');
+        wall
+    }
+
     fn create_maze_visualization(
         &self,
         graph: &MazeGraph,
@@ -323,43 +450,9 @@ impl Tui {
         let mut visualization = String::new();
         let cells = &graph.cell_map;
 
-        let bounds = cells.keys().fold(
-            (i16::MAX, i16::MIN, i16::MAX, i16::MIN),
-            |(min_row, max_row, min_col, max_col), cell| {
-                (
-                    min_row.min(cell.row),
-                    max_row.max(cell.row),
-                    min_col.min(cell.column),
-                    max_col.max(cell.column),
-                )
-            },
-        );
-
-        let width = (available_width / 4).max(1);
-        let height = (available_height / 2).max(1);
-
-        let total_rows = bounds.1 - bounds.0 + 1;
-        let total_cols = bounds.3 - bounds.2 + 1;
-
-        let view_height = height.min(total_rows);
-        let view_width = width.min(total_cols);
-
-        let row_start = if total_rows <= view_height {
-            bounds.0
-        } else {
-            let center_offset = view_height / 2;
-            (player.position.row - center_offset).max(bounds.0).min(bounds.1 - view_height + 1)
-        };
-
-        let col_start = if total_cols <= view_width {
-            bounds.2
-        } else {
-            let center_offset = view_width / 2;
-            (player.position.column - center_offset).max(bounds.2).min(bounds.3 - view_width + 1)
-        };
-
-        let row_end = (row_start + view_height - 1).min(bounds.1);
-        let col_end = (col_start + view_width - 1).min(bounds.3);
+        let bounds = Self::calculate_bounds(cells);
+        let (row_start, row_end, col_start, col_end) =
+            Self::calculate_view_bounds(bounds, player, available_width, available_height);
 
         visualization.push_str("    ");
         for _col in col_start..=col_end {
@@ -377,27 +470,14 @@ impl Tui {
             }
 
             for col in col_start..=col_end {
-                let pos = shared::maze::Cell { row, column: col };
+                let pos = Cell { row, column: col };
 
                 if pos == player.position {
                     visualization.push_str(" 🔵 ");
                 } else if let Some(cell) = cells.get(&pos) {
-                    use shared::radar::CellType;
+                    visualization.push_str(&Self::render_cell(cell));
 
-                    match cell.cell_type {
-                        CellType::OBJECTIVE => visualization.push_str(" ✅ "),
-                        CellType::ENEMY => visualization.push_str(" ⚠️ "),
-                        CellType::HELP => visualization.push_str(" 🆘 "),
-                        CellType::ALLY => visualization.push_str(" 🟢 "),
-                        CellType::NOTHING => match cell.status {
-                            CellStatus::VISITED => visualization.push_str(" · "),
-                            CellStatus::DeadEnd => visualization.push_str(" 🔸"),
-                            CellStatus::NotVisited => visualization.push_str("   "),
-                        },
-                        _ => visualization.push_str(" # "),
-                    }
-
-                    let right_pos = shared::maze::Cell { row, column: col + 1 };
+                    let right_pos = Cell { row, column: col + 1 };
                     if !cell.neighbors.contains(&right_pos) && col < col_end {
                         visualization.push('│');
                     } else {
@@ -413,40 +493,8 @@ impl Tui {
             visualization.push('\n');
 
             if row < row_end {
-                visualization.push_str("    │");
-                for col in col_start..=col_end {
-                    let pos = shared::maze::Cell { row, column: col };
-                    let below_pos = shared::maze::Cell { row: row + 1, column: col };
-
-                    if let Some(cell) = cells.get(&pos) {
-                        if !cell.neighbors.contains(&below_pos) {
-                            visualization.push_str("───");
-                        } else {
-                            visualization.push_str("   ");
-                        }
-
-                        let right_pos = shared::maze::Cell { row, column: col + 1 };
-                        if col < col_end {
-                            if !cell.neighbors.contains(&right_pos) {
-                                if !cell.neighbors.contains(&below_pos) {
-                                    visualization.push('┼');
-                                } else {
-                                    visualization.push('│');
-                                }
-                            } else if !cell.neighbors.contains(&below_pos) {
-                                visualization.push('─');
-                            } else {
-                                visualization.push(' ');
-                            }
-                        }
-                    } else {
-                        visualization.push_str("   ");
-                        if col < col_end {
-                            visualization.push(' ');
-                        }
-                    }
-                }
-                visualization.push('\n');
+                visualization
+                    .push_str(&Self::render_horizontal_wall(cells, row, col_start, col_end));
             }
         }
 
@@ -465,7 +513,7 @@ impl Drop for Tui {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::{logger::LogLevel, maze::Cell, radar::CellType};
+    use shared::{logger::LogLevel, maze::Cell, messages::Direction, radar::CellType};
 
     #[test]
     fn test_game_state_new() {
@@ -540,5 +588,122 @@ mod tests {
         assert_eq!(game_state.selected_tab, 0);
         Tui::select_agent_decrement(&mut game_state, 2);
         assert_eq!(game_state.selected_tab, 1);
+    }
+
+    #[test]
+    fn test_maze_visualization_empty() {
+        let tui = Tui::new(100).unwrap();
+        let graph = MazeGraph::new();
+        let player = Player::new();
+
+        let viz = tui.create_maze_visualization(&graph, &player, 10, 10);
+        assert_eq!(viz, "    \n");
+    }
+
+    #[test]
+    fn test_maze_visualization_2x2_grid() {
+        let tui = Tui::new(100).unwrap();
+        let mut graph = MazeGraph::new();
+        let cells = [
+            (0, 0, CellType::NOTHING),
+            (0, 1, CellType::NOTHING),
+            (1, 0, CellType::NOTHING),
+            (1, 1, CellType::NOTHING),
+        ];
+
+        for (row, col, cell_type) in cells.iter() {
+            let cell = Cell { row: *row, column: *col };
+            graph.add(cell, cell_type.clone());
+        }
+
+        let player = Player { position: Cell { row: 0, column: 0 }, direction: Direction::Front };
+
+        let viz = tui.create_maze_visualization(&graph, &player, 10, 10);
+        let expected = "    ────────\n  0 │ 🔵     \n    │───┼───\n    │   │    \n";
+        assert_eq!(viz, expected);
+    }
+
+    #[test]
+    fn test_calculate_bounds() {
+        let mut cells = HashMap::new();
+
+        assert_eq!(Tui::calculate_bounds(&cells), (i16::MAX, i16::MIN, i16::MAX, i16::MIN));
+
+        cells.insert(Cell { row: 0, column: 0 }, MazeCell::new(CellType::NOTHING));
+        assert_eq!(Tui::calculate_bounds(&cells), (0, 0, 0, 0));
+
+        cells.insert(Cell { row: -1, column: 2 }, MazeCell::new(CellType::NOTHING));
+        cells.insert(Cell { row: 3, column: -2 }, MazeCell::new(CellType::NOTHING));
+        assert_eq!(Tui::calculate_bounds(&cells), (-1, 3, -2, 2));
+    }
+
+    #[test]
+    fn test_calculate_view_bounds() {
+        let bounds = (-2, 2, -3, 3); // 5x7 maze
+        let player = Player { position: Cell { row: 0, column: 0 }, direction: Direction::Front };
+
+        let (row_start, row_end, col_start, col_end) =
+            Tui::calculate_view_bounds(bounds, &player, 40, 20);
+        assert_eq!(row_start, -2);
+        assert_eq!(row_end, 2);
+        assert_eq!(col_start, -3);
+        assert_eq!(col_end, 3);
+
+        let (row_start, row_end, col_start, col_end) =
+            Tui::calculate_view_bounds(bounds, &player, 12, 6);
+        assert_eq!(row_start, -1);
+        assert_eq!(row_end, 1);
+        assert_eq!(col_start, -1);
+        assert_eq!(col_end, 1);
+
+        let edge_player =
+            Player { position: Cell { row: 2, column: 3 }, direction: Direction::Front };
+        let (row_start, row_end, col_start, col_end) =
+            Tui::calculate_view_bounds(bounds, &edge_player, 12, 6);
+        assert_eq!(row_start, 0);
+        assert_eq!(row_end, 2);
+        assert_eq!(col_start, 1);
+        assert_eq!(col_end, 3);
+    }
+
+    #[test]
+    fn test_render_horizontal_wall() {
+        let mut cells = HashMap::new();
+
+        let wall = Tui::render_horizontal_wall(&cells, 0, 0, 2);
+        assert_eq!(wall, "    │           \n");
+
+        let mut cell1 = MazeCell::new(CellType::NOTHING);
+        let mut cell2 = MazeCell::new(CellType::NOTHING);
+
+        cell1.neighbors.insert(Cell { row: 0, column: 1 }); // Right neighbor
+        cell1.neighbors.insert(Cell { row: 1, column: 0 }); // Bottom neighbor
+        cell2.neighbors.insert(Cell { row: 0, column: 0 }); // Left neighbor
+        cell2.neighbors.insert(Cell { row: 1, column: 1 }); // Bottom neighbor
+
+        cells.insert(Cell { row: 0, column: 0 }, cell1);
+        cells.insert(Cell { row: 0, column: 1 }, cell2);
+
+        let wall = Tui::render_horizontal_wall(&cells, 0, 0, 1);
+        assert_eq!(wall, "    │       \n");
+
+        cells.clear();
+        let cell1 = MazeCell::new(CellType::NOTHING);
+        let cell2 = MazeCell::new(CellType::NOTHING);
+
+        cells.insert(Cell { row: 0, column: 0 }, cell1);
+        cells.insert(Cell { row: 0, column: 1 }, cell2);
+
+        let wall = Tui::render_horizontal_wall(&cells, 0, 0, 1);
+        assert_eq!(wall, "    │───┼───\n");
+    }
+
+    #[test]
+    fn test_render_cell() {
+        let cell = MazeCell::new(CellType::NOTHING);
+        assert_eq!(Tui::render_cell(&cell), "   ".to_string());
+
+        let cell = MazeCell::new(CellType::OBJECTIVE);
+        assert_eq!(Tui::render_cell(&cell), " ✅ ".to_string());
     }
 }
