@@ -96,6 +96,42 @@ impl MazeGraph {
 
         cell.status.clone()
     }
+
+    pub fn merge_maze(
+        &self,
+        graph_to_merge: &mut MazeGraph,
+        translation_vector: Cell,
+        rotation_degree: i32,
+    ) {
+        for (old_cell, _maze_cell) in graph_to_merge.cell_map.clone() {
+            let new_cell: Cell;
+            if rotation_degree == 180 {
+                new_cell = Cell { row: -old_cell.row, column: -old_cell.column };
+            } else if rotation_degree == 90 {
+                new_cell = Cell { row: old_cell.column, column: -old_cell.row };
+            } else if rotation_degree == -90 {
+                new_cell = Cell { row: -old_cell.column, column: old_cell.row };
+            } else {
+                continue;
+            }
+
+            let new_cell = new_cell + translation_vector;
+
+            graph_to_merge.update_cell_position(old_cell, new_cell);
+        }
+    }
+
+    pub fn update_cell_position(&mut self, old_cell: Cell, new_cell: Cell) {
+        if let Some(maze_cell) = self.cell_map.remove(&old_cell) {
+            for neighbor in &maze_cell.neighbors {
+                if let Some(neighbor_cell) = self.cell_map.get_mut(neighbor) {
+                    neighbor_cell.neighbors.remove(&old_cell);
+                    neighbor_cell.neighbors.insert(new_cell);
+                }
+            }
+            self.cell_map.insert(new_cell, maze_cell);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -110,5 +146,35 @@ mod test {
         let d: Cell = Cell { row: -1, column: 1 };
         f.insert(c);
         assert!(f.contains(&d));
+    }
+
+    #[test]
+    fn test_rotation_maze() {
+        let mut graph_target = MazeGraph::new();
+
+        graph_target.add(Cell { row: 0, column: 0 }, CellType::NOTHING);
+        graph_target.add(Cell { row: -1, column: 0 }, CellType::NOTHING);
+        graph_target.add(Cell { row: -1, column: 1 }, CellType::NOTHING);
+
+        graph_target.add_neighbor(&Cell { row: 0, column: 0 }, &Cell { row: -1, column: 0 });
+        graph_target.add_neighbor(&Cell { row: -1, column: 0 }, &Cell { row: 0, column: 0 });
+
+        graph_target.add_neighbor(&Cell { row: -1, column: 0 }, &Cell { row: -1, column: 1 });
+        graph_target.add_neighbor(&Cell { row: -1, column: 1 }, &Cell { row: -1, column: 0 });
+
+        let mut graph_source: MazeGraph = MazeGraph::new();
+
+        graph_source.add(Cell { row: 0, column: 0 }, CellType::NOTHING);
+        graph_source.add(Cell { row: 0, column: -1 }, CellType::NOTHING);
+        graph_source.add(Cell { row: 0, column: -2 }, CellType::NOTHING);
+
+        graph_source.add_neighbor(&Cell { row: 0, column: 0 }, &Cell { row: 0, column: -1 });
+        graph_source.add_neighbor(&Cell { row: 0, column: -1 }, &Cell { row: 0, column: 0 });
+
+        graph_source.add_neighbor(&Cell { row: 0, column: -1 }, &Cell { row: 0, column: -2 });
+        graph_source.add_neighbor(&Cell { row: 0, column: -2 }, &Cell { row: 0, column: -1 });
+
+        graph_source.merge_maze(&mut graph_target, Cell { row: 2, column: -1 }, -90);
+        print!("{:?}", &graph_target);
     }
 }
