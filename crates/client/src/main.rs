@@ -102,7 +102,7 @@ mod tests {
 
     #[test]
     fn test_default_args() {
-        let args = Args::parse_from(&["test"]);
+        let args = Args::parse_from(["test"]);
         assert_eq!(args.host, "localhost");
         assert_eq!(args.port, 8778);
         assert_eq!(args.retries, 5);
