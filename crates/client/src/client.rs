@@ -140,6 +140,7 @@ impl GameClient {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_server_message(
         stream: &mut TcpStream,
         thread_name: &str,
@@ -300,22 +301,13 @@ impl GameClient {
             .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {}", e)))?;
 
         maze_to_graph(&radar_view, player, graph);
-        let action;
 
-        match algorithm {
-            "Tremeaux" => {
-                action = instructions::tremeaux_solver(player, graph);
-            }
-            "RightHand" => {
-                action = instructions::right_hand_solver(&radar_view, player);
-            }
-            "Alian" => {
-                action = instructions::alian_solver(player, graph, thread_name);
-            }
-            _ => {
-                action = instructions::tremeaux_solver(player, graph);
-            }
-        }
+        let action: Action = match algorithm {
+            "Tremeaux" => instructions::tremeaux_solver(player, graph),
+            "RightHand" => instructions::right_hand_solver(&radar_view, player),
+            "Alian" => instructions::alian_solver(player, graph, thread_name),
+            _ => instructions::tremeaux_solver(player, graph),
+        };
 
         // let action = instructions::alian_solver(player, graph, thread_name);
         send_message(stream, &Message::Action(action.clone()))?;
@@ -578,6 +570,6 @@ mod tests {
         let config = ClientConfig { server_addr: addr.clone(), team_name: "team".to_string() };
         let client = GameClient::new(config);
 
-        client.run(1, 1, None).unwrap();
+        client.run(1, 1, None, "Tremeaux".to_owned()).unwrap();
     }
 }
