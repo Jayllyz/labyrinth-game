@@ -67,6 +67,7 @@ impl GameClient {
         max_retries: u8,
         num_agents: u8,
         tui_state: Option<Arc<Mutex<GameState>>>,
+        algorithm: String,
     ) -> GameResult<()> {
         let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries)?;
 
@@ -96,6 +97,7 @@ impl GameClient {
                 secrets: Arc::clone(&self.challenge_secret_sum.secrets),
             };
             let tui_state = tui_state.clone();
+            let algorithm = algorithm.clone();
 
             let handle = thread::Builder::new().name(agent_name.clone()).spawn(
                 move || -> GameResult<()> {
@@ -120,6 +122,7 @@ impl GameClient {
                             &mut graph,
                             &mut player,
                             tui_state.as_ref(),
+                            &algorithm,
                         )?;
                     }
                     Ok(())
@@ -145,6 +148,7 @@ impl GameClient {
         graph: &mut MazeGraph,
         player: &mut Player,
         tui_state: Option<&Arc<Mutex<GameState>>>,
+        algorithm: &str,
     ) -> GameResult<()> {
         let logger = Logger::get_instance();
         let thread = std::thread::current();
@@ -182,7 +186,7 @@ impl GameClient {
                 }
             },
             Message::RadarView(view) => {
-                if Self::handle_radar_view(stream, view, graph, player, thread_name)? {
+                if Self::handle_radar_view(stream, view, graph, player, thread_name, algorithm)? {
                     Self::log_handler(
                         tui_state,
                         thread_name,
@@ -290,12 +294,30 @@ impl GameClient {
         graph: &mut MazeGraph,
         player: &mut Player,
         thread_name: &str,
+        algorithm: &str,
     ) -> GameResult<bool> {
         let radar_view = extract_data(&decode_base64(&view.0))
             .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {}", e)))?;
 
         maze_to_graph(&radar_view, player, graph);
-        let action = instructions::alian_solver(player, graph, thread_name);
+        let action;
+
+        match algorithm {
+            "Tremeaux" => {
+                action = instructions::tremeaux_solver(player, graph);
+            }
+            "RightHand" => {
+                action = instructions::right_hand_solver(&radar_view, player);
+            }
+            "Alian" => {
+                action = instructions::alian_solver(player, graph, thread_name);
+            }
+            _ => {
+                action = instructions::tremeaux_solver(player, graph);
+            }
+        }
+
+        // let action = instructions::alian_solver(player, graph, thread_name);
         send_message(stream, &Message::Action(action.clone()))?;
 
         let is_win = instructions::check_win_condition(&radar_view.cells, action);
@@ -393,6 +415,7 @@ mod tests {
             &mut graph,
             &mut player,
             None,
+            "Tremeaux",
         )
         .unwrap();
     }
@@ -434,6 +457,7 @@ mod tests {
             &mut graph,
             &mut player,
             None,
+            "Tremeaux",
         )
         .unwrap();
     }
@@ -464,6 +488,7 @@ mod tests {
             &mut graph,
             &mut player,
             None,
+            "Tremeaux",
         )
         .unwrap();
     }
@@ -494,6 +519,7 @@ mod tests {
             &mut graph,
             &mut player,
             None,
+            "Tremeaux",
         )
         .unwrap();
     }

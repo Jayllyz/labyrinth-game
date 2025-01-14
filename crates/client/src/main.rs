@@ -44,6 +44,14 @@ struct Args {
 
     #[arg(long, help = "TUI refresh rate in milliseconds.", default_value = "150")]
     refresh_rate: u64,
+
+    #[arg(
+        long,
+        help = "Select the used algorithm by the agents.",
+        default_value = "Tremeaux",
+        value_parser = ["Tremeaux", "WallFollower", "Alian"]
+    )]
+    algorithm: String,
 }
 
 fn main() {
@@ -78,7 +86,7 @@ fn main() {
             }
         });
 
-        if let Err(e) = client.run(args.retries, args.players, Some(tui_state)) {
+        if let Err(e) = client.run(args.retries, args.players, Some(tui_state), args.algorithm) {
             e.log_error(logger);
             std::process::exit(1);
         }
@@ -87,7 +95,7 @@ fn main() {
             logger.error(&format!("TUI thread error: {:?}", e));
         }
     } else {
-        if let Err(e) = client.run(args.retries, args.players, None) {
+        if let Err(e) = client.run(args.retries, args.players, None, args.algorithm) {
             e.log_error(logger);
             std::process::exit(1);
         }
