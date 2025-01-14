@@ -5,6 +5,142 @@ use shared::messages::{self, Direction};
 use shared::radar::{CellType, Passages, Radar};
 use std::collections::HashMap;
 
+// TODO:
+// [X] For each currently visited maze node, there is occupied flag is set to true so that other agents know they cannot
+// go there.
+// [X] If there is a neighboring maze node that has not yet been visited by any agent (white), the agent should go there.
+// [X] If there are several such nodes, the agent should choose one at random.
+// [X] If there is no node that has not been visited by any agent yet, the agent should prefer a node that has not been
+// visited by it yet.
+// [X] If there are several such nodes, the agent should choose one at random.
+// [X] If the agent has already traveled in all possible directions, the agent will choose the node that has been visited
+// the least by it.
+// [ ] If there is only one neighboring maze node that can be visited, but it is currently occupied, the agent should
+// wait at its current maze node until it becomes free
+// [X] If there is only one way to leave the current node, and all other directional are obstacles or black nodes, the
+// agent marks the current node as a black node so that other agents cannot move there.
+
+pub fn alian_solver(
+    player: &mut Player,
+    graph: &mut MazeGraph,
+    thread_name: &str,
+) -> messages::Action {
+    let mut message: messages::Action = messages::Action::MoveTo(messages::Direction::Front);
+
+    let (neighbor_positions, parent, player_position) = {
+        let Some(player_cell) = graph.get_cell(player.position) else {
+            return messages::Action::MoveTo(messages::Direction::Front);
+        };
+        (player_cell.neighbors.clone(), player_cell.parent, player.position)
+    };
+
+    let mut visited: Vec<Cell> = Vec::new();
+    let mut visited_by_self: Vec<(Cell, u8)> = Vec::new();
+    let mut not_visited_by_self: Vec<Cell> = Vec::new();
+
+    let mut dead_ends_cell = 0;
+    for pos in &neighbor_positions {
+        let status = graph.get_cell_status(*pos);
+        if status == CellStatus::DeadEnd {
+            dead_ends_cell += 1;
+        }
+    }
+
+    let player_walls = graph.get_cell(player_position).map_or(0, |cell| cell.walls);
+    if player_walls + dead_ends_cell == 3 {
+        graph.update_cell_status(player_position, CellStatus::DeadEnd);
+    }
+
+    for neighbor_position in neighbor_positions {
+        let (walls, mut status, cell_type, visited_by) = {
+            let Some(neighbor_cell) = graph.get_cell(neighbor_position) else {
+                continue;
+            };
+            (
+                neighbor_cell.walls,
+                neighbor_cell.status.clone(),
+                neighbor_cell.cell_type.clone(),
+                neighbor_cell.visited_by.clone(),
+            )
+        };
+
+        if walls == 3 && !(cell_type == CellType::OBJECTIVE || cell_type == CellType::HELP) {
+            graph.update_cell_status(neighbor_position, CellStatus::DeadEnd);
+            status = CellStatus::DeadEnd;
+        }
+
+        if status == CellStatus::NotVisited {
+            graph.update_cell_status(player_position, CellStatus::VISITED);
+            graph.set_visited(player_position, thread_name);
+            let next_direction = player.get_next_direction(&neighbor_position);
+
+            message = match next_direction {
+                Direction::Left => {
+                    player.turn_left();
+                    messages::Action::MoveTo(messages::Direction::Left)
+                }
+                Direction::Right => {
+                    player.turn_right();
+                    messages::Action::MoveTo(messages::Direction::Right)
+                }
+                Direction::Back => {
+                    player.turn_back();
+                    messages::Action::MoveTo(messages::Direction::Back)
+                }
+                _ => messages::Action::MoveTo(messages::Direction::Front),
+            };
+
+            graph.set_parent(neighbor_position, player_position);
+            player.move_forward();
+            return message;
+        }
+
+        if status == CellStatus::VISITED {
+            visited.push(neighbor_position);
+
+            if !visited_by.contains_key(thread_name) {
+                not_visited_by_self.push(neighbor_position);
+            } else if let Some(&count) = visited_by.get(thread_name) {
+                visited_by_self.push((neighbor_position, count));
+            }
+        }
+    }
+
+    // Trie ascendant
+    visited_by_self.sort_by(|a, b| a.1.cmp(&b.1));
+
+    let parent_status = graph.get_cell_status(parent);
+    let next_direction = if (parent_status == CellStatus::DeadEnd || parent == player_position)
+        && !not_visited_by_self.is_empty()
+    {
+        player.get_next_direction(&not_visited_by_self[0])
+    } else if parent_status == CellStatus::DeadEnd || parent == player_position {
+        player.get_next_direction(&visited_by_self[0].0)
+    } else {
+        player.get_next_direction(&parent)
+    };
+
+    message = match next_direction {
+        Direction::Left => {
+            player.turn_left();
+            messages::Action::MoveTo(messages::Direction::Left)
+        }
+        Direction::Right => {
+            player.turn_right();
+            messages::Action::MoveTo(messages::Direction::Right)
+        }
+        Direction::Back => {
+            player.turn_back();
+            messages::Action::MoveTo(messages::Direction::Back)
+        }
+        _ => message,
+    };
+
+    graph.update_cell_status(player_position, CellStatus::DeadEnd);
+    player.move_forward();
+    message
+}
+
 pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::Action {
     let mut message: messages::Action = messages::Action::MoveTo(messages::Direction::Front);
 

@@ -17,8 +17,9 @@ pub struct MazeCell {
     pub cell_type: CellType,
     pub neighbors: HashSet<Cell>,
     pub status: CellStatus,
-    pub walls: u8,
+    pub walls: usize,
     pub parent: Cell,
+    pub visited_by: HashMap<String, u8>,
 }
 #[derive(Debug, Clone)]
 pub struct MazeGraph {
@@ -49,6 +50,7 @@ impl MazeGraph {
                 status: CellStatus::NotVisited,
                 parent: cell,
                 walls: 0,
+                visited_by: HashMap::new(),
             },
         );
     }
@@ -69,7 +71,7 @@ impl MazeGraph {
         }
     }
 
-    pub fn update_walls(&mut self, position: Cell, walls: u8) {
+    pub fn update_walls(&mut self, position: Cell, walls: usize) {
         if let Some(cell) = self.cell_map.get_mut(&position) {
             cell.walls = max(cell.walls, walls);
         }
@@ -90,6 +92,18 @@ impl MazeGraph {
             cell.status.clone()
         } else {
             CellStatus::DeadEnd
+        }
+    }
+
+    pub fn set_visited(&self, position: Cell, thread_name: &str) {
+        if let Some(cell) = self.cell_map.get(&position) {
+            let mut visited = cell.visited_by.clone();
+
+            if let Some(count) = visited.get_mut(thread_name) {
+                *count += 1;
+            } else {
+                visited.insert(thread_name.to_string(), 1);
+            }
         }
     }
 }

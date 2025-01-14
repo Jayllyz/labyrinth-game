@@ -130,7 +130,7 @@ pub fn maze_to_graph(radar_view: &Radar, player: &Player, maze_graph: &mut MazeG
         }
 
         let walls = get_cell_walls(cell_id, &radar_view.horizontal, &radar_view.vertical);
-        maze_graph.update_walls(cell_pos, walls);
+        maze_graph.update_walls(cell_pos, walls as usize);
 
         let mut neigbors_to_add: Vec<Cell> = Vec::new();
 
