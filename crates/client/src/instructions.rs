@@ -98,7 +98,7 @@ pub fn alian_solver(
         if status == CellStatus::VISITED {
             visited.push(neighbor_position);
 
-            if visited_by.get(thread_name).is_none() {
+            if !visited_by.contains_key(thread_name) {
                 not_visited_by_self.push(neighbor_position);
             } else if let Some(&count) = visited_by.get(thread_name) {
                 visited_by_self.push((neighbor_position, count));
@@ -111,7 +111,7 @@ pub fn alian_solver(
 
     let parent_status = graph.get_cell_status(parent);
     let next_direction = if (parent_status == CellStatus::DeadEnd || parent == player_position)
-        && not_visited_by_self.len() > 0
+        && !not_visited_by_self.is_empty()
     {
         player.get_next_direction(&not_visited_by_self[0])
     } else if parent_status == CellStatus::DeadEnd || parent == player_position {

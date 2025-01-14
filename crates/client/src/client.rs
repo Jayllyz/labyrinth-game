@@ -182,7 +182,7 @@ impl GameClient {
                 }
             },
             Message::RadarView(view) => {
-                if Self::handle_radar_view(stream, view, graph, player)? {
+                if Self::handle_radar_view(stream, view, graph, player, thread_name)? {
                     Self::log_handler(
                         tui_state,
                         thread_name,
@@ -289,6 +289,7 @@ impl GameClient {
         view: messages::RadarView,
         graph: &mut MazeGraph,
         player: &mut Player,
+        thread_name: &str,
     ) -> GameResult<bool> {
         let radar_view = extract_data(&decode_base64(&view.0))
             .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {}", e)))?;
