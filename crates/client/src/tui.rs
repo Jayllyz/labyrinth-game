@@ -12,14 +12,12 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Tabs},
     Terminal,
 };
-use shared::logger::LogLevel;
-use shared::maze::Cell;
-use std::time::Instant;
+use shared::{logger::LogLevel, maze::Cell, radar::CellType};
 use std::{
     collections::HashMap,
     io,
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 pub struct AgentState {
@@ -76,7 +74,7 @@ impl GameState {
 
 #[cfg(not(test))]
 pub struct Tui {
-    terminal: Terminal<ratatui::prelude::CrosstermBackend<io::Stdout>>,
+    terminal: Terminal<ratatui::backend::CrosstermBackend<io::Stdout>>,
     state: Arc<Mutex<GameState>>,
     refresh_rate: u64,
 }
@@ -393,8 +391,6 @@ impl Tui {
     }
 
     fn render_cell(cell: &MazeCell) -> String {
-        use shared::radar::CellType;
-
         match cell.cell_type {
             CellType::OBJECTIVE => " ✅ ".to_string(),
             CellType::ENEMY => " ⚠️ ".to_string(),

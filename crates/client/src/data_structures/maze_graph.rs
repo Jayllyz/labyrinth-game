@@ -29,7 +29,7 @@ impl MazeCell {
             neighbors: HashSet::new(),
             status: CellStatus::NotVisited,
             walls: 0,
-            parent: Cell { row: 0, column: 0 }, // Default parent is (0,0)
+            parent: Cell { row: 0, column: 0 },
             visited_by: HashMap::new(),
         }
     }
