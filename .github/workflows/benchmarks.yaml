@@ -30,6 +30,8 @@ jobs:
 
     - name: Install Rust toolchain
       uses: moonrepo/setup-rust@v1
+      with:
+        cache-base: main
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

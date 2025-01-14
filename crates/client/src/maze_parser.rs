@@ -25,6 +25,7 @@ fn rotate_right_90(cells: &mut [Cell]) {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Player {
     pub direction: Direction,
     pub position: Cell,

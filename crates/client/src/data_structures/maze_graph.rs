@@ -21,9 +21,9 @@ pub struct MazeCell {
     pub parent: Cell,
     pub visited_by: HashMap<String, u8>,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MazeGraph {
-    cell_map: HashMap<Cell, MazeCell>,
+    pub cell_map: HashMap<Cell, MazeCell>,
 }
 
 impl Default for MazeGraph {
