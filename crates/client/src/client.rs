@@ -497,4 +497,61 @@ mod tests {
         )
         .unwrap();
     }
+
+    #[test]
+    fn test_run_function() {
+        let (listener, addr) = setup_mock_server();
+
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let msg = receive_message(&mut stream).unwrap();
+                assert!(matches!(msg, Message::RegisterTeam(_)));
+
+                send_message(
+                    &mut stream,
+                    &Message::RegisterTeamResult(RegisterTeamResult::Ok {
+                        registration_token: "test_token".to_string(),
+                        expected_players: 1,
+                    }),
+                )
+                .unwrap();
+
+                if let Ok((mut player_stream, _)) = listener.accept() {
+                    let msg = receive_message(&mut player_stream).unwrap();
+                    assert!(matches!(msg, Message::SubscribePlayer(_)));
+
+                    send_message(
+                        &mut player_stream,
+                        &Message::SubscribePlayerResult(SubscribePlayerResult::Ok),
+                    )
+                    .unwrap();
+
+                    send_message(&mut player_stream, &Message::Hint(Hint::Secret(42))).unwrap();
+
+                    send_message(
+                        &mut player_stream,
+                        &Message::Challenge(Challenge::SecretSumModulo(100)),
+                    )
+                    .unwrap();
+
+                    let msg = receive_message(&mut player_stream).unwrap();
+                    assert!(matches!(msg, Message::Action(Action::SolveChallenge { .. })));
+
+                    send_message(
+                        &mut player_stream,
+                        &Message::RadarView(messages::RadarView("bKgGjsIyap8p8aa".to_string())),
+                    )
+                    .unwrap();
+
+                    let msg = receive_message(&mut player_stream).unwrap();
+                    assert!(matches!(msg, Message::Action(_)));
+                }
+            }
+        });
+
+        let config = ClientConfig { server_addr: addr.clone(), team_name: "team".to_string() };
+        let client = GameClient::new(config);
+
+        client.run(1, 1, None).unwrap();
+    }
 }

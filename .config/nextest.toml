@@ -1,5 +1,5 @@
 [profile.ci]
-failure-output = "immediate-final"
+failure-output = "final"
 # Don't fail fast in CI to run the full test suite.
 fail-fast = false
 retries = 2
