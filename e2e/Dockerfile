@@ -6,7 +6,7 @@ RUN cargo build -p client --release --bin client
 FROM debian:stable-slim AS prod
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
     libx11-6 \
     libxcursor1 \

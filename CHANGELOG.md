@@ -6,7 +6,54 @@ All notable changes to this project will be documented in this file.
 
 ### 📇 Features
 
+- *(client)* Implement terminal user interface ([#66](https://github.com/Jayllyz/labyrinth-game/issues/66)) - ([8b3e618](https://github.com/Jayllyz/labyrinth-game/commit/8b3e6182e5f1c3fda15bc5a0f7d4a801a896adb7))
+- Implement custom GameError  ([#59](https://github.com/Jayllyz/labyrinth-game/issues/59)) - ([fc7476a](https://github.com/Jayllyz/labyrinth-game/commit/fc7476a8722bc446a8df35a626f7e70e3e96de89))
+- Tremeaux algorithm ([#58](https://github.com/Jayllyz/labyrinth-game/issues/58)) - ([b00fcaa](https://github.com/Jayllyz/labyrinth-game/commit/b00fcaa5071062c06482e98ae05b8d0dacc9f475))
+- Implement graphs for maze resolution ([#56](https://github.com/Jayllyz/labyrinth-game/issues/56)) - ([c9bcefa](https://github.com/Jayllyz/labyrinth-game/commit/c9bcefa8e30031ccb79ab063c47c9e029f6b0178))
+
+### 🐛 Bug Fixes
+
+- Fix tremeaux ([#60](https://github.com/Jayllyz/labyrinth-game/issues/60)) - ([e712552](https://github.com/Jayllyz/labyrinth-game/commit/e7125522bbd1e0c22d7bc4f4535e3a3152ab6d02))
+
+### 🚜 Refactor
+
+- *(radar)* Rename struct to fix duplicate ([#57](https://github.com/Jayllyz/labyrinth-game/issues/57)) - ([e3d9831](https://github.com/Jayllyz/labyrinth-game/commit/e3d983112611ee2b0bf8828b78a7b6e48f741574))
+- Remove unwrap usage ([#62](https://github.com/Jayllyz/labyrinth-game/issues/62)) - ([dec6e08](https://github.com/Jayllyz/labyrinth-game/commit/dec6e081a4ab3010983ba207b8ba6a41d69bd221))
+
+### 🧪 Testing
+
+- Improve coverage and update e2e server ([#61](https://github.com/Jayllyz/labyrinth-game/issues/61)) - ([c9d94fa](https://github.com/Jayllyz/labyrinth-game/commit/c9d94fac0fe988b2789867bc1bb2a1f2f44f03ec))
+
+### ⚙️ Miscellaneous Tasks
+
+- Vscode debug setup - ([4c2dacd](https://github.com/Jayllyz/labyrinth-game/commit/4c2dacd4eb6bd8807d2765c249f2e58acae47314))
+
+## [1.0.2](https://github.com/Jayllyz/labyrinth-game/compare/v1.0.1..v1.0.2) - 2024-12-17
+
+### 📇 Features
+
 - *(messages)* Add new messages ([#46](https://github.com/Jayllyz/labyrinth-game/issues/46)) - ([68df316](https://github.com/Jayllyz/labyrinth-game/commit/68df3160f3d5fddaceb3d9e3317bc2949e0be962))
+- Solve secret sum challenge ([#49](https://github.com/Jayllyz/labyrinth-game/issues/49)) - ([a164e38](https://github.com/Jayllyz/labyrinth-game/commit/a164e38b4fbb44f0435ffb6370cbc43b2ed3f74e))
+
+### 🐛 Bug Fixes
+
+- *(messages)* Get action error to fix challenge edge case ([#54](https://github.com/Jayllyz/labyrinth-game/issues/54)) - ([eb5893c](https://github.com/Jayllyz/labyrinth-game/commit/eb5893c88fbafc234259e1b1cb7aa782a5470e0a))
+
+### 🚜 Refactor
+
+- *(client)* Improve readability of handle_server_message ([#55](https://github.com/Jayllyz/labyrinth-game/issues/55)) - ([728cc61](https://github.com/Jayllyz/labyrinth-game/commit/728cc61b1df6bf4329a756693096653f3842d84e))
+- *(connection)* Rm mspc channel for token ([#48](https://github.com/Jayllyz/labyrinth-game/issues/48)) - ([2e011cf](https://github.com/Jayllyz/labyrinth-game/commit/2e011cff30250a907212252b35ea8e2a6344096b))
+
+### ⚡ Performance
+
+- *(radar)* Dont calculate len each times ([#52](https://github.com/Jayllyz/labyrinth-game/issues/52)) - ([166fcd4](https://github.com/Jayllyz/labyrinth-game/commit/166fcd4c96f855c77d804c0081f5409784e82afc))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(e2e)* Update server ([#50](https://github.com/Jayllyz/labyrinth-game/issues/50)) - ([52567e7](https://github.com/Jayllyz/labyrinth-game/commit/52567e753dd99b8137d5894b90c5ed1bfd7a8c16))
+- Fix warnings - ([c61b6c6](https://github.com/Jayllyz/labyrinth-game/commit/c61b6c6024cbbdd8bee3314a6ea4dd77a25f9cbe))
+- Add zizmor check - ([2a82984](https://github.com/Jayllyz/labyrinth-game/commit/2a82984746062486b06eb64f89b33dc286fb42c6))
+- Add git cliff changelog ([#47](https://github.com/Jayllyz/labyrinth-game/issues/47)) - ([ba1980b](https://github.com/Jayllyz/labyrinth-game/commit/ba1980be71ab89b339ff6b4aa21fab3b6092cbf8))
 
 ## [1.0.1](https://github.com/Jayllyz/labyrinth-game/compare/v1.0.0..v1.0.1) - 2024-12-03
 

@@ -45,7 +45,10 @@ pub fn bfs_shortest_path(maze: &Maze, print: PrintPathMode) -> Vec<Cell> {
     let mut index = 1;
 
     while !queue.is_empty() {
-        let curr: Cell = queue.pop_front().unwrap();
+        let curr: Cell = match queue.pop_front() {
+            Some(cell) => cell,
+            None => break,
+        };
 
         if curr == exit {
             match print {

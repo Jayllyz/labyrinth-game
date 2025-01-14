@@ -3,6 +3,14 @@ use std::sync::OnceLock;
 
 pub static INSTANCE: OnceLock<Logger> = OnceLock::new();
 
+#[derive(Clone)]
+pub enum LogLevel {
+    Info,
+    Debug,
+    Warning,
+    Error,
+}
+
 pub struct Logger {
     debug_enabled: bool,
 }

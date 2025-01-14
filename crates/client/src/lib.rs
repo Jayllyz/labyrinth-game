@@ -6,3 +6,4 @@ pub mod data_structures {
     pub mod priority_queue;
 }
 pub mod instructions;
+pub mod tui;
