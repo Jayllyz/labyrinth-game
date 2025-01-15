@@ -44,6 +44,14 @@ struct Args {
 
     #[arg(long, help = "TUI refresh rate in milliseconds.", default_value = "150")]
     refresh_rate: u64,
+
+    #[arg(
+        long,
+        help = "Select the used algorithm by the agents.",
+        default_value = "Tremeaux",
+        value_parser = ["Tremeaux", "WallFollower", "Alian"]
+    )]
+    algorithm: String,
 }
 
 fn main() {
@@ -78,20 +86,82 @@ fn main() {
             }
         });
 
-        if let Err(e) = client.run(args.retries, args.players, Some(tui_state)) {
+        if let Err(e) = client.run(args.retries, args.players, Some(tui_state), args.algorithm) {
             e.log_error(logger);
             std::process::exit(1);
         }
 
         if let Err(e) = tui_handle.join() {
-            logger.error(&format!("TUI thread error: {:?}", e));
+            if let Some(error_str) = e.downcast_ref::<String>() {
+                logger.error(&format!("TUI thread error: {}", error_str));
+            } else {
+                logger.error(&format!("TUI thread error: {:?}", e));
+            }
         }
     } else {
-        if let Err(e) = client.run(args.retries, args.players, None) {
+        if let Err(e) = client.run(args.retries, args.players, None, args.algorithm) {
             e.log_error(logger);
             std::process::exit(1);
         }
 
         logger.info("All agents have finished their tasks.");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_args() {
+        let args = Args::parse_from(["test"]);
+        assert_eq!(args.host, "localhost");
+        assert_eq!(args.port, 8778);
+        assert_eq!(args.retries, 5);
+        assert_eq!(args.team, "Groupe1");
+        assert_eq!(args.players, 3);
+        assert!(!args.offline);
+        assert!(!args.debug);
+        assert!(!args.tui);
+        assert_eq!(args.refresh_rate, 150);
+    }
+
+    #[test]
+    fn test_invalid_port() {
+        let result = Args::try_parse_from(["test", "--port", "1023"].iter());
+        assert!(result.is_err());
+
+        let result = Args::try_parse_from(["test", "--port", "65536"].iter());
+        assert!(result.is_err());
+
+        let result = Args::try_parse_from(["test", "--port", "invalid"].iter());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_valid_port_range() {
+        let args = Args::parse_from(["test", "--port", "1024"].iter());
+        assert_eq!(args.port, 1024);
+
+        let args = Args::parse_from(["test", "--port", "65535"].iter());
+        assert_eq!(args.port, 65535);
+
+        let args = Args::parse_from(["test", "--port", "8080"].iter());
+        assert_eq!(args.port, 8080);
+    }
+
+    #[test]
+    fn test_client_config() {
+        let args = Args::parse_from(
+            ["test", "--host-address", "example.com", "--port", "9000", "--team", "TeamB"].iter(),
+        );
+
+        let config = ClientConfig {
+            server_addr: format!("{}:{}", args.host, args.port),
+            team_name: args.team,
+        };
+
+        assert_eq!(config.server_addr, "example.com:9000");
+        assert_eq!(config.team_name, "TeamB");
     }
 }

@@ -17,9 +17,9 @@ rand = "0.8.5"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+cfg_not_test = "allow"
 get_unwrap = "warn"
 clone_on_ref_ptr = "warn"
-cfg_not_test = "warn"
 empty_drop = "warn"
 empty_enum_variants_with_brackets = "warn"
 float_cmp_const = "warn"

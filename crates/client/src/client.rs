@@ -66,28 +66,33 @@ impl GameClient {
         }
     }
 
+    fn register_team(&self, stream: &mut TcpStream) -> GameResult<String> {
+        send_message(
+            stream,
+            &Message::RegisterTeam(RegisterTeam { name: self.config.team_name.clone() }),
+        )?;
+
+        match receive_message(stream)? {
+            Message::RegisterTeamResult(RegisterTeamResult::Ok { registration_token, .. }) => {
+                Ok(registration_token)
+            }
+            Message::RegisterTeamResult(RegisterTeamResult::Err(err)) => {
+                Err(GameError::TeamRegistrationError(format!("{:?}", err)))
+            }
+            _ => Err(GameError::MessageError("Invalid registration response".into())),
+        }
+    }
+
     pub fn run(
         &self,
         max_retries: u8,
         num_agents: u8,
         tui_state: Option<Arc<Mutex<GameState>>>,
+        algorithm: String,
     ) -> GameResult<()> {
         let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries)?;
 
-        send_message(
-            &mut stream,
-            &Message::RegisterTeam(RegisterTeam { name: self.config.team_name.clone() }),
-        )?;
-
-        let token = match receive_message(&mut stream)? {
-            Message::RegisterTeamResult(RegisterTeamResult::Ok { registration_token, .. }) => {
-                registration_token
-            }
-            Message::RegisterTeamResult(RegisterTeamResult::Err(err)) => {
-                return Err(GameError::TeamRegistrationError(format!("{:?}", err)));
-            }
-            _ => return Err(GameError::MessageError("Invalid registration response".into())),
-        };
+        let token = self.register_team(&mut stream)?;
 
         let mut handles = Vec::with_capacity(num_agents as usize);
 
@@ -101,6 +106,7 @@ impl GameClient {
             };
             let everybody_stop = Arc::clone(&self.everybody_stop);
             let tui_state = tui_state.clone();
+            let algorithm = algorithm.clone();
 
             let handle = thread::Builder::new().name(agent_name.clone()).spawn(
                 move || -> GameResult<()> {
@@ -125,6 +131,7 @@ impl GameClient {
                             &mut graph,
                             &mut player,
                             tui_state.as_ref(),
+                            &algorithm,
                             &everybody_stop,
                         )?;
                     }
@@ -153,6 +160,7 @@ impl GameClient {
         player: &mut Player,
         tui_state: Option<&Arc<Mutex<GameState>>>,
         everybody_stop: &Arc<Mutex<bool>>,
+        algorithm: &str,
     ) -> GameResult<()> {
         let logger = Logger::get_instance();
         let thread = std::thread::current();
@@ -197,7 +205,7 @@ impl GameClient {
                     player,
                     thread_name,
                     everybody_stop,
-                )? {
+                , algorithm)? {
                     Self::log_handler(
                         tui_state,
                         thread_name,
@@ -306,6 +314,7 @@ impl GameClient {
         player: &mut Player,
         thread_name: &str,
         everybody_stop: &Arc<Mutex<bool>>,
+        algorithm: &str,
     ) -> GameResult<bool> {
         loop {
             let stop = {
@@ -339,7 +348,15 @@ impl GameClient {
 
         // friend walk one case and send message
 
-        let action = instructions::alian_solver(player, graph, thread_name);
+
+        let action: Action = match algorithm {
+            "Tremeaux" => instructions::tremeaux_solver(player, graph),
+            "RightHand" => instructions::right_hand_solver(&radar_view, player),
+            "Alian" => instructions::alian_solver(player, graph, thread_name),
+            _ => instructions::tremeaux_solver(player, graph),
+        };
+
+        // let action = instructions::alian_solver(player, graph, thread_name);
         send_message(stream, &Message::Action(action.clone()))?;
 
         let is_win = instructions::check_win_condition(&radar_view.cells, action);
@@ -414,6 +431,33 @@ mod tests {
     }
 
     #[test]
+    fn test_register_team() {
+        let (listener, addr) = setup_mock_server();
+
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let msg = receive_message(&mut stream).unwrap();
+            assert!(matches!(msg, Message::RegisterTeam(_)));
+
+            send_message(
+                &mut stream,
+                &Message::RegisterTeamResult(RegisterTeamResult::Ok {
+                    registration_token: "test_token".to_string(),
+                    expected_players: 1,
+                }),
+            )
+            .unwrap();
+        });
+
+        let mut stream = TcpStream::connect(addr.clone()).unwrap();
+        let client =
+            GameClient::new(ClientConfig { server_addr: addr, team_name: "team".to_string() });
+
+        let token = client.register_team(&mut stream).unwrap();
+        assert_eq!(token, "test_token");
+    }
+
+    #[test]
     fn test_handle_server_message_subscribe_success() {
         let (listener, addr) = setup_mock_server();
 
@@ -440,6 +484,7 @@ mod tests {
             &mut player,
             None,
             &mut everybody_stop,
+            "Tremeaux",
         )
         .unwrap();
     }
@@ -484,6 +529,7 @@ mod tests {
             &mut player,
             None,
             &mut everybody_stop,
+            "Tremeaux",
         )
         .unwrap();
     }
@@ -517,6 +563,7 @@ mod tests {
             &mut player,
             None,
             &mut everybody_stop,
+            "Tremeaux",
         )
         .unwrap();
     }
@@ -550,7 +597,65 @@ mod tests {
             &mut player,
             None,
             &mut everybody_stop,
+            "Tremeaux",
         )
         .unwrap();
+    }
+
+    #[test]
+    fn test_run_function() {
+        let (listener, addr) = setup_mock_server();
+
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let msg = receive_message(&mut stream).unwrap();
+                assert!(matches!(msg, Message::RegisterTeam(_)));
+
+                send_message(
+                    &mut stream,
+                    &Message::RegisterTeamResult(RegisterTeamResult::Ok {
+                        registration_token: "test_token".to_string(),
+                        expected_players: 1,
+                    }),
+                )
+                .unwrap();
+
+                if let Ok((mut player_stream, _)) = listener.accept() {
+                    let msg = receive_message(&mut player_stream).unwrap();
+                    assert!(matches!(msg, Message::SubscribePlayer(_)));
+
+                    send_message(
+                        &mut player_stream,
+                        &Message::SubscribePlayerResult(SubscribePlayerResult::Ok),
+                    )
+                    .unwrap();
+
+                    send_message(&mut player_stream, &Message::Hint(Hint::Secret(42))).unwrap();
+
+                    send_message(
+                        &mut player_stream,
+                        &Message::Challenge(Challenge::SecretSumModulo(100)),
+                    )
+                    .unwrap();
+
+                    let msg = receive_message(&mut player_stream).unwrap();
+                    assert!(matches!(msg, Message::Action(Action::SolveChallenge { .. })));
+
+                    send_message(
+                        &mut player_stream,
+                        &Message::RadarView(messages::RadarView("bKgGjsIyap8p8aa".to_string())),
+                    )
+                    .unwrap();
+
+                    let msg = receive_message(&mut player_stream).unwrap();
+                    assert!(matches!(msg, Message::Action(_)));
+                }
+            }
+        });
+
+        let config = ClientConfig { server_addr: addr.clone(), team_name: "team".to_string() };
+        let client = GameClient::new(config);
+
+        client.run(1, 1, None, "Tremeaux".to_owned()).unwrap();
     }
 }
