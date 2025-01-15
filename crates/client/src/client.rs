@@ -2,6 +2,7 @@ use crate::instructions;
 use crate::maze_parser::maze_to_graph;
 use crate::tui::GameState;
 use crate::{data_structures::maze_graph::MazeGraph, maze_parser::Player};
+use shared::radar::CellType;
 use shared::utils::print_error;
 use shared::{
     errors::{GameError, GameResult},
@@ -12,6 +13,7 @@ use shared::{
     },
     radar::{decode_base64, extract_data},
 };
+use std::time::Duration;
 use std::{
     collections::HashMap,
     net::TcpStream,
@@ -33,6 +35,7 @@ struct SecretSumModulo {
 pub struct GameClient {
     config: ClientConfig,
     challenge_secret_sum: SecretSumModulo,
+    everybody_stop: Arc<Mutex<bool>>,
 }
 
 impl GameClient {
@@ -43,6 +46,7 @@ impl GameClient {
                 sum: Arc::new(Mutex::new(0)),
                 secrets: Arc::new(Mutex::new(HashMap::new())),
             },
+            everybody_stop: Arc::new(Mutex::new(false)),
         }
     }
 
@@ -95,6 +99,7 @@ impl GameClient {
                 sum: Arc::clone(&self.challenge_secret_sum.sum),
                 secrets: Arc::clone(&self.challenge_secret_sum.secrets),
             };
+            let everybody_stop = Arc::clone(&self.everybody_stop);
             let tui_state = tui_state.clone();
 
             let handle = thread::Builder::new().name(agent_name.clone()).spawn(
@@ -120,6 +125,7 @@ impl GameClient {
                             &mut graph,
                             &mut player,
                             tui_state.as_ref(),
+                            &everybody_stop,
                         )?;
                     }
                     Ok(())
@@ -137,6 +143,7 @@ impl GameClient {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_server_message(
         stream: &mut TcpStream,
         thread_name: &str,
@@ -145,6 +152,7 @@ impl GameClient {
         graph: &mut MazeGraph,
         player: &mut Player,
         tui_state: Option<&Arc<Mutex<GameState>>>,
+        everybody_stop: &Arc<Mutex<bool>>,
     ) -> GameResult<()> {
         let logger = Logger::get_instance();
         let thread = std::thread::current();
@@ -182,7 +190,14 @@ impl GameClient {
                 }
             },
             Message::RadarView(view) => {
-                if Self::handle_radar_view(stream, view, graph, player, thread_name)? {
+                if Self::handle_radar_view(
+                    stream,
+                    view,
+                    graph,
+                    player,
+                    thread_name,
+                    everybody_stop,
+                )? {
                     Self::log_handler(
                         tui_state,
                         thread_name,
@@ -290,11 +305,40 @@ impl GameClient {
         graph: &mut MazeGraph,
         player: &mut Player,
         thread_name: &str,
+        everybody_stop: &Arc<Mutex<bool>>,
     ) -> GameResult<bool> {
+        loop {
+            let stop = {
+                let stop_val = everybody_stop.lock().unwrap();
+                *stop_val
+            };
+
+            if !stop {
+                println!("Stopping the loop.");
+                break;
+            }
+
+            thread::sleep(Duration::from_secs(100));
+        }
+
         let radar_view = extract_data(&decode_base64(&view.0))
             .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {}", e)))?;
 
         maze_to_graph(&radar_view, player, graph);
+
+        // if player found
+
+        if radar_view.cells.contains(&CellType::ALLY) {
+            let mut stop = everybody_stop.lock().unwrap();
+            *stop = true;
+        }
+
+        // stop all agents
+
+        // go same case than friend
+
+        // friend walk one case and send message
+
         let action = instructions::alian_solver(player, graph, thread_name);
         send_message(stream, &Message::Action(action.clone()))?;
 
@@ -382,6 +426,8 @@ mod tests {
         let mut graph = MazeGraph::new();
         let mut player = Player::new();
 
+        let mut everybody_stop = Arc::new(Mutex::new(false));
+
         GameClient::handle_server_message(
             &mut stream,
             "Player1",
@@ -393,6 +439,7 @@ mod tests {
             &mut graph,
             &mut player,
             None,
+            &mut everybody_stop,
         )
         .unwrap();
     }
@@ -421,6 +468,8 @@ mod tests {
 
         let secret_sum = Arc::new(Mutex::new(0));
 
+        let mut everybody_stop = Arc::new(Mutex::new(false));
+
         let message = Message::Challenge(messages::Challenge::SecretSumModulo(10));
 
         let mut graph = MazeGraph::new();
@@ -434,6 +483,7 @@ mod tests {
             &mut graph,
             &mut player,
             None,
+            &mut everybody_stop,
         )
         .unwrap();
     }
@@ -453,6 +503,8 @@ mod tests {
         let mut graph = MazeGraph::new();
         let mut player = Player::new();
 
+        let mut everybody_stop = Arc::new(Mutex::new(false));
+
         GameClient::handle_server_message(
             &mut stream,
             "Player1",
@@ -464,6 +516,7 @@ mod tests {
             &mut graph,
             &mut player,
             None,
+            &mut everybody_stop,
         )
         .unwrap();
     }
@@ -483,6 +536,8 @@ mod tests {
         let mut graph = MazeGraph::new();
         let mut player = Player::new();
 
+        let mut everybody_stop = Arc::new(Mutex::new(false));
+
         GameClient::handle_server_message(
             &mut stream,
             "Player1",
@@ -494,6 +549,7 @@ mod tests {
             &mut graph,
             &mut player,
             None,
+            &mut everybody_stop,
         )
         .unwrap();
     }
