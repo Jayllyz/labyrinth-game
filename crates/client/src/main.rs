@@ -92,7 +92,11 @@ fn main() {
         }
 
         if let Err(e) = tui_handle.join() {
-            logger.error(&format!("TUI thread error: {:?}", e));
+            if let Some(error_str) = e.downcast_ref::<String>() {
+                logger.error(&format!("TUI thread error: {}", error_str));
+            } else {
+                logger.error(&format!("TUI thread error: {:?}", e));
+            }
         }
     } else {
         if let Err(e) = client.run(args.retries, args.players, None, args.algorithm) {

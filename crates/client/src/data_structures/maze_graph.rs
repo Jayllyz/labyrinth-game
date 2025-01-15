@@ -21,6 +21,20 @@ pub struct MazeCell {
     pub parent: Cell,
     pub visited_by: HashMap<String, u8>,
 }
+
+impl MazeCell {
+    pub fn new(cell_type: CellType) -> Self {
+        Self {
+            cell_type,
+            neighbors: HashSet::new(),
+            status: CellStatus::NotVisited,
+            walls: 0,
+            parent: Cell { row: 0, column: 0 },
+            visited_by: HashMap::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct MazeGraph {
     pub cell_map: HashMap<Cell, MazeCell>,

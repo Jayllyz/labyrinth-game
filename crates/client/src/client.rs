@@ -62,6 +62,23 @@ impl GameClient {
         }
     }
 
+    fn register_team(&self, stream: &mut TcpStream) -> GameResult<String> {
+        send_message(
+            stream,
+            &Message::RegisterTeam(RegisterTeam { name: self.config.team_name.clone() }),
+        )?;
+
+        match receive_message(stream)? {
+            Message::RegisterTeamResult(RegisterTeamResult::Ok { registration_token, .. }) => {
+                Ok(registration_token)
+            }
+            Message::RegisterTeamResult(RegisterTeamResult::Err(err)) => {
+                Err(GameError::TeamRegistrationError(format!("{:?}", err)))
+            }
+            _ => Err(GameError::MessageError("Invalid registration response".into())),
+        }
+    }
+
     pub fn run(
         &self,
         max_retries: u8,
@@ -71,20 +88,7 @@ impl GameClient {
     ) -> GameResult<()> {
         let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries)?;
 
-        send_message(
-            &mut stream,
-            &Message::RegisterTeam(RegisterTeam { name: self.config.team_name.clone() }),
-        )?;
-
-        let token = match receive_message(&mut stream)? {
-            Message::RegisterTeamResult(RegisterTeamResult::Ok { registration_token, .. }) => {
-                registration_token
-            }
-            Message::RegisterTeamResult(RegisterTeamResult::Err(err)) => {
-                return Err(GameError::TeamRegistrationError(format!("{:?}", err)));
-            }
-            _ => return Err(GameError::MessageError("Invalid registration response".into())),
-        };
+        let token = self.register_team(&mut stream)?;
 
         let mut handles = Vec::with_capacity(num_agents as usize);
 
@@ -381,6 +385,33 @@ mod tests {
 
         let mut stream = TcpStream::connect(addr).unwrap();
         send_message(&mut stream, &register_msg).unwrap();
+    }
+
+    #[test]
+    fn test_register_team() {
+        let (listener, addr) = setup_mock_server();
+
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let msg = receive_message(&mut stream).unwrap();
+            assert!(matches!(msg, Message::RegisterTeam(_)));
+
+            send_message(
+                &mut stream,
+                &Message::RegisterTeamResult(RegisterTeamResult::Ok {
+                    registration_token: "test_token".to_string(),
+                    expected_players: 1,
+                }),
+            )
+            .unwrap();
+        });
+
+        let mut stream = TcpStream::connect(addr.clone()).unwrap();
+        let client =
+            GameClient::new(ClientConfig { server_addr: addr, team_name: "team".to_string() });
+
+        let token = client.register_team(&mut stream).unwrap();
+        assert_eq!(token, "test_token");
     }
 
     #[test]
