@@ -313,7 +313,6 @@ impl GameClient {
             _ => instructions::tremeaux_solver(player, graph),
         };
 
-        // let action = instructions::alian_solver(player, graph, thread_name);
         send_message(stream, &Message::Action(action.clone()))?;
 
         let is_win = instructions::check_win_condition(&radar_view.cells, action);

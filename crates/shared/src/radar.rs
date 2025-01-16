@@ -19,6 +19,7 @@ pub enum CellType {
     MONSTER = 3,
     HELP = 4,
     OBJECTIVE = 8,
+    ObjectiveAlly = 9,
     ObjectiveMonster = 11,
     INVALID = 15,
 }
@@ -189,6 +190,7 @@ pub fn retrieve_cell(octet: &str) -> Vec<CellType> {
             3 => CellType::MONSTER,
             4 => CellType::HELP,
             8 => CellType::OBJECTIVE,
+            9 => CellType::ObjectiveAlly,
             11 => CellType::ObjectiveMonster,
             15 => CellType::INVALID,
             _ => continue,
