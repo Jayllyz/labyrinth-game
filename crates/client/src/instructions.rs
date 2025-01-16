@@ -64,7 +64,11 @@ pub fn alian_solver(
             )
         };
 
-        if walls == 3 && !(cell_type == CellType::OBJECTIVE || cell_type == CellType::HELP) {
+        if walls == 3
+            && !(cell_type == CellType::OBJECTIVE
+                || cell_type == CellType::HELP
+                || cell_type == CellType::ObjectiveAlly)
+        {
             graph.update_cell_status(neighbor_position, CellStatus::DeadEnd);
             status = CellStatus::DeadEnd;
         }
@@ -114,7 +118,9 @@ pub fn alian_solver(
         && !not_visited_by_self.is_empty()
     {
         player.get_next_direction(&not_visited_by_self[0])
-    } else if parent_status == CellStatus::DeadEnd || parent == player_position {
+    } else if (parent_status == CellStatus::DeadEnd || parent == player_position)
+        && !visited.is_empty()
+    {
         player.get_next_direction(&visited_by_self[0].0)
     } else {
         player.get_next_direction(&parent)
@@ -161,7 +167,11 @@ pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::
             (neighbor_cell.walls, neighbor_cell.status.clone(), neighbor_cell.cell_type.clone())
         };
 
-        if walls == 3 && !(cell_type == CellType::OBJECTIVE || cell_type == CellType::HELP) {
+        if walls == 3
+            && !(cell_type == CellType::OBJECTIVE
+                || cell_type == CellType::HELP
+                || cell_type == CellType::ObjectiveAlly)
+        {
             graph.update_cell_status(neighbor_position, CellStatus::DeadEnd);
             status = CellStatus::DeadEnd;
         }
@@ -197,7 +207,9 @@ pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::
     }
 
     let parent_status = graph.get_cell_status(parent);
-    let next_direction = if parent_status == CellStatus::DeadEnd || parent == player.position {
+    let next_direction = if (parent_status == CellStatus::DeadEnd || parent == player.position)
+        && !visited.is_empty()
+    {
         player.get_next_direction(&visited[0])
     } else {
         player.get_next_direction(&parent)
@@ -275,7 +287,7 @@ pub fn check_win_condition(cells: &[CellType], direction: messages::Action) -> b
     };
 
     if let Some(cell) = cells.get(index) {
-        if *cell == CellType::OBJECTIVE {
+        if *cell == CellType::OBJECTIVE || *cell == CellType::ObjectiveAlly {
             return true;
         }
     }
