@@ -131,8 +131,8 @@ impl GameClient {
                             &mut graph,
                             &mut player,
                             tui_state.as_ref(),
-                            &algorithm,
                             &everybody_stop,
+                            &algorithm,
                         )?;
                     }
                     Ok(())
@@ -205,7 +205,8 @@ impl GameClient {
                     player,
                     thread_name,
                     everybody_stop,
-                , algorithm)? {
+                    algorithm,
+                )? {
                     Self::log_handler(
                         tui_state,
                         thread_name,
@@ -335,19 +336,10 @@ impl GameClient {
 
         maze_to_graph(&radar_view, player, graph);
 
-        // if player found
-
         if radar_view.cells.contains(&CellType::ALLY) {
             let mut stop = everybody_stop.lock().unwrap();
             *stop = true;
         }
-
-        // stop all agents
-
-        // go same case than friend
-
-        // friend walk one case and send message
-
 
         let action: Action = match algorithm {
             "Tremeaux" => instructions::tremeaux_solver(player, graph),
@@ -356,7 +348,6 @@ impl GameClient {
             _ => instructions::tremeaux_solver(player, graph),
         };
 
-        // let action = instructions::alian_solver(player, graph, thread_name);
         send_message(stream, &Message::Action(action.clone()))?;
 
         let is_win = instructions::check_win_condition(&radar_view.cells, action);
