@@ -1,6 +1,9 @@
-use crate::data_structures::priority_queue::{Node, PriorityQueue};
-use shared::maze::{Cell, Directions, Maze};
-use std::collections::VecDeque;
+use crate::data_structures::{
+    maze_graph::MazeGraph,
+    priority_queue::{Node, PriorityQueue},
+};
+use shared::maze::Cell;
+use std::collections::{HashMap, HashSet};
 
 pub enum PrintPathMode {
     None = 0,
@@ -8,345 +11,145 @@ pub enum PrintPathMode {
     VisitedNumber = 2,
 }
 
-/// Finds the shortest path in a maze using the Breadth-First Search (BFS) algorithm.
-///
-/// # Arguments
-///
-/// * `maze` - A reference to the `Maze` structure.
-/// * `print` - A `PrintPathMode` enum value indicating whether to print the visited cells or not.
-///
-/// # Returns
-///
-/// A vector of `Cell` representing the shortest path from the entry to the exit of the maze.
-///
-/// # Examples
-///
-/// ```rust
-/// use client::maze_solver::bfs_shortest_path;
-/// use shared::maze::{Cell, Maze};
-/// use client::maze_solver::PrintPathMode;
-///
-/// let maze = Maze::new(vec![vec![1, 1, 1], vec![1, 0, 1], vec![1, 1, 1] ], Cell { row: 0, column: 0 }, Cell { row: 2, column: 2 });
-/// let shortest_path = bfs_shortest_path(&maze, PrintPathMode::None);
-/// ```
-pub fn bfs_shortest_path(maze: &Maze, print: PrintPathMode) -> Vec<Cell> {
-    let mut queue: VecDeque<Cell> = VecDeque::new();
+pub fn a_star_shortest_path(maze_graph: &mut MazeGraph, start: Cell, exit: Cell) -> Vec<Cell> {
+    let mut g_cost = HashMap::new();
+    let mut f_cost = HashMap::new();
+    let mut open = PriorityQueue::new();
 
-    let Maze { entry, exit, row_len, col_len, .. } = *maze;
-    queue.push_back(maze.entry);
+    let mut visited_points: HashSet<Cell> = HashSet::new();
+    let mut parents: HashMap<Cell, Cell> = HashMap::new();
 
-    let mut visited_points: Vec<Vec<i32>> = vec![vec![-1; col_len]; row_len];
-    visited_points[entry.row as usize][entry.column as usize] = 0;
+    g_cost.insert(start, 0);
+    f_cost.insert(start, get_manhattan_distance(&start, &exit));
 
-    let mut previous_path: Vec<Vec<Cell>> =
-        vec![vec![Cell { row: -1, column: -1 }; col_len]; row_len];
+    open.enqueue(Node { priority_f: f_cost[&start], cell: start });
 
-    let directions = [Directions::NORTH, Directions::SOUTH, Directions::WEST, Directions::EAST];
-    let mut index = 1;
+    while !open.is_empty() {
+        let Node { cell: curr_cell, .. } = open.dequeue();
 
-    while !queue.is_empty() {
-        let curr: Cell = match queue.pop_front() {
-            Some(cell) => cell,
-            None => break,
-        };
-
-        if curr == exit {
-            match print {
-                PrintPathMode::Visited => {
-                    maze.print_visited(&visited_points);
-                    println!("Number of steps: {}", index);
-                }
-                PrintPathMode::VisitedNumber => {
-                    maze.print_visited_number(&visited_points);
-                    println!("Number of steps: {}", index);
-                }
-                _ => {}
-            }
-            return reconstruct_shortest_path(maze, previous_path);
+        if curr_cell == exit {
+            return reconstruct_shortest_path_graph(parents, start, exit);
         }
 
-        for direction in directions.iter() {
-            let neighbour_cell: Cell = curr + *direction;
+        visited_points.insert(curr_cell);
 
-            if maze.is_cell_out_of_bound(&neighbour_cell)
-                || !maze.is_cell_walkable(&neighbour_cell, &visited_points)
-                || visited_points[neighbour_cell.row as usize][neighbour_cell.column as usize] != -1
-            {
-                continue;
+        let cell_data = maze_graph.get_cell(curr_cell).cloned();
+
+        if let Some(current_maze_cell) = cell_data {
+            for neighbor_cell in &current_maze_cell.neighbors {
+                if visited_points.contains(neighbor_cell) {
+                    continue;
+                }
+
+                let tentative_g_score = g_cost[&curr_cell] + 1;
+
+                if tentative_g_score < *g_cost.get(neighbor_cell).unwrap_or(&i32::MAX) {
+                    g_cost.insert(*neighbor_cell, tentative_g_score);
+                    let h_cost = get_manhattan_distance(neighbor_cell, &exit);
+                    let f_score = tentative_g_score + h_cost;
+                    f_cost.insert(*neighbor_cell, f_score);
+
+                    visited_points.insert(*neighbor_cell);
+                    parents.insert(*neighbor_cell, curr_cell);
+
+                    open.enqueue(Node { priority_f: f_score, cell: *neighbor_cell });
+                }
             }
-
-            let row = neighbour_cell.row as usize;
-            let column = neighbour_cell.column as usize;
-
-            queue.push_back(neighbour_cell);
-            visited_points[row][column] = index;
-            previous_path[row][column].row = curr.row;
-            previous_path[row][column].column = curr.column;
-
-            index += 1;
         }
     }
+
     vec![]
 }
 
-fn reconstruct_shortest_path(maze: &Maze, previous_path: Vec<Vec<Cell>>) -> Vec<Cell> {
+fn reconstruct_shortest_path_graph(
+    parents: HashMap<Cell, Cell>,
+    start: Cell,
+    exit: Cell,
+) -> Vec<Cell> {
     let mut shortest_path: Vec<Cell> = Vec::new();
-    const NO_PREV_PATH: Cell = Cell { row: -1, column: -1 };
-    let mut end = maze.exit;
+    let mut current_cell = exit;
 
-    while end != NO_PREV_PATH {
-        shortest_path.push(end);
-        end = previous_path[end.row as usize][end.column as usize];
+    while current_cell != start {
+        shortest_path.push(current_cell);
+
+        if current_cell == parents[&current_cell] {
+            break;
+        }
+
+        current_cell = parents[&current_cell];
     }
 
+    shortest_path.push(start);
+
     shortest_path.reverse();
+
     shortest_path
 }
 
 fn get_manhattan_distance(source_cell: &Cell, goal_cell: &Cell) -> i32 {
     ((source_cell.row - goal_cell.row).abs() + (source_cell.column - goal_cell.column).abs()).into()
 }
-
-pub fn a_star_shortest_path(maze: &Maze, print: PrintPathMode) -> Vec<Cell> {
-    let Maze { entry, exit, row_len, col_len, .. } = *maze;
-    let directions = [Directions::NORTH, Directions::SOUTH, Directions::WEST, Directions::EAST];
-
-    let mut g_cost = vec![vec![-1; col_len]; row_len];
-    let mut f_cost = vec![vec![-1; col_len]; row_len];
-
-    let mut previous_path: Vec<Vec<Cell>> =
-        vec![vec![Cell { row: -1, column: -1 }; col_len]; row_len];
-    let mut visited_points: Vec<Vec<i32>> = vec![vec![-1; col_len]; row_len];
-
-    let start_row = entry.row as usize;
-    let start_column = entry.column as usize;
-
-    g_cost[start_row][start_column] = 0;
-    f_cost[start_row][start_column] = get_manhattan_distance(&entry, &exit);
-
-    let mut open = PriorityQueue::new();
-    let mut index = 0;
-
-    open.enqueue(Node { priority_f: f_cost[start_row][start_column], cell: entry });
-
-    while !open.is_empty() {
-        let Node { cell: curr_cell, .. } = open.dequeue();
-
-        let curr_row = curr_cell.row as usize;
-        let curr_col = curr_cell.column as usize;
-
-        visited_points[curr_row][curr_col] = index;
-
-        if curr_cell.row == maze.exit.row && curr_cell.column == maze.exit.column {
-            match print {
-                PrintPathMode::Visited => {
-                    maze.print_visited(&visited_points);
-                    println!("Number of steps: {}", index);
-                }
-                PrintPathMode::VisitedNumber => {
-                    maze.print_visited_number(&visited_points);
-                    println!("Number of steps: {}", index);
-                }
-                _ => {}
-            }
-            return reconstruct_shortest_path(maze, previous_path);
-        }
-
-        for direction in directions.iter() {
-            let neighbour_cell: Cell = curr_cell + *direction;
-
-            if maze.is_cell_out_of_bound(&neighbour_cell)
-                || !maze.is_cell_walkable(&neighbour_cell, &visited_points)
-                || visited_points[neighbour_cell.row as usize][neighbour_cell.column as usize] != -1
-            {
-                continue;
-            }
-
-            let neighbour_g_score = g_cost[curr_row][curr_col] + 1;
-
-            if neighbour_g_score
-                < f_cost[neighbour_cell.row as usize][neighbour_cell.column as usize]
-                || f_cost[neighbour_cell.row as usize][neighbour_cell.column as usize] < 0
-            {
-                if open.contains(&neighbour_cell) {
-                    continue;
-                }
-                let neighbour_h_score = get_manhattan_distance(&neighbour_cell, &exit);
-                let neighbour_f_score = neighbour_g_score + neighbour_h_score;
-
-                previous_path[neighbour_cell.row as usize][neighbour_cell.column as usize] =
-                    curr_cell;
-                g_cost[neighbour_cell.row as usize][neighbour_cell.column as usize] =
-                    neighbour_g_score;
-                f_cost[neighbour_cell.row as usize][neighbour_cell.column as usize] =
-                    neighbour_f_score;
-                open.enqueue(Node { priority_f: neighbour_f_score, cell: neighbour_cell });
-            }
-        }
-        index += 1;
-    }
-    vec![]
-}
-
 #[cfg(test)]
 mod tests {
-    use shared::maze_generator::sidewinder;
+    use shared::radar::CellType;
+
+    fn convert_to_maze_graph(maze_map: Vec<Vec<u16>>) -> MazeGraph {
+        let mut maze_graph = MazeGraph::new();
+        let directions = [(0, 1), (1, 0), (0, -1), (-1, 0)];
+
+        for (row, row_cells) in maze_map.iter().enumerate() {
+            for (col, &cell_value) in row_cells.iter().enumerate() {
+                let cell = Cell { row: row as i16, column: col as i16 };
+
+                let cell_type = match cell_value {
+                    0 => CellType::NOTHING,
+                    2 => CellType::OBJECTIVE,
+                    3 => CellType::NOTHING,
+                    _ => continue,
+                };
+
+                maze_graph.add(cell, cell_type);
+
+                for direction in &directions {
+                    let neighbor_row = row as i16 + direction.0;
+                    let neighbor_col = col as i16 + direction.1;
+
+                    if neighbor_row >= 0
+                        && neighbor_row < maze_map.len() as i16
+                        && neighbor_col >= 0
+                        && neighbor_col < maze_map[0].len() as i16
+                        && maze_map[neighbor_row as usize][neighbor_col as usize] != 1
+                    {
+                        let neighbor_cell = Cell { row: neighbor_row, column: neighbor_col };
+                        maze_graph.add_neighbor(&cell, &neighbor_cell);
+                    }
+                }
+            }
+        }
+
+        maze_graph
+    }
 
     use super::*;
     #[test]
-    fn test_bfs_exit_finder() {
-        let maze_map = vec![
-            vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            vec![1, 0, 1, 0, 2, 0, 1, 0, 0, 0, 1],
-            vec![1, 3, 1, 1, 1, 0, 1, 0, 1, 1, 1],
-            vec![1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
-            vec![1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1],
-            vec![1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1],
-            vec![1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1],
-            vec![1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
-            vec![1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1],
-            vec![1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1],
-            vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        ];
-        let maze = Maze::new(maze_map, Cell { row: 1, column: 4 }, Cell { row: 2, column: 1 });
-
-        let shortest_path = vec![
-            Cell { row: 1, column: 4 },
-            Cell { row: 1, column: 5 },
-            Cell { row: 2, column: 5 },
-            Cell { row: 3, column: 5 },
-            Cell { row: 4, column: 5 },
-            Cell { row: 5, column: 5 },
-            Cell { row: 5, column: 4 },
-            Cell { row: 5, column: 3 },
-            Cell { row: 6, column: 3 },
-            Cell { row: 7, column: 3 },
-            Cell { row: 7, column: 2 },
-            Cell { row: 7, column: 1 },
-            Cell { row: 6, column: 1 },
-            Cell { row: 5, column: 1 },
-            Cell { row: 4, column: 1 },
-            Cell { row: 3, column: 1 },
-            Cell { row: 2, column: 1 },
-        ];
-
-        assert_eq!(bfs_shortest_path(&maze, PrintPathMode::Visited), shortest_path);
-
-        let maze_map = vec![
-            vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            vec![1, 3, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1],
-            vec![1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
-            vec![1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-            vec![1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-            vec![1, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1],
-            vec![1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-            vec![1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 2, 0, 1],
-            vec![1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1],
-            vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        ];
-        let maze = Maze::new(maze_map, Cell { row: 7, column: 10 }, Cell { row: 1, column: 1 });
-
-        let shortest_path = vec![
-            Cell { row: 7, column: 10 },
-            Cell { row: 7, column: 9 },
-            Cell { row: 7, column: 8 },
-            Cell { row: 7, column: 7 },
-            Cell { row: 6, column: 7 },
-            Cell { row: 6, column: 6 },
-            Cell { row: 6, column: 5 },
-            Cell { row: 6, column: 4 },
-            Cell { row: 5, column: 4 },
-            Cell { row: 4, column: 4 },
-            Cell { row: 4, column: 3 },
-            Cell { row: 3, column: 3 },
-            Cell { row: 2, column: 3 },
-            Cell { row: 1, column: 3 },
-            Cell { row: 1, column: 2 },
-            Cell { row: 1, column: 1 },
-        ];
-
-        assert_eq!(bfs_shortest_path(&maze, PrintPathMode::VisitedNumber), shortest_path);
-    }
-
-    #[test]
     fn test_a_star_exit_finder() {
-        let maze_map = vec![
-            vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            vec![1, 0, 1, 0, 2, 0, 1, 0, 0, 0, 1],
-            vec![1, 3, 1, 1, 1, 0, 1, 0, 1, 1, 1],
-            vec![1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
-            vec![1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1],
-            vec![1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1],
-            vec![1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1],
-            vec![1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
-            vec![1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1],
-            vec![1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1],
-            vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        ];
-        let maze = Maze::new(maze_map, Cell { row: 1, column: 4 }, Cell { row: 2, column: 1 });
+        // vec![1, 0, 3],
+        // vec![1, 0, 1],
+        // vec![2, 0, 1],
+        let maze_map = vec![vec![1, 0, 3], vec![1, 0, 1], vec![2, 0, 1]];
+        let mut m: MazeGraph = convert_to_maze_graph(maze_map);
 
         let shortest_path = vec![
-            Cell { row: 1, column: 4 },
-            Cell { row: 1, column: 5 },
-            Cell { row: 2, column: 5 },
-            Cell { row: 3, column: 5 },
-            Cell { row: 4, column: 5 },
-            Cell { row: 5, column: 5 },
-            Cell { row: 5, column: 4 },
-            Cell { row: 5, column: 3 },
-            Cell { row: 6, column: 3 },
-            Cell { row: 7, column: 3 },
-            Cell { row: 7, column: 2 },
-            Cell { row: 7, column: 1 },
-            Cell { row: 6, column: 1 },
-            Cell { row: 5, column: 1 },
-            Cell { row: 4, column: 1 },
-            Cell { row: 3, column: 1 },
+            Cell { row: 2, column: 0 },
             Cell { row: 2, column: 1 },
-        ];
-
-        assert_eq!(a_star_shortest_path(&maze, PrintPathMode::None), shortest_path);
-
-        let maze_map = vec![
-            vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            vec![1, 3, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1],
-            vec![1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
-            vec![1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-            vec![1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-            vec![1, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1],
-            vec![1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-            vec![1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 2, 0, 1],
-            vec![1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1],
-            vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        ];
-        let maze = Maze::new(maze_map, Cell { row: 7, column: 10 }, Cell { row: 1, column: 1 });
-
-        let shortest_path = vec![
-            Cell { row: 7, column: 10 },
-            Cell { row: 7, column: 9 },
-            Cell { row: 7, column: 8 },
-            Cell { row: 7, column: 7 },
-            Cell { row: 6, column: 7 },
-            Cell { row: 6, column: 6 },
-            Cell { row: 6, column: 5 },
-            Cell { row: 6, column: 4 },
-            Cell { row: 5, column: 4 },
-            Cell { row: 4, column: 4 },
-            Cell { row: 4, column: 3 },
-            Cell { row: 3, column: 3 },
-            Cell { row: 2, column: 3 },
-            Cell { row: 1, column: 3 },
-            Cell { row: 1, column: 2 },
             Cell { row: 1, column: 1 },
+            Cell { row: 0, column: 1 },
+            Cell { row: 0, column: 2 },
         ];
 
-        assert_eq!(a_star_shortest_path(&maze, PrintPathMode::None), shortest_path);
-    }
-
-    #[test]
-    fn test_random_generated() {
-        let maze = sidewinder(10, 10, false, 5849);
-        let shortest_path = bfs_shortest_path(&maze, PrintPathMode::None);
-        assert!(!shortest_path.is_empty());
+        assert_eq!(
+            a_star_shortest_path(&mut m, Cell { row: 2, column: 0 }, Cell { row: 0, column: 2 }),
+            shortest_path
+        );
     }
 }

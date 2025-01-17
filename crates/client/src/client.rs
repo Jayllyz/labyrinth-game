@@ -324,7 +324,6 @@ impl GameClient {
             };
 
             if !stop {
-                println!("Stopping the loop.");
                 break;
             }
 

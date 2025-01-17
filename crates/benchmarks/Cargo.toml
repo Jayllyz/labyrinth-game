@@ -17,10 +17,6 @@ name = "maze_parser"
 harness = false
 
 [[bench]]
-name = "bfs_solver"
-harness = false
-
-[[bench]]
 name = "sw_generator"
 harness = false
 
