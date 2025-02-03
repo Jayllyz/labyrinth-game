@@ -1,5 +1,5 @@
 use crate::maze::{Cell, Maze, PositionType};
-use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
+use rand::{rngs::StdRng, seq::IndexedMutRandom, Rng, SeedableRng};
 
 /// Generates a maze using the Sidewinder algorithm.
 ///
@@ -44,8 +44,8 @@ pub fn sidewinder(width: usize, height: usize, print: bool, seed: u64) -> Maze {
 
             current.push(Cell { row: cell_row as i16, column: cell_col as i16 });
 
-            if row > 0 && (rng.gen_bool(0.5) || col == width - 1) {
-                let random_cell = match current.choose(&mut rng) {
+            if row > 0 && (rng.random_bool(0.5) || col == width - 1) {
+                let random_cell = match current.choose_mut(&mut rng) {
                     Some(cell) => *cell,
                     None => Cell { row: 0, column: 0 },
                 };
@@ -67,8 +67,8 @@ pub fn sidewinder(width: usize, height: usize, print: bool, seed: u64) -> Maze {
 
 fn generate_random_entry_exit(width: usize, height: usize, seed: u64) -> (Cell, Cell) {
     let mut rng = StdRng::seed_from_u64(seed);
-    let entry = Cell { row: rng.gen_range(1..height as i16), column: 1 };
-    let exit = Cell { row: rng.gen_range(1..height as i16), column: width as i16 - 1 };
+    let entry = Cell { row: rng.random_range(1..height as i16), column: 1 };
+    let exit = Cell { row: rng.random_range(1..height as i16), column: width as i16 - 1 };
 
     (entry, exit)
 }

@@ -130,11 +130,8 @@ impl GameServer {
             .expect("Failed to get timestamp")
             .as_secs()
             .to_string();
-        let random_part: String = rand::thread_rng()
-            .sample_iter(&rand::distributions::Alphanumeric)
-            .take(16)
-            .map(char::from)
-            .collect();
+        let random_part: String =
+            rand::rng().sample_iter(&rand::distr::Alphanumeric).take(16).map(char::from).collect();
 
         let token = format!("{}{}", timestamp, random_part);
 
