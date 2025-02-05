@@ -25,14 +25,29 @@ pub struct ClientConfig {
     pub team_name: String,
 }
 
+pub struct GameClient {
+    config: ClientConfig,
+    challenge_secret_sum: SecretSumModulo,
+}
+
 struct SecretSumModulo {
     sum: Arc<Mutex<u128>>,
     secrets: Arc<Mutex<HashMap<ThreadId, u128>>>,
 }
 
-pub struct GameClient {
-    config: ClientConfig,
-    challenge_secret_sum: SecretSumModulo,
+struct PlayerContext {
+    graph: MazeGraph,
+    player: Player,
+    algorithm: String,
+}
+
+struct LogContext {
+    thread_name: String,
+    tui_state: Option<Arc<Mutex<GameState>>>,
+}
+
+struct Challenges {
+    secrets_sum: SecretSumModulo,
 }
 
 impl GameClient {
@@ -87,9 +102,7 @@ impl GameClient {
         algorithm: String,
     ) -> GameResult<()> {
         let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries)?;
-
         let token = self.register_team(&mut stream)?;
-
         let mut handles = Vec::with_capacity(num_agents as usize);
 
         for i in 0..num_agents {
@@ -106,13 +119,18 @@ impl GameClient {
             let handle = thread::Builder::new().name(agent_name.clone()).spawn(
                 move || -> GameResult<()> {
                     let mut stream = Self::connect_to_server(&config.server_addr, max_retries)?;
-                    let mut graph = MazeGraph::new();
-                    let mut player = Player::new();
+
+                    let mut player_ctx =
+                        PlayerContext { graph: MazeGraph::new(), player: Player::new(), algorithm };
+
+                    let log_ctx = LogContext { thread_name: agent_name.clone(), tui_state };
+
+                    let challenge_ctx = Challenges { secrets_sum };
 
                     send_message(
                         &mut stream,
                         &Message::SubscribePlayer(SubscribePlayer {
-                            name: agent_name.clone(),
+                            name: agent_name,
                             registration_token: agent_token,
                         }),
                     )?;
@@ -120,13 +138,10 @@ impl GameClient {
                     while let Ok(msg) = receive_message(&mut stream) {
                         Self::handle_server_message(
                             &mut stream,
-                            &agent_name,
                             msg,
-                            &secrets_sum,
-                            &mut graph,
-                            &mut player,
-                            tui_state.as_ref(),
-                            &algorithm,
+                            &mut player_ctx,
+                            &log_ctx,
+                            &challenge_ctx,
                         )?;
                     }
                     Ok(())
@@ -144,24 +159,19 @@ impl GameClient {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn handle_server_message(
         stream: &mut TcpStream,
-        thread_name: &str,
         message: Message,
-        secrets_sum: &SecretSumModulo,
-        graph: &mut MazeGraph,
-        player: &mut Player,
-        tui_state: Option<&Arc<Mutex<GameState>>>,
-        algorithm: &str,
+        player_ctx: &mut PlayerContext,
+        log_ctx: &LogContext,
+        challenge_ctx: &Challenges,
     ) -> GameResult<()> {
         let logger = Logger::get_instance();
-        let thread = std::thread::current();
 
         if logger.is_debug_enabled() {
             Self::log_handler(
-                tui_state,
-                thread_name,
+                &log_ctx.tui_state,
+                &log_ctx.thread_name,
                 logger,
                 format!("Received message: {:?}", message),
                 LogLevel::Debug,
@@ -169,32 +179,14 @@ impl GameClient {
         }
 
         match message {
-            Message::SubscribePlayerResult(result) => match result {
-                SubscribePlayerResult::Ok => {
-                    Self::log_handler(
-                        tui_state,
-                        thread_name,
-                        logger,
-                        "Subscribed successfully",
-                        LogLevel::Info,
-                    );
-                }
-                SubscribePlayerResult::Err(err) => {
-                    Self::log_handler(
-                        tui_state,
-                        thread_name,
-                        logger,
-                        format!("Failed to subscribe: {:?}", err),
-                        LogLevel::Error,
-                    );
-                    return Err(GameError::AgentSubscriptionError(format!("{:?}", err)));
-                }
-            },
+            Message::SubscribePlayerResult(result) => {
+                Self::handle_subscription_result(result, log_ctx)?;
+            }
             Message::RadarView(view) => {
-                if Self::handle_radar_view(stream, view, graph, player, thread_name, algorithm)? {
+                if Self::handle_radar_view(stream, view, player_ctx, log_ctx)? {
                     Self::log_handler(
-                        tui_state,
-                        thread_name,
+                        &log_ctx.tui_state,
+                        &log_ctx.thread_name,
                         logger,
                         "Found the exit!",
                         LogLevel::Info,
@@ -203,45 +195,38 @@ impl GameClient {
                 }
             }
             Message::Hint(hint) => {
-                if let Hint::Secret(secret) = hint {
-                    if let Ok(mut secrets) = secrets_sum.secrets.lock() {
-                        secrets.insert(thread.id(), secret);
-                    }
-                }
+                Self::handle_hint(hint, &challenge_ctx.secrets_sum);
             }
             Message::Challenge(value) => {
                 Self::log_handler(
-                    tui_state,
-                    thread_name,
+                    &log_ctx.tui_state,
+                    &log_ctx.thread_name,
                     logger,
                     format!("{:?}", value),
                     LogLevel::Info,
                 );
 
-                match value {
-                    Challenge::SecretSumModulo(challenge) => {
-                        Self::handle_secret_sum_modulo(
-                            stream,
-                            &secrets_sum.secrets,
-                            &secrets_sum.sum,
-                            Some(challenge),
-                        )?;
-                    }
-                }
+                let Challenge::SecretSumModulo(challenge) = value;
+                Self::handle_secret_sum_modulo(
+                    stream,
+                    &challenge_ctx.secrets_sum.secrets,
+                    &challenge_ctx.secrets_sum.sum,
+                    Some(challenge),
+                )?;
             }
             Message::ActionError(err) => match err {
                 messages::ActionError::InvalidChallengeSolution => {
                     Self::log_handler(
-                        tui_state,
-                        thread_name,
+                        &log_ctx.tui_state,
+                        &log_ctx.thread_name,
                         logger,
                         "Invalid challenge solution, retrying...",
                         LogLevel::Error,
                     );
                     Self::handle_secret_sum_modulo(
                         stream,
-                        &secrets_sum.secrets,
-                        &secrets_sum.sum,
+                        &challenge_ctx.secrets_sum.secrets,
+                        &challenge_ctx.secrets_sum.sum,
                         None,
                     )?;
                 }
@@ -250,10 +235,11 @@ impl GameClient {
                 messages::ActionError::Blocked => todo!(),
                 messages::ActionError::SolveChallengeFirst => todo!(),
             },
+
             Message::MessageError(err) => {
                 Self::log_handler(
-                    tui_state,
-                    thread_name,
+                    &log_ctx.tui_state,
+                    &log_ctx.thread_name,
                     logger,
                     format!("Server error: {:?}", err),
                     LogLevel::Error,
@@ -261,8 +247,8 @@ impl GameClient {
             }
             _ => {
                 Self::log_handler(
-                    tui_state,
-                    thread_name,
+                    &log_ctx.tui_state,
+                    &log_ctx.thread_name,
                     logger,
                     format!("Unhandled message: {:?}", message),
                     LogLevel::Warning,
@@ -270,9 +256,80 @@ impl GameClient {
             }
         }
 
-        Self::refresh_tui(tui_state, thread_name, graph, player);
+        Self::refresh_tui(
+            &log_ctx.tui_state,
+            &log_ctx.thread_name,
+            &player_ctx.graph,
+            &player_ctx.player,
+        );
 
         Ok(())
+    }
+
+    fn handle_subscription_result(
+        result: SubscribePlayerResult,
+        log_ctx: &LogContext,
+    ) -> GameResult<()> {
+        let logger = Logger::get_instance();
+        match result {
+            SubscribePlayerResult::Ok => {
+                Self::log_handler(
+                    &log_ctx.tui_state,
+                    &log_ctx.thread_name,
+                    logger,
+                    "Subscribed successfully",
+                    LogLevel::Info,
+                );
+                Ok(())
+            }
+            SubscribePlayerResult::Err(err) => {
+                Self::log_handler(
+                    &log_ctx.tui_state,
+                    &log_ctx.thread_name,
+                    logger,
+                    format!("Failed to subscribe: {:?}", err),
+                    LogLevel::Error,
+                );
+                Err(GameError::AgentSubscriptionError(format!("{:?}", err)))
+            }
+        }
+    }
+
+    fn handle_radar_view(
+        stream: &mut TcpStream,
+        view: messages::RadarView,
+        player_ctx: &mut PlayerContext,
+        log_ctx: &LogContext,
+    ) -> GameResult<bool> {
+        let radar_view = extract_data(&decode_base64(&view.0))
+            .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {}", e)))?;
+
+        maze_to_graph(&radar_view, &player_ctx.player, &mut player_ctx.graph);
+
+        let action: Action = match player_ctx.algorithm.as_str() {
+            "Tremeaux" => {
+                instructions::tremeaux_solver(&mut player_ctx.player, &mut player_ctx.graph)
+            }
+            "RightHand" => instructions::right_hand_solver(&radar_view, &mut player_ctx.player),
+            "Alian" => instructions::alian_solver(
+                &mut player_ctx.player,
+                &mut player_ctx.graph,
+                &log_ctx.thread_name,
+            ),
+            _ => instructions::tremeaux_solver(&mut player_ctx.player, &mut player_ctx.graph),
+        };
+
+        send_message(stream, &Message::Action(action.clone()))?;
+
+        Ok(instructions::check_win_condition(&radar_view.cells, action))
+    }
+
+    fn handle_hint(hint: Hint, secrets_sum: &SecretSumModulo) {
+        if let Hint::Secret(secret) = hint {
+            if let Ok(mut secrets) = secrets_sum.secrets.lock() {
+                secrets.insert(thread::current().id(), secret);
+            }
+        }
     }
 
     fn handle_secret_sum_modulo(
@@ -293,38 +350,8 @@ impl GameClient {
         Ok(())
     }
 
-    fn handle_radar_view(
-        stream: &mut TcpStream,
-        view: messages::RadarView,
-        graph: &mut MazeGraph,
-        player: &mut Player,
-        thread_name: &str,
-        algorithm: &str,
-    ) -> GameResult<bool> {
-        let radar_view = extract_data(&decode_base64(&view.0))
-            .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {}", e)))?;
-
-        maze_to_graph(&radar_view, player, graph);
-
-        let action: Action = match algorithm {
-            "Tremeaux" => instructions::tremeaux_solver(player, graph),
-            "RightHand" => instructions::right_hand_solver(&radar_view, player),
-            "Alian" => instructions::alian_solver(player, graph, thread_name),
-            _ => instructions::tremeaux_solver(player, graph),
-        };
-
-        send_message(stream, &Message::Action(action.clone()))?;
-
-        let is_win = instructions::check_win_condition(&radar_view.cells, action);
-        if is_win {
-            return Ok(true);
-        }
-
-        Ok(false)
-    }
-
     fn refresh_tui(
-        tui_state: Option<&Arc<Mutex<GameState>>>,
+        tui_state: &Option<Arc<Mutex<GameState>>>,
         thread_name: &str,
         graph: &MazeGraph,
         player: &Player,
@@ -337,13 +364,13 @@ impl GameClient {
     }
 
     fn log_handler(
-        tui_state: Option<&Arc<Mutex<GameState>>>,
+        tui_state: &Option<Arc<Mutex<GameState>>>,
         thread_name: &str,
         logger: &Logger,
         message: impl Into<String>,
         level: LogLevel,
     ) {
-        match tui_state {
+        match tui_state.as_ref() {
             Some(tui) => {
                 if let Ok(mut state) = tui.lock() {
                     state.add_log(thread_name, message.into(), level)
@@ -372,6 +399,25 @@ mod tests {
         (listener, format!("127.0.0.1:{}", addr.port()))
     }
 
+    fn create_test_contexts(thread_name: String) -> (PlayerContext, LogContext, Challenges) {
+        let game_ctx = PlayerContext {
+            graph: MazeGraph::new(),
+            player: Player::new(),
+            algorithm: "Tremeaux".to_string(),
+        };
+
+        let log_ctx = LogContext { thread_name, tui_state: None };
+
+        let challenge_ctx = Challenges {
+            secrets_sum: SecretSumModulo {
+                sum: Arc::new(Mutex::new(0)),
+                secrets: Arc::new(Mutex::new(HashMap::new())),
+            },
+        };
+
+        (game_ctx, log_ctx, challenge_ctx)
+    }
+
     #[test]
     fn test_connect_to_server() {
         let (listener, addr) = setup_mock_server();
@@ -380,10 +426,8 @@ mod tests {
             listener.accept().unwrap();
         });
 
-        let register_msg = Message::RegisterTeam(RegisterTeam { name: "team".to_string() });
-
-        let mut stream = TcpStream::connect(addr).unwrap();
-        send_message(&mut stream, &register_msg).unwrap();
+        let result = GameClient::connect_to_server(&addr, 1);
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -420,26 +464,20 @@ mod tests {
         thread::spawn(move || {
             listener.accept().unwrap();
         });
+
         let mut stream = TcpStream::connect(addr).unwrap();
-
         let message = Message::SubscribePlayerResult(SubscribePlayerResult::Ok);
-        let mut graph = MazeGraph::new();
-        let mut player = Player::new();
+        let (mut game_ctx, log_ctx, challenge_ctx) = create_test_contexts("Player1".to_string());
 
-        GameClient::handle_server_message(
+        let result = GameClient::handle_server_message(
             &mut stream,
-            "Player1",
             message,
-            &SecretSumModulo {
-                sum: Arc::new(Mutex::new(0)),
-                secrets: Arc::new(Mutex::new(HashMap::new())),
-            },
-            &mut graph,
-            &mut player,
-            None,
-            "Tremeaux",
-        )
-        .unwrap();
+            &mut game_ctx,
+            &log_ctx,
+            &challenge_ctx,
+        );
+
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -457,31 +495,27 @@ mod tests {
         let (listener, addr) = setup_mock_server();
 
         thread::spawn(move || {
-            listener.accept().unwrap();
+            let (mut stream, _) = listener.accept().unwrap();
+            let msg = receive_message(&mut stream).unwrap();
+            if let Message::Action(Action::SolveChallenge { answer: _ }) = msg {
+            } else {
+                panic!("Message inattendu reçu");
+            }
         });
 
         let mut stream = TcpStream::connect(addr).unwrap();
+        let message = Message::Challenge(Challenge::SecretSumModulo(10));
+        let (mut game_ctx, log_ctx, challenge_ctx) = create_test_contexts("Player1".to_string());
 
-        let secrets = Arc::new(Mutex::new(HashMap::new()));
-
-        let secret_sum = Arc::new(Mutex::new(0));
-
-        let message = Message::Challenge(messages::Challenge::SecretSumModulo(10));
-
-        let mut graph = MazeGraph::new();
-        let mut player = Player::new();
-
-        GameClient::handle_server_message(
+        let result = GameClient::handle_server_message(
             &mut stream,
-            "Player1",
             message,
-            &SecretSumModulo { sum: secret_sum, secrets },
-            &mut graph,
-            &mut player,
-            None,
-            "Tremeaux",
-        )
-        .unwrap();
+            &mut game_ctx,
+            &log_ctx,
+            &challenge_ctx,
+        );
+
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -489,61 +523,45 @@ mod tests {
         let (listener, addr) = setup_mock_server();
 
         thread::spawn(move || {
-            listener.accept().unwrap();
+            let (mut stream, _) = listener.accept().unwrap();
+            let msg = receive_message(&mut stream).unwrap();
+            assert!(matches!(msg, Message::Action(_)));
         });
 
         let mut stream = TcpStream::connect(addr).unwrap();
-
         let message = Message::RadarView(messages::RadarView("bKgGjsIyap8p8aa".to_string()));
+        let (mut game_ctx, log_ctx, challenge_ctx) = create_test_contexts("Player1".to_string());
 
-        let mut graph = MazeGraph::new();
-        let mut player = Player::new();
-
-        GameClient::handle_server_message(
+        let result = GameClient::handle_server_message(
             &mut stream,
-            "Player1",
             message,
-            &SecretSumModulo {
-                sum: Arc::new(Mutex::new(0)),
-                secrets: Arc::new(Mutex::new(HashMap::new())),
-            },
-            &mut graph,
-            &mut player,
-            None,
-            "Tremeaux",
-        )
-        .unwrap();
+            &mut game_ctx,
+            &log_ctx,
+            &challenge_ctx,
+        );
+
+        assert!(result.is_ok());
     }
 
     #[test]
     fn test_handle_hint() {
         let (listener, addr) = setup_mock_server();
-
-        thread::spawn(move || {
-            listener.accept().unwrap();
-        });
+        thread::spawn(move || if let Ok((_stream, _)) = listener.accept() {});
 
         let mut stream = TcpStream::connect(addr).unwrap();
+        let (mut game_ctx, log_ctx, challenge_ctx) = create_test_contexts("Player1".to_string());
 
         let message = Message::Hint(Hint::Secret(10));
 
-        let mut graph = MazeGraph::new();
-        let mut player = Player::new();
-
-        GameClient::handle_server_message(
+        let result = GameClient::handle_server_message(
             &mut stream,
-            "Player1",
             message,
-            &SecretSumModulo {
-                sum: Arc::new(Mutex::new(0)),
-                secrets: Arc::new(Mutex::new(HashMap::new())),
-            },
-            &mut graph,
-            &mut player,
-            None,
-            "Tremeaux",
-        )
-        .unwrap();
+            &mut game_ctx,
+            &log_ctx,
+            &challenge_ctx,
+        );
+
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -597,9 +615,10 @@ mod tests {
             }
         });
 
-        let config = ClientConfig { server_addr: addr.clone(), team_name: "team".to_string() };
+        let config = ClientConfig { server_addr: addr, team_name: "team".to_string() };
         let client = GameClient::new(config);
 
-        client.run(1, 1, None, "Tremeaux".to_owned()).unwrap();
+        let result = client.run(1, 1, None, "Tremeaux".to_string());
+        assert!(result.is_ok());
     }
 }
