@@ -8,7 +8,7 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-criterion2 = { workspace = true }
+criterion2 = { version = "2.0.0" }
 client = { path = "../client" }
 shared = { path = "../shared" }
 
