@@ -1,6 +1,6 @@
 use clap::Parser;
 use server::server::{GameServer, ServerConfig};
-use shared::utils::{print_log, Color};
+use shared::logger::Logger;
 
 #[derive(Parser, Debug)]
 #[command(name = "Labyrinth-server")]
@@ -20,16 +20,23 @@ struct Args {
 
     #[arg(short, long, help = "Seed for the maze generation.")]
     seed: Option<u64>,
+
+    #[arg(long, help = "Enable debug logs.", default_value = "false")]
+    debug: bool,
 }
 
 fn main() {
     let args = Args::parse();
     let seed = args.seed.unwrap_or_else(rand::random);
     let config = ServerConfig { host: args.host, port: args.port, seed, max_players_per_team: 3 };
-    print_log(&format!("seed {}", seed), Color::Blue);
+    Logger::init(args.debug);
+    let logger = Logger::get_instance();
+    logger.debug(&format!("Server seed: {:?}", seed));
 
     let server = GameServer::new(config);
-    server.run();
+    if let Err(e) = server.run(logger) {
+        logger.error(&format!("{}", e));
+    }
 }
 
 #[cfg(test)]
