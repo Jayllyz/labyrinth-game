@@ -2,7 +2,7 @@
 name = "benchmarks"
 version = "0.0.0"
 repository.workspace = true
-edition = "2021"
+edition = "2024"
 
 [lints]
 workspace = true
