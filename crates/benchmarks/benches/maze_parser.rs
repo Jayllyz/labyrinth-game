@@ -1,7 +1,7 @@
 extern crate client;
 extern crate criterion as criterion2;
 use client::maze_parser::maze_parser;
-use criterion2::{black_box, criterion_group, criterion_main, Criterion};
+use criterion2::{Criterion, black_box, criterion_group, criterion_main};
 use std::time::Duration;
 
 struct BenchData {

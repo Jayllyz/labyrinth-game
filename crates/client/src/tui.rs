@@ -6,11 +6,11 @@ use ratatui::crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
+    Terminal,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Tabs},
-    Terminal,
 };
 use shared::{logger::LogLevel, maze::Cell, radar::CellType};
 use std::{

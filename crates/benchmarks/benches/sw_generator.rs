@@ -1,6 +1,6 @@
 use std::time::Duration;
 extern crate criterion as criterion2;
-use criterion2::{criterion_group, criterion_main, Criterion};
+use criterion2::{Criterion, criterion_group, criterion_main};
 use shared::maze_generator::sidewinder;
 
 fn bench_sidewinder_generator(c: &mut Criterion) {

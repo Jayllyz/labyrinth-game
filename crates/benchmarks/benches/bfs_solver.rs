@@ -2,8 +2,8 @@ extern crate client;
 extern crate criterion as criterion2;
 extern crate shared;
 use client::maze_parser::maze_parser;
-use client::maze_solver::{bfs_shortest_path, PrintPathMode};
-use criterion2::{black_box, criterion_group, criterion_main, Criterion};
+use client::maze_solver::{PrintPathMode, bfs_shortest_path};
+use criterion2::{Criterion, black_box, criterion_group, criterion_main};
 use shared::maze::Maze;
 use std::time::Duration;
 

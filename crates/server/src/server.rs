@@ -2,8 +2,8 @@ use rand::Rng;
 use shared::errors::{GameError, GameResult};
 use shared::logger::Logger;
 use shared::messages::{
-    receive_message, send_message, Client, Message, RegisterTeamResult, RegistrationError,
-    SubscribePlayerResult, Teams,
+    Client, Message, RegisterTeamResult, RegistrationError, SubscribePlayerResult, Teams,
+    receive_message, send_message,
 };
 use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};

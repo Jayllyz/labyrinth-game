@@ -7,8 +7,8 @@ use shared::{
     errors::{GameError, GameResult},
     logger::{LogLevel, Logger},
     messages::{
-        self, receive_message, send_message, Action, Challenge, Hint, Message, RegisterTeam,
-        RegisterTeamResult, SubscribePlayer, SubscribePlayerResult,
+        self, Action, Challenge, Hint, Message, RegisterTeam, RegisterTeamResult, SubscribePlayer,
+        SubscribePlayerResult, receive_message, send_message,
     },
     radar::{decode_base64, extract_data},
 };

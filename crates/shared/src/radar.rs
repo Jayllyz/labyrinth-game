@@ -247,7 +247,7 @@ pub fn extract_data<T: ToBinary>(input: T) -> Result<Radar, std::fmt::Error> {
     let binary = match input.to_binary() {
         Ok(b) => b,
         Err(_) => {
-            return Ok(Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() })
+            return Ok(Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() });
         }
     };
 
@@ -338,7 +338,10 @@ mod tests {
         assert_eq!(encode_base64(&[63]), "pW");
         assert_eq!(encode_base64("Hello, World!"), "sgvSBg8SifDVCMXKiq");
         let numbers: Vec<i32> = (0..=255).collect();
-        assert_eq!(encode_base64(&numbers[..]), "aaecaWqfbGCicqOlda0odXareHmufryxgbKAgXWDhH8GisiJjcuMjYGPkISSls4VmdeYmZq1nJC4otO7pd0+p0bbqKneruzhseLks0XntK9quvjtvfvwv1HzwLTCxv5FygfIy2rLzMDOAwPRBg1UB3bXCNn0Dxz3EhL6E3X9FN+aGykdHiwgH4IjIOUmJy6pKjgsK5svLPEyMzQBNj2EN6cHOQoKPAANQkMQQ6YTRQ+WSBkZTlw2T7I5URU8VB6/WmhcW8tfXSFiYCRlZm3oZ9dr0Tpu1DBx2nNA29ZD3T/G4ElJ5oxM5+JP6UVS7E7V8phY8/t19VF4+FR7/p3+/W");
+        assert_eq!(
+            encode_base64(&numbers[..]),
+            "aaecaWqfbGCicqOlda0odXareHmufryxgbKAgXWDhH8GisiJjcuMjYGPkISSls4VmdeYmZq1nJC4otO7pd0+p0bbqKneruzhseLks0XntK9quvjtvfvwv1HzwLTCxv5FygfIy2rLzMDOAwPRBg1UB3bXCNn0Dxz3EhL6E3X9FN+aGykdHiwgH4IjIOUmJy6pKjgsK5svLPEyMzQBNj2EN6cHOQoKPAANQkMQQ6YTRQ+WSBkZTlw2T7I5URU8VB6/WmhcW8tfXSFiYCRlZm3oZ9dr0Tpu1DBx2nNA29ZD3T/G4ElJ5oxM5+JP6UVS7E7V8phY8/t19VF4+FR7/p3+/W"
+        );
     }
 
     #[test]
