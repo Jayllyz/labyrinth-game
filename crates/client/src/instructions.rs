@@ -1,9 +1,11 @@
 use crate::data_structures::maze_graph::{CellStatus, MazeGraph};
 use crate::maze_parser::Player;
+use core::time;
 use shared::maze::Cell;
 use shared::messages::{self, Direction};
 use shared::radar::{CellType, Passages, Radar};
 use std::collections::HashMap;
+use std::thread::sleep;
 
 // TODO:
 // [X] For each currently visited maze node, there is occupied flag is set to true so that other agents know they cannot
@@ -74,6 +76,10 @@ pub fn alian_solver(
         }
 
         if status == CellStatus::NotVisited {
+            if cell_type == CellType::ENEMY {
+                let ten_millis = time::Duration::from_millis(500);
+                sleep(ten_millis);
+            }
             graph.update_cell_status(player_position, CellStatus::VISITED);
             graph.set_visited(player_position, thread_name);
             let next_direction = player.get_next_direction(&neighbor_position);
