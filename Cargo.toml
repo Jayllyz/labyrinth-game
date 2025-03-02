@@ -73,6 +73,7 @@ stable_sort_primitive = "warn"
 str_split_at_newline = "warn"
 unnecessary_box_returns = "warn"
 unnecessary_join = "warn"
+unwrap_used = "deny"
 
 [profile.release]
 # Configurations explicitly listed here for clarity.
