@@ -1,7 +1,7 @@
 # 🧩 Labyrinth Game
 
-![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/Jayllyz/labyrinth-game/ci.yaml?style=flat-square)
-![GitHub release (latest by date)](https://img.shields.io/github/v/release/Jayllyz/labyrinth-game?style=flat-square)
+[![CI](https://github.com/Jayllyz/labyrinth-game/actions/workflows/ci.yaml/badge.svg)](https://github.com/Jayllyz/labyrinth-game/actions/workflows/ci.yaml)
+[![E2E Tests](https://github.com/Jayllyz/labyrinth-game/actions/workflows/test-e2e.yaml/badge.svg)](https://github.com/Jayllyz/labyrinth-game/actions/workflows/test-e2e.yaml)
 ![License](https://img.shields.io/github/license/Jayllyz/labyrinth-game?style=flat-square)
 
 A multiplayer maze solving game built in Rust. Players navigate through procedurally generated mazes and compete to find the exit using various algorithms.
