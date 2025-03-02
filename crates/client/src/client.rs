@@ -234,6 +234,7 @@ impl GameClient {
                 messages::ActionError::OutOfMap => todo!(),
                 messages::ActionError::Blocked => todo!(),
                 messages::ActionError::SolveChallengeFirst => todo!(),
+                messages::ActionError::CannotPassThroughOpponent => todo!(),
             },
 
             Message::MessageError(err) => {

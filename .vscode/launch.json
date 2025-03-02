@@ -15,7 +15,12 @@
             "request": "launch",
             "name": "Debug Client",
             "program": "${workspaceFolder}/target/debug/client",
-            "args": ["--players", "1"],
+            "args": [
+                "--players",
+                "3",
+                "--algorithm",
+                "Alian"
+            ],
             "cwd": "${workspaceFolder}",
             "preLaunchTask": "cargo build client"
         }

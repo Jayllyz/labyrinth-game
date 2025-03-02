@@ -77,8 +77,9 @@ pub fn alian_solver(
 
         if status == CellStatus::NotVisited {
             if cell_type == CellType::ENEMY {
-                let ten_millis = time::Duration::from_millis(500);
+                let ten_millis: std::time::Duration = time::Duration::from_millis(100);
                 sleep(ten_millis);
+                graph.update_cell_type(neighbor_position, CellType::NOTHING)
             }
             graph.update_cell_status(player_position, CellStatus::VISITED);
             graph.set_visited(player_position, thread_name);
