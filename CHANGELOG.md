@@ -2,30 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
-## [unreleased]
+## [1.0.3](https://github.com/Jayllyz/labyrinth-game/compare/v1.0.2..v1.0.3) - 2025-03-02
 
 ### 📇 Features
 
 - *(client)* Implement terminal user interface ([#66](https://github.com/Jayllyz/labyrinth-game/issues/66)) - ([8b3e618](https://github.com/Jayllyz/labyrinth-game/commit/8b3e6182e5f1c3fda15bc5a0f7d4a801a896adb7))
+- *(instructions)* Add ObjectiveAlly cell type and update solver ([#77](https://github.com/Jayllyz/labyrinth-game/issues/77)) - ([08ec797](https://github.com/Jayllyz/labyrinth-game/commit/08ec797f43d5a44a81d61cb70b2e2e8fc54ce33f))
+- *(server)* Implement mini server ([#88](https://github.com/Jayllyz/labyrinth-game/issues/88)) - ([c141f6d](https://github.com/Jayllyz/labyrinth-game/commit/c141f6d145ef5b0d9d6757c7a8fe35e2e971354d))
+- Args for algorithm ([#75](https://github.com/Jayllyz/labyrinth-game/issues/75)) - ([402ffb4](https://github.com/Jayllyz/labyrinth-game/commit/402ffb4813799cd6267d6af41e9b8171cc88e1f4))
+- Alian algorithm ([#74](https://github.com/Jayllyz/labyrinth-game/issues/74)) - ([ac6ca7d](https://github.com/Jayllyz/labyrinth-game/commit/ac6ca7d535bf42a46707e43fdd95506106e84eaa))
 - Implement custom GameError  ([#59](https://github.com/Jayllyz/labyrinth-game/issues/59)) - ([fc7476a](https://github.com/Jayllyz/labyrinth-game/commit/fc7476a8722bc446a8df35a626f7e70e3e96de89))
 - Tremeaux algorithm ([#58](https://github.com/Jayllyz/labyrinth-game/issues/58)) - ([b00fcaa](https://github.com/Jayllyz/labyrinth-game/commit/b00fcaa5071062c06482e98ae05b8d0dacc9f475))
 - Implement graphs for maze resolution ([#56](https://github.com/Jayllyz/labyrinth-game/issues/56)) - ([c9bcefa](https://github.com/Jayllyz/labyrinth-game/commit/c9bcefa8e30031ccb79ab063c47c9e029f6b0178))
 
 ### 🐛 Bug Fixes
 
+- *(deps)* Update rust crate criterion2 to v3 ([#90](https://github.com/Jayllyz/labyrinth-game/issues/90)) - ([2f9ff0b](https://github.com/Jayllyz/labyrinth-game/commit/2f9ff0b916cd930c027211929ef5753da298e05d))
+- *(tui)* Handle bounds calculations safely and split in small functions ([#76](https://github.com/Jayllyz/labyrinth-game/issues/76)) - ([3b6e366](https://github.com/Jayllyz/labyrinth-game/commit/3b6e366c7a3cc686e9f2326f3ad4db56457cdb4f))
+- Lint issue - ([294c673](https://github.com/Jayllyz/labyrinth-game/commit/294c67354a76391adc99d8b4d3c0fd903a9f0aff))
 - Fix tremeaux ([#60](https://github.com/Jayllyz/labyrinth-game/issues/60)) - ([e712552](https://github.com/Jayllyz/labyrinth-game/commit/e7125522bbd1e0c22d7bc4f4535e3a3152ab6d02))
 
 ### 🚜 Refactor
 
+- *(client)* Regroup arguments in structures ([#83](https://github.com/Jayllyz/labyrinth-game/issues/83)) - ([08de5b9](https://github.com/Jayllyz/labyrinth-game/commit/08de5b9feeefe7a995bddff216f2512778f80c96))
 - *(radar)* Rename struct to fix duplicate ([#57](https://github.com/Jayllyz/labyrinth-game/issues/57)) - ([e3d9831](https://github.com/Jayllyz/labyrinth-game/commit/e3d983112611ee2b0bf8828b78a7b6e48f741574))
+- *(server)* Improve based on client improvements ([#85](https://github.com/Jayllyz/labyrinth-game/issues/85)) - ([ca21b42](https://github.com/Jayllyz/labyrinth-game/commit/ca21b4214fae5a1c8101fde8896d73c199b83783))
 - Remove unwrap usage ([#62](https://github.com/Jayllyz/labyrinth-game/issues/62)) - ([dec6e08](https://github.com/Jayllyz/labyrinth-game/commit/dec6e081a4ab3010983ba207b8ba6a41d69bd221))
 
 ### 🧪 Testing
 
+- *(client)* Improve client code coverage - ([35068e2](https://github.com/Jayllyz/labyrinth-game/commit/35068e29ebe88e222730534375762030da52e8e7))
 - Improve coverage and update e2e server ([#61](https://github.com/Jayllyz/labyrinth-game/issues/61)) - ([c9d94fa](https://github.com/Jayllyz/labyrinth-game/commit/c9d94fac0fe988b2789867bc1bb2a1f2f44f03ec))
 
 ### ⚙️ Miscellaneous Tasks
 
+- *(workspace)* Update edition to 2024 - ([7f0e172](https://github.com/Jayllyz/labyrinth-game/commit/7f0e1723d5580895082b2cdb2cc071da0eb1395c))
+- Update readme and document radar parser ([#93](https://github.com/Jayllyz/labyrinth-game/issues/93)) - ([3ee9420](https://github.com/Jayllyz/labyrinth-game/commit/3ee942001ff04c614b9946a1b367297a40846bac))
+- Format - ([12b352d](https://github.com/Jayllyz/labyrinth-game/commit/12b352d242299fca6a236c49f6aac7fd9a6cfa5d))
+- Configure nextest for ci runs ([#73](https://github.com/Jayllyz/labyrinth-game/issues/73)) - ([2b79c63](https://github.com/Jayllyz/labyrinth-game/commit/2b79c6309affbfd08c2644e7f72b24e75ad35ac0))
+- Enable e2e on main and update changelog ([#69](https://github.com/Jayllyz/labyrinth-game/issues/69)) - ([1d10ad6](https://github.com/Jayllyz/labyrinth-game/commit/1d10ad6c1f99176b69bed69d6600249a549c78f6))
 - Vscode debug setup - ([4c2dacd](https://github.com/Jayllyz/labyrinth-game/commit/4c2dacd4eb6bd8807d2765c249f2e58acae47314))
 
 ## [1.0.2](https://github.com/Jayllyz/labyrinth-game/compare/v1.0.1..v1.0.2) - 2024-12-17

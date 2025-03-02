@@ -18,6 +18,12 @@ test:
 # Run clippy and tests
 check: clippy test
 
+# Update changelog
+changelog:
+    npx --yes git-cliff@latest -o CHANGELOG.md
+    git add CHANGELOG.md
+    git commit -m "chore: update changelog"
+
 # Default recipe
 default:
     @just --list
