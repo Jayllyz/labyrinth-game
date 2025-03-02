@@ -1,3 +1,4 @@
+use crate::to_binary::ToBinary;
 use core::str;
 use std::char;
 use std::fmt::Write;
@@ -31,46 +32,16 @@ pub struct Radar {
     pub cells: Vec<CellType>,
 }
 
-pub trait ToBinary {
-    fn to_binary(&self) -> Result<String, std::fmt::Error>;
-}
-
-impl ToBinary for &str {
-    fn to_binary(&self) -> Result<String, std::fmt::Error> {
-        self.chars().try_fold(String::with_capacity(self.len() * 8), |mut acc, c| {
-            write!(acc, "{:08b}", c as u8)?;
-            Ok(acc)
-        })
-    }
-}
-
-impl ToBinary for &String {
-    fn to_binary(&self) -> Result<String, std::fmt::Error> {
-        self.chars().try_fold(String::with_capacity(self.len() * 8), |mut acc, c| {
-            write!(acc, "{:08b}", c as u8)?;
-            Ok(acc)
-        })
-    }
-}
-
-impl ToBinary for &[i32] {
-    fn to_binary(&self) -> Result<String, std::fmt::Error> {
-        self.iter().try_fold(String::with_capacity(self.len() * 8), |mut acc, &d| {
-            write!(acc, "{:08b}", d as u8)?;
-            Ok(acc)
-        })
-    }
-}
-
-impl<const N: usize> ToBinary for &[i32; N] {
-    fn to_binary(&self) -> Result<String, std::fmt::Error> {
-        self.iter().try_fold(String::with_capacity(N * 8), |mut acc, &d| {
-            write!(acc, "{:08b}", d as u8)?;
-            Ok(acc)
-        })
-    }
-}
-
+/// Splits a string into chunks of specified size, padding the last chunk if necessary.
+///
+/// # Arguments
+///
+/// * `text` - The input string to split
+/// * `chunk_size` - The desired size of each chunk
+///
+/// # Returns
+///
+/// A vector of strings, each of length `chunk_size` (possibly padded with '0's)
 pub fn split_into_chunks(text: &str, chunk_size: usize) -> Vec<String> {
     text.as_bytes()
         .chunks(chunk_size)
@@ -85,6 +56,15 @@ pub fn split_into_chunks(text: &str, chunk_size: usize) -> Vec<String> {
         .collect::<Vec<String>>()
 }
 
+/// Encodes data to Base64 representation using the custom Base64 alphabet.
+///
+/// # Arguments
+///
+/// * `input` - Any data type that implements the `ToBinary` trait
+///
+/// # Returns
+///
+/// A Base64-encoded string representation of the input data
 pub fn encode_base64<T: ToBinary>(input: T) -> String {
     let binary_text = match input.to_binary() {
         Ok(b) => b,
@@ -172,6 +152,15 @@ pub fn decode_base64(input: &str) -> String {
     decoded
 }
 
+/// Parses cell data from a binary string and converts it to a vector of CellType enums.
+///
+/// # Arguments
+///
+/// * `octet` - A binary string containing cell data where each cell is represented by 4 bits
+///
+/// # Returns
+///
+/// A vector of CellType enums representing the cell types in the maze
 pub fn retrieve_cell(octet: &str) -> Vec<CellType> {
     const NUM_CELLS: usize = 9; // 4 bits per cell, remove the last 4 bits (padding)
     let mut data = Vec::with_capacity(NUM_CELLS);
@@ -201,6 +190,16 @@ pub fn retrieve_cell(octet: &str) -> Vec<CellType> {
     data
 }
 
+/// Parses horizontal and vertical passage data from binary strings.
+///
+/// # Arguments
+///
+/// * `horizontal` - A binary string containing horizontal passage data
+/// * `vertical` - A binary string containing vertical passage data
+///
+/// # Returns
+///
+/// A tuple containing two vectors: (horizontal passages, vertical passages)
 pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec<Passages>) {
     const NUM_HORIZONTAL: usize = 12;
     const NUM_VERTICAL: usize = 12;
@@ -243,6 +242,23 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec
     (horizontal_data, vertical_data)
 }
 
+/// Extracts radar data from encoded input.
+///
+/// # Arguments
+///
+/// * `input` - Any data type that implements the `ToBinary` trait
+///
+/// # Returns
+///
+/// A Result containing a Radar struct with horizontal passages, vertical passages,
+/// and cell types, or a formatting error
+///
+/// # Details
+///
+/// The binary data is expected to be structured as follows:
+/// - First 24 bits (3 bytes): Horizontal passage data (in little-endian)
+/// - Next 24 bits (3 bytes): Vertical passage data (in little-endian)
+/// - Last 40 bits (5 bytes): Cell type data
 pub fn extract_data<T: ToBinary>(input: T) -> Result<Radar, std::fmt::Error> {
     let binary = match input.to_binary() {
         Ok(b) => b,
@@ -306,13 +322,6 @@ mod tests {
         assert_eq!(result, vec!["abc", "def", "gh0"]);
     }
 
-    // NOTE Simon: dunno why it doesn't work
-    // #[test]
-    // fn test_unicode_characters() {
-    //     let result = split_into_chunks("héllo", 2);
-    //     assert_eq!(result, vec!["hé", "ll", "o0"]);
-    // }
-
     #[test]
     fn test_large_chunk_size() {
         let result = split_into_chunks("hello", 10);
@@ -325,7 +334,6 @@ mod tests {
         assert_eq!(result, vec!["abc", "def", "ghi"]);
     }
 
-    // Tests for the `encode` function
     #[test]
     fn test_encode_prof() {
         assert_eq!(encode_base64(&[0]), "aa");
@@ -356,7 +364,6 @@ mod tests {
         assert_eq!(decode_base64(&encode_base64(test4)), test4);
     }
 
-    // Tests for the `retrieve_cell` function
     #[test]
     fn test_retrieve_cell() {
         assert_eq!(

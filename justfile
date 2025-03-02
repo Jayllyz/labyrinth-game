@@ -9,7 +9,7 @@ format:
 
 # Run clippy on all targets
 clippy:
-    cargo clippy --all-targets --all-features -- -D warnings
+    cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged -- -D warnings
 
 # Run tests using nextest
 test:
