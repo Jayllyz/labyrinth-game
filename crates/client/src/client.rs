@@ -230,11 +230,15 @@ impl GameClient {
                         None,
                     )?;
                 }
-                messages::ActionError::InvalidMove => todo!(),
-                messages::ActionError::OutOfMap => todo!(),
-                messages::ActionError::Blocked => todo!(),
-                messages::ActionError::SolveChallengeFirst => todo!(),
-                messages::ActionError::CannotPassThroughOpponent => todo!(),
+                _ => {
+                    Self::log_handler(
+                        &log_ctx.tui_state,
+                        &log_ctx.thread_name,
+                        logger,
+                        format!("Action error: {:?}", err),
+                        LogLevel::Error,
+                    );
+                }
             },
 
             Message::MessageError(err) => {
