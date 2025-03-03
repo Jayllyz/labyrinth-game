@@ -567,7 +567,11 @@ mod tests {
         let cell = Cell { row: 1, column: 1 };
         graph.add(cell, CellType::NOTHING);
 
-        let player = Player { position: cell, direction: shared::messages::Direction::Front };
+        let player = Player {
+            position: cell,
+            direction: shared::messages::Direction::Front,
+            last_position: None,
+        };
 
         game_state.update_state("agent1", graph.clone(), player.clone());
 
@@ -629,7 +633,11 @@ mod tests {
             graph.add(cell, cell_type.clone());
         }
 
-        let player = Player { position: Cell { row: 0, column: 0 }, direction: Direction::Front };
+        let player = Player {
+            position: Cell { row: 0, column: 0 },
+            direction: Direction::Front,
+            last_position: None,
+        };
 
         let viz = tui.create_maze_visualization(&graph, &player, 10, 10);
         let expected = "    ────────\n  0 │ 🔵     \n    │───┼───\n    │   │    \n";
@@ -653,7 +661,11 @@ mod tests {
     #[test]
     fn test_calculate_view_bounds() {
         let bounds = (-2, 2, -3, 3); // 5x7 maze
-        let player = Player { position: Cell { row: 0, column: 0 }, direction: Direction::Front };
+        let player = Player {
+            position: Cell { row: 0, column: 0 },
+            direction: Direction::Front,
+            last_position: None,
+        };
 
         let (row_start, row_end, col_start, col_end) =
             Tui::calculate_view_bounds(bounds, &player, 40, 20);
@@ -669,8 +681,11 @@ mod tests {
         assert_eq!(col_start, -1);
         assert_eq!(col_end, 1);
 
-        let edge_player =
-            Player { position: Cell { row: 2, column: 3 }, direction: Direction::Front };
+        let edge_player = Player {
+            position: Cell { row: 2, column: 3 },
+            direction: Direction::Front,
+            last_position: None,
+        };
         let (row_start, row_end, col_start, col_end) =
             Tui::calculate_view_bounds(bounds, &edge_player, 12, 6);
         assert_eq!(row_start, 0);

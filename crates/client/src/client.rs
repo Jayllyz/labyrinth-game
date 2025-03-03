@@ -253,6 +253,8 @@ impl GameClient {
                         format!("Action error: {:?}", err),
                         LogLevel::Error,
                     );
+                    player_ctx.player.revert_move();
+
                     let action: Action = instructions::alian_solver(
                         &mut player_ctx.player,
                         &mut player_ctx.graph,
@@ -345,6 +347,8 @@ impl GameClient {
             ),
             _ => instructions::tremeaux_solver(&mut player_ctx.player, &mut player_ctx.graph),
         };
+
+        player_ctx.player.update_last_position();
 
         send_message(stream, &Message::Action(action.clone()))?;
 

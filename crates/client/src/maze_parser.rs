@@ -29,11 +29,16 @@ fn rotate_right_90(cells: &mut [Cell]) {
 pub struct Player {
     pub direction: Direction,
     pub position: Cell,
+    pub last_position: Option<(i16, i16)>,
 }
 
 impl Player {
     pub fn new() -> Self {
-        Self { position: Cell { row: 0, column: 0 }, direction: Direction::Front }
+        Self {
+            position: Cell { row: 0, column: 0 },
+            direction: Direction::Front,
+            last_position: None,
+        }
     }
 
     pub fn move_forward(&mut self) {
@@ -105,6 +110,19 @@ impl Player {
             Direction::Right => Cell { row: self.position.row + 1, column: self.position.column },
             Direction::Back => Cell { row: self.position.row, column: self.position.column + 1 },
             Direction::Left => Cell { row: self.position.row - 1, column: self.position.column },
+        }
+    }
+
+    pub fn update_last_position(&mut self) {
+        self.last_position = Some((self.position.row, self.position.column));
+    }
+
+    pub fn revert_move(&mut self) {
+        if let Some((row, column)) = self.last_position {
+            // Restore the previous position
+            self.position = Cell { row, column };
+            // Clear the last position after reverting to it
+            self.last_position = None;
         }
     }
 }
@@ -303,7 +321,11 @@ mod tests {
         let decoded = radar::decode_base64("Hjeikcyc/W8a8pa");
         let data = radar::extract_data(&decoded).unwrap();
 
-        let mut p = Player { position: Cell { row: 0, column: 0 }, direction: Direction::Front };
+        let mut p = Player {
+            position: Cell { row: 0, column: 0 },
+            direction: Direction::Front,
+            last_position: None,
+        };
         let mut m = MazeGraph::new();
         maze_to_graph(&data, &p, &mut m);
 
@@ -489,8 +511,11 @@ mod tests {
 
     #[test]
     fn test_player_movement() {
-        let mut player =
-            Player { position: Cell { row: 5, column: 5 }, direction: Direction::Front };
+        let mut player = Player {
+            position: Cell { row: 5, column: 5 },
+            direction: Direction::Front,
+            last_position: None,
+        };
 
         player.move_forward();
         assert_eq!(player.position, Cell { row: 5, column: 4 });
@@ -509,5 +534,22 @@ mod tests {
         assert_eq!(player.direction, Direction::Back);
         player.move_forward();
         assert_eq!(player.position, Cell { row: 6, column: 4 });
+    }
+
+    #[test]
+    fn test_last_position() {
+        let mut player = Player::new();
+        assert_eq!(player.last_position, None);
+
+        player.position = Cell { row: 1, column: 1 };
+
+        player.update_last_position();
+        assert_eq!(player.last_position, Some((1, 1)));
+
+        player.position = Cell { row: 2, column: 2 };
+
+        player.revert_move();
+        assert_eq!(player.position, Cell { row: 1, column: 1 });
+        assert_eq!(player.last_position, None);
     }
 }

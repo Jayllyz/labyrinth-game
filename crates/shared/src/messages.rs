@@ -4,7 +4,10 @@ use std::{
     net::{SocketAddr, TcpStream},
 };
 
-use crate::errors::{GameError, GameResult};
+use crate::{
+    errors::{GameError, GameResult},
+    logger::Logger,
+};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Message {
@@ -84,6 +87,7 @@ pub enum ActionError {
     SolveChallengeFirst,
     CannotPassThroughOpponent,
     CannotPassThroughWall,
+    NoRunningChallenge,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -143,6 +147,11 @@ pub fn receive_message(stream: &mut TcpStream) -> GameResult<Message> {
 pub fn send_message(stream: &mut TcpStream, msg: &Message) -> GameResult<()> {
     let json =
         serde_json::to_string(msg).map_err(|e| GameError::SerializationError(e.to_string()))?;
+
+    if let Message::Action(Action::SolveChallenge { answer }) = msg {
+        Logger::get_instance()
+            .debug(&format!("Sending message: Action::SolveChallenge {{ answer: {} }}", answer));
+    }
 
     let len = json.len();
     let mut buffer = Vec::with_capacity(4 + len);
