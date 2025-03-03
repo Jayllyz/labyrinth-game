@@ -9,7 +9,7 @@ format:
 
 # Run clippy on all targets
 clippy:
-    cargo clippy --all-targets --all-features -- -D warnings
+    cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged -- -D warnings
 
 # Run tests using nextest
 test:
@@ -17,6 +17,12 @@ test:
 
 # Run clippy and tests
 check: clippy test
+
+# Update changelog
+changelog:
+    npx --yes git-cliff@latest -o CHANGELOG.md
+    git add CHANGELOG.md
+    git commit -m "chore: update changelog"
 
 # Default recipe
 default:

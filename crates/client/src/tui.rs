@@ -201,7 +201,10 @@ impl Tui {
         let view_height = (maze_area.height as i16).saturating_sub(2);
         let view_width = (maze_area.width as i16).saturating_sub(4);
 
-        let state = self.state.lock().unwrap();
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Failed to lock state"))?;
         let agent_names: Vec<String> = state.agents.keys().cloned().collect();
         let selected_tab = state.selected_tab;
 

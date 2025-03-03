@@ -106,12 +106,13 @@ pub struct Client {
     pub registration_token: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Teams {
     pub team_name: String,
     pub players: Vec<Client>,
     pub score: i32,
     pub registration_token: String,
+    pub max_players: u8,
 }
 
 pub fn receive_message(stream: &mut TcpStream) -> GameResult<Message> {
