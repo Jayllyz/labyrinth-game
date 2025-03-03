@@ -149,7 +149,7 @@ pub fn maze_to_graph(radar_view: &Radar, player: &Player, maze_graph: &mut MazeG
             let bottom_cell_id = cell_id + 3;
             let bottom_cell = player.position + directions_mask[bottom_cell_id];
 
-            if !maze_graph.contains(&bottom_cell) {
+            if !maze_graph.contains(&bottom_cell) && bottom_cell_id < radar_view.cells.len() {
                 maze_graph.add(bottom_cell, radar_view.cells[bottom_cell_id].clone());
             }
 
@@ -171,7 +171,7 @@ pub fn maze_to_graph(radar_view: &Radar, player: &Player, maze_graph: &mut MazeG
             let right_cell_id = cell_id + 1;
             let right_cell = player.position + directions_mask[right_cell_id];
 
-            if !maze_graph.contains(&right_cell) {
+            if !maze_graph.contains(&right_cell) && right_cell_id < radar_view.cells.len() {
                 maze_graph.add(right_cell, radar_view.cells[right_cell_id].clone());
             }
 
