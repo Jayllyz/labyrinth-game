@@ -230,10 +230,32 @@ impl GameClient {
                         None,
                     )?;
                 }
-                messages::ActionError::InvalidMove => todo!(),
-                messages::ActionError::OutOfMap => todo!(),
-                messages::ActionError::Blocked => todo!(),
-                messages::ActionError::SolveChallengeFirst => todo!(),
+                _ => {
+                    Self::log_handler(
+                        &log_ctx.tui_state,
+                        &log_ctx.thread_name,
+                        logger,
+                        format!("Action error: {:?}", err),
+                        LogLevel::Error,
+                    );
+                    let action: Action = match player_ctx.algorithm.as_str() {
+                        "Tremeaux" => instructions::tremeaux_solver(
+                            &mut player_ctx.player,
+                            &mut player_ctx.graph,
+                        ),
+                        "Alian" => instructions::alian_solver(
+                            &mut player_ctx.player,
+                            &mut player_ctx.graph,
+                            &log_ctx.thread_name,
+                        ),
+                        _ => instructions::tremeaux_solver(
+                            &mut player_ctx.player,
+                            &mut player_ctx.graph,
+                        ),
+                    };
+
+                    send_message(stream, &Message::Action(action.clone()))?;
+                }
             },
 
             Message::MessageError(err) => {

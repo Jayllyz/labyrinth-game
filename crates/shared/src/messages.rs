@@ -82,6 +82,7 @@ pub enum ActionError {
     Blocked,
     InvalidChallengeSolution,
     SolveChallengeFirst,
+    CannotPassThroughOpponent,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

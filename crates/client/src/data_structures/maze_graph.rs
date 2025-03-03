@@ -85,6 +85,12 @@ impl MazeGraph {
         }
     }
 
+    pub fn update_cell_type(&mut self, position: Cell, cell_type: CellType) {
+        if let Some(cell) = self.cell_map.get_mut(&position) {
+            cell.cell_type = cell_type;
+        }
+    }
+
     pub fn update_walls(&mut self, position: Cell, walls: usize) {
         if let Some(cell) = self.cell_map.get_mut(&position) {
             cell.walls = max(cell.walls, walls);
