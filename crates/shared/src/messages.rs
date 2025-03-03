@@ -83,6 +83,7 @@ pub enum ActionError {
     InvalidChallengeSolution,
     SolveChallengeFirst,
     CannotPassThroughOpponent,
+    CannotPassThroughWall,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

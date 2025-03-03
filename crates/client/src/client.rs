@@ -230,6 +230,21 @@ impl GameClient {
                         None,
                     )?;
                 }
+                messages::ActionError::SolveChallengeFirst => {
+                    Self::log_handler(
+                        &log_ctx.tui_state,
+                        &log_ctx.thread_name,
+                        logger,
+                        "Solve the challenge first",
+                        LogLevel::Error,
+                    );
+                    Self::handle_secret_sum_modulo(
+                        stream,
+                        &challenge_ctx.secrets_sum.secrets,
+                        &challenge_ctx.secrets_sum.sum,
+                        None,
+                    )?;
+                }
                 _ => {
                     Self::log_handler(
                         &log_ctx.tui_state,
@@ -238,21 +253,11 @@ impl GameClient {
                         format!("Action error: {:?}", err),
                         LogLevel::Error,
                     );
-                    let action: Action = match player_ctx.algorithm.as_str() {
-                        "Tremeaux" => instructions::tremeaux_solver(
-                            &mut player_ctx.player,
-                            &mut player_ctx.graph,
-                        ),
-                        "Alian" => instructions::alian_solver(
-                            &mut player_ctx.player,
-                            &mut player_ctx.graph,
-                            &log_ctx.thread_name,
-                        ),
-                        _ => instructions::tremeaux_solver(
-                            &mut player_ctx.player,
-                            &mut player_ctx.graph,
-                        ),
-                    };
+                    let action: Action = instructions::alian_solver(
+                        &mut player_ctx.player,
+                        &mut player_ctx.graph,
+                        &log_ctx.thread_name,
+                    );
 
                     send_message(stream, &Message::Action(action.clone()))?;
                 }
