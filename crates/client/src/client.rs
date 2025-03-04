@@ -261,6 +261,8 @@ impl GameClient {
                         &log_ctx.thread_name,
                     );
 
+                    player_ctx.player.update_last_position();
+
                     send_message(stream, &Message::Action(action.clone()))?;
                 }
             },
