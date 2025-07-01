@@ -16,4 +16,4 @@ serde = { workspace = true, features = ["derive"] }
 shared = { path = "../shared" }
 clap = { workspace = true }
 ratatui = "0.29.0"
-crossterm = "0.28.1"
+crossterm = "0.29.0"
