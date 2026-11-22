@@ -124,7 +124,7 @@ impl GameClient {
                 Ok(registration_token)
             }
             Message::RegisterTeamResult(RegisterTeamResult::Err(err)) => {
-                Err(GameError::TeamRegistrationError(format!("{:?}", err)))
+                Err(GameError::TeamRegistrationError(format!("{err:?}")))
             }
             _ => Err(GameError::MessageError("Invalid registration response".into())),
         }
@@ -139,53 +139,50 @@ impl GameClient {
     ) -> GameResult<()> {
         let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries)?;
         let token = self.register_team(&mut stream)?;
-        let mut handles = Vec::with_capacity(num_agents as usize);
+        let (config, secrets, token) = (&self.config, &self.secrets, &token);
 
-        for i in 0..num_agents {
-            let config = self.config.clone();
-            let agent_token = token.clone();
-            let agent_name = agent_name(algorithm, i);
-            let secrets = Arc::clone(&self.secrets);
-            let tui_state = tui_state.clone();
+        thread::scope(|scope| {
+            let handles = (0..num_agents)
+                .map(|i| {
+                    let agent_name = agent_name(algorithm, i);
+                    let tui_state = tui_state.clone();
+                    thread::Builder::new().name(agent_name.clone()).spawn_scoped(
+                        scope,
+                        move || -> GameResult<()> {
+                            let mut stream =
+                                Self::connect_to_server(&config.server_addr, max_retries)?;
 
-            let handle = thread::Builder::new().name(agent_name.clone()).spawn(
-                move || -> GameResult<()> {
-                    let mut stream = Self::connect_to_server(&config.server_addr, max_retries)?;
+                            let mut player_ctx = PlayerContext {
+                                graph: MazeGraph::new(),
+                                player: Player::new(),
+                                algorithm,
+                                challenge_modulo: None,
+                                avoid: None,
+                                wall_follower: WallFollowerState::default(),
+                                saved_cells: Vec::new(),
+                                move_delay: config.move_delay,
+                            };
 
-                    let mut player_ctx = PlayerContext {
-                        graph: MazeGraph::new(),
-                        player: Player::new(),
-                        algorithm,
-                        challenge_modulo: None,
-                        avoid: None,
-                        wall_follower: WallFollowerState::default(),
-                        saved_cells: Vec::new(),
-                        move_delay: config.move_delay,
-                    };
+                            let log_ctx = LogContext { thread_name: agent_name.clone(), tui_state };
 
-                    let log_ctx = LogContext { thread_name: agent_name.clone(), tui_state };
+                            send_message(
+                                &mut stream,
+                                &Message::SubscribePlayer(SubscribePlayer {
+                                    name: agent_name,
+                                    registration_token: token.clone(),
+                                }),
+                            )?;
 
-                    send_message(
-                        &mut stream,
-                        &Message::SubscribePlayer(SubscribePlayer {
-                            name: agent_name,
-                            registration_token: agent_token,
-                        }),
-                    )?;
+                            Self::play(&mut stream, &mut player_ctx, &log_ctx, secrets)
+                        },
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
 
-                    Self::play(&mut stream, &mut player_ctx, &log_ctx, &secrets)
-                },
-            )?;
-
-            handles.push(handle);
-        }
-
-        handles
-            .into_iter()
-            .map(|handle| handle.join().map_err(|e| GameError::ThreadError(format!("{:?}", e)))?)
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(())
+            handles.into_iter().try_for_each(|handle| {
+                handle.join().map_err(|e| GameError::ThreadError(format!("{e:?}")))?
+            })
+        })
     }
 
     /// Plays until the server closes the connection, which it does once the agent reaches
@@ -229,7 +226,7 @@ impl GameClient {
                 &log_ctx.tui_state,
                 &log_ctx.thread_name,
                 logger,
-                format!("Received message: {:?}", message),
+                format!("Received message: {message:?}"),
                 LogLevel::Debug,
             );
         }
@@ -249,7 +246,7 @@ impl GameClient {
                     &log_ctx.tui_state,
                     &log_ctx.thread_name,
                     logger,
-                    format!("{:?}", value),
+                    format!("{value:?}"),
                     LogLevel::Debug,
                 );
 
@@ -267,7 +264,7 @@ impl GameClient {
                     &log_ctx.tui_state,
                     &log_ctx.thread_name,
                     logger,
-                    format!("Action error: {:?}", err),
+                    format!("Action error: {err:?}"),
                     level,
                 );
                 match err {
@@ -296,7 +293,7 @@ impl GameClient {
                     &log_ctx.tui_state,
                     &log_ctx.thread_name,
                     logger,
-                    format!("Server error: {:?}", err),
+                    format!("Server error: {err:?}"),
                     LogLevel::Error,
                 );
             }
@@ -305,7 +302,7 @@ impl GameClient {
                     &log_ctx.tui_state,
                     &log_ctx.thread_name,
                     logger,
-                    format!("Unhandled message: {:?}", message),
+                    format!("Unhandled message: {message:?}"),
                     LogLevel::Warning,
                 );
             }
@@ -342,10 +339,10 @@ impl GameClient {
                     &log_ctx.tui_state,
                     &log_ctx.thread_name,
                     logger,
-                    format!("Failed to subscribe: {:?}", err),
+                    format!("Failed to subscribe: {err:?}"),
                     LogLevel::Error,
                 );
-                Err(GameError::AgentSubscriptionError(format!("{:?}", err)))
+                Err(GameError::AgentSubscriptionError(format!("{err:?}")))
             }
         }
     }
@@ -357,7 +354,7 @@ impl GameClient {
         log_ctx: &LogContext,
     ) -> GameResult<()> {
         let radar_view = extract_data(&decode_base64(&view.0))
-            .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {}", e)))?;
+            .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {e}")))?;
 
         maze_to_graph(&radar_view, &player_ctx.player, &mut player_ctx.graph);
         player_ctx.save_state();
@@ -472,7 +469,7 @@ impl GameClient {
         match tui_state.as_ref() {
             Some(tui) => {
                 if let Ok(mut state) = tui.lock() {
-                    state.add_log(thread_name, message.into(), level)
+                    state.add_log(thread_name, message.into(), level);
                 }
             }
             None => match level {
@@ -530,7 +527,7 @@ mod tests {
             .into_iter()
             .map(|msg| match msg {
                 Message::Action(Action::SolveChallenge { answer }) => answer,
-                other => panic!("unexpected message: {:?}", other),
+                other => panic!("unexpected message: {other:?}"),
             })
             .collect()
     }

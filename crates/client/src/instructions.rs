@@ -90,7 +90,7 @@ pub fn alian_solver(
             if cell_type == CellType::ENEMY {
                 let five_millis: std::time::Duration = time::Duration::from_millis(500);
                 sleep(five_millis);
-                graph.update_cell_type(neighbor_position, CellType::NOTHING)
+                graph.update_cell_type(neighbor_position, CellType::NOTHING);
             }
             graph.update_cell_status(player_position, CellStatus::VISITED);
             graph.set_visited(player_position, thread_name);

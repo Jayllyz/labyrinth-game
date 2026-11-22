@@ -468,7 +468,7 @@ mod tests {
         rotate_left_90(&mut cells_left);
         rotate_left_90(&mut cells_left);
 
-        let mut cells_right = cells.clone();
+        let mut cells_right = cells;
         rotate_right_90(&mut cells_right);
         rotate_right_90(&mut cells_right);
 
@@ -503,7 +503,7 @@ mod tests {
 
         rotate_left_90(&mut cell_mask);
 
-        assert_eq!(cell_mask, expected_rotation)
+        assert_eq!(cell_mask, expected_rotation);
     }
 
     #[test]
@@ -534,7 +534,7 @@ mod tests {
 
         rotate_right_90(&mut cell_mask);
 
-        assert_eq!(cell_mask, expected_rotation)
+        assert_eq!(cell_mask, expected_rotation);
     }
 
     #[test]

@@ -13,6 +13,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 clap = { version = "4.6.9", features = ["derive", "color"] }
 rand = "0.10.4"
+thiserror = "2.0.21"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -73,6 +74,11 @@ str_split_at_newline = "warn"
 unnecessary_box_returns = "warn"
 unnecessary_join = "warn"
 unwrap_used = "deny"
+uninlined_format_args = "warn"
+manual_let_else = "warn"
+use_self = "warn"
+redundant_clone = "warn"
+semicolon_if_nothing_returned = "warn"
 
 [profile.release]
 # Configurations explicitly listed here for clarity.

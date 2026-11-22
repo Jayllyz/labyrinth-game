@@ -63,7 +63,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     group.bench_function("find_medium", |b| b.iter(|| decode_base64_find(black_box(medium_input))));
     group.bench_function("match_medium", |b| {
-        b.iter(|| decode_base64_match(black_box(medium_input)))
+        b.iter(|| decode_base64_match(black_box(medium_input)));
     });
 
     group.bench_function("find_large", |b| b.iter(|| decode_base64_find(black_box(large_input))));

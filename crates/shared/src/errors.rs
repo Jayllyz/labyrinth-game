@@ -1,44 +1,25 @@
 use crate::logger::Logger;
-use std::error::Error;
-use std::fmt;
 use std::io;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum GameError {
-    ConnectionError(io::Error),
+    #[error("Connection error: {0}")]
+    ConnectionError(#[from] io::Error),
+    #[error("Team registration error: {0}")]
     TeamRegistrationError(String),
+    #[error("Agent subscription error: {0}")]
     AgentSubscriptionError(String),
+    #[error("Message error: {0}")]
     MessageError(String),
+    #[error("Thread error: {0}")]
     ThreadError(String),
+    #[error("Serialization error: {0}")]
     SerializationError(String),
-}
-
-impl fmt::Display for GameError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            GameError::ConnectionError(err) => write!(f, "Connection error: {}", err),
-            GameError::TeamRegistrationError(msg) => write!(f, "Team registration error: {}", msg),
-            GameError::AgentSubscriptionError(msg) => {
-                write!(f, "Agent subscription error: {}", msg)
-            }
-            GameError::MessageError(msg) => write!(f, "Message error: {}", msg),
-            GameError::ThreadError(msg) => write!(f, "Thread error: {}", msg),
-            GameError::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
-        }
-    }
-}
-
-impl Error for GameError {}
-
-impl From<io::Error> for GameError {
-    fn from(err: io::Error) -> Self {
-        GameError::ConnectionError(err)
-    }
 }
 
 impl From<serde_json::Error> for GameError {
     fn from(err: serde_json::Error) -> Self {
-        GameError::SerializationError(err.to_string())
+        Self::SerializationError(err.to_string())
     }
 }
 
@@ -124,7 +105,7 @@ mod tests {
     #[test]
     fn test_error_debug_impl() {
         let error = GameError::MessageError("test error".to_string());
-        let debug_string = format!("{:?}", error);
+        let debug_string = format!("{error:?}");
         assert!(debug_string.contains("MessageError"));
         assert!(debug_string.contains("test error"));
     }

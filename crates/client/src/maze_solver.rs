@@ -54,11 +54,11 @@ pub fn bfs_shortest_path(maze: &Maze, print: PrintPathMode) -> Vec<Cell> {
             match print {
                 PrintPathMode::Visited => {
                     maze.print_visited(&visited_points);
-                    println!("Number of steps: {}", index);
+                    println!("Number of steps: {index}");
                 }
                 PrintPathMode::VisitedNumber => {
                     maze.print_visited_number(&visited_points);
-                    println!("Number of steps: {}", index);
+                    println!("Number of steps: {index}");
                 }
                 _ => {}
             }
@@ -141,11 +141,11 @@ pub fn a_star_shortest_path(maze: &Maze, print: PrintPathMode) -> Vec<Cell> {
             match print {
                 PrintPathMode::Visited => {
                     maze.print_visited(&visited_points);
-                    println!("Number of steps: {}", index);
+                    println!("Number of steps: {index}");
                 }
                 PrintPathMode::VisitedNumber => {
                     maze.print_visited_number(&visited_points);
-                    println!("Number of steps: {}", index);
+                    println!("Number of steps: {index}");
                 }
                 _ => {}
             }
