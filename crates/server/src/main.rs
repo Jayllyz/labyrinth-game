@@ -59,8 +59,9 @@ impl From<Generator> for GeneratorAlgorithm {
 
 fn parse_size(text: &str) -> Result<(usize, usize), String> {
     let (width, height) = text.split_once(',').ok_or("expected width,height")?;
-    let parse = |n: &str| n.trim().parse::<usize>().ok().filter(|&n| n > 0);
-    parse(width).zip(parse(height)).ok_or_else(|| "sizes must be positive numbers".to_string())
+    // Positions are i16, and much larger mazes would not fit in memory anyway.
+    let parse = |n: &str| n.trim().parse::<usize>().ok().filter(|n| (1..=1000).contains(n));
+    parse(width).zip(parse(height)).ok_or_else(|| "sizes must be between 1 and 1000".to_string())
 }
 
 fn main() {
@@ -103,6 +104,7 @@ mod tests {
         assert_eq!(args.maze, (12, 8));
         assert!(Args::try_parse_from(["test", "--maze", "12"]).is_err());
         assert!(Args::try_parse_from(["test", "--maze", "0,8"]).is_err());
+        assert!(Args::try_parse_from(["test", "--maze", "1001,8"]).is_err());
     }
 
     #[test]

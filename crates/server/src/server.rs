@@ -80,26 +80,23 @@ impl Match {
     /// Places a new player on a free cell, facing North like on the reference server.
     /// Places everyone in name order, so a seed gives each player the same cell whatever
     /// order they connected in.
-    fn start(&mut self, config: &ServerConfig) {
+    fn start(&mut self) {
         let mut waiting = std::mem::take(&mut self.waiting);
         waiting.sort();
         for (name, team) in waiting {
-            self.add_player(&name, &team, config);
+            self.add_player(&name, &team);
         }
         self.started = true;
     }
 
-    fn add_player(&mut self, name: &str, team: &str, config: &ServerConfig) -> usize {
+    fn add_player(&mut self, name: &str, team: &str) -> usize {
         let team = self.team_names.iter().position(|t| t == team).unwrap_or_else(|| {
             self.team_names.push(team.to_string());
             self.team_names.len() - 1
         });
-        let position = loop {
-            let cell = random_cell(&mut self.rng, config);
-            if self.game.is_free(cell) {
-                break cell;
-            }
-        };
+        // Subscriptions stop once the maze is full, so a free cell is always left.
+        let free = self.game.free_cells();
+        let position = free[self.rng.random_range(0..free.len())];
         let id = self.game.add_player(team, position, Heading::North);
         self.players.insert(name.to_string(), id);
         id
@@ -177,6 +174,10 @@ impl GameServer {
         Ok(())
     }
 
+    fn has_started(&self) -> bool {
+        self.lock_match().map_or(true, |game| game.started)
+    }
+
     /// How many players have reached the exit so far.
     pub fn players_out(&self) -> usize {
         self.lock_match().map_or(0, |game| game.game.players().filter(|p| p.exited).count())
@@ -188,19 +189,19 @@ impl GameServer {
 
     /// Puts the player on the board, and starts the game once every team is full.
     fn join_game(&self, player: &Client) -> GameResult<()> {
+        // Teams stay locked until the start decision, so no registration slips in between.
         let teams = self.teams.lock().map_err(|e| GameError::ThreadError(e.to_string()))?;
         let team = self.find_team_by_token(&teams, &player.registration_token).unwrap_or_default();
         let full = |team: &Teams| team.players.len() == self.config.max_players_per_team as usize;
         let all_full = !teams.is_empty() && teams.values().all(full);
         let registered: usize = teams.values().map(|team| team.players.len()).sum();
-        drop(teams);
 
         let mut game = self.lock_match()?;
         game.waiting.push((player.player_name.clone(), team));
         // A teammate may be registered without having joined yet; starting before it does
         // would leave it off the board.
         if !game.started && all_full && game.waiting.len() == registered {
-            game.start(&self.config);
+            game.start();
             info!("All teams are full, the game starts");
             self.game.1.notify_all();
         }
@@ -209,6 +210,19 @@ impl GameServer {
 
     /// Runs a subscribed player's game until it reaches the exit or leaves.
     fn play(&self, stream: &mut TcpStream, name: &str) -> GameResult<()> {
+        let outcome = self.play_turns(stream, name);
+        if !matches!(outcome, Ok(true)) {
+            let mut game = self.lock_match()?;
+            if let Some(&id) = game.players.get(name) {
+                game.game.leave(id);
+            }
+            info!("{name} left the game");
+        }
+        outcome.map(|_| ())
+    }
+
+    /// Plays turns; true once the player reaches the exit.
+    fn play_turns(&self, stream: &mut TcpStream, name: &str) -> GameResult<bool> {
         let id = {
             let mut game = self.lock_match()?;
             while !game.started {
@@ -225,6 +239,10 @@ impl GameServer {
         while let Ok(message) = receive_message(stream) {
             let Message::Action(action) = message else {
                 warn!("{name} sent {message:?} during the game");
+                let error =
+                    MessageError { message: "Only actions are accepted during the game".into() };
+                send_message(stream, &Message::MessageError(error))?;
+                send_message(stream, &self.lock_match()?.view(id))?;
                 continue;
             };
             let (replies, exited, moves) = {
@@ -240,11 +258,10 @@ impl GameServer {
             }
             if exited {
                 info!("{name} found the exit in {moves} moves");
-                return Ok(());
+                return Ok(true);
             }
         }
-        info!("{name} left the game");
-        Ok(())
+        Ok(false)
     }
 
     fn register_client(&self, player: Client) -> SubscribePlayerResult {
@@ -266,6 +283,12 @@ impl GameServer {
 
         if clients.contains_key(&player.player_name) {
             return SubscribePlayerResult::Err(RegistrationError::AlreadyRegistered);
+        }
+
+        // Every player needs a start cell other than the exit, and the board is set once
+        // the game starts.
+        if clients.len() + 1 >= self.config.width * self.config.height || self.has_started() {
+            return SubscribePlayerResult::Err(RegistrationError::TooManyPlayers);
         }
 
         let Some(team_name) = self.find_team_by_token(&teams, &player.registration_token) else {
@@ -300,6 +323,9 @@ impl GameServer {
 
         if teams.contains_key(&team.team_name) {
             return Err(RegistrationError::TeamAlreadyRegistered);
+        }
+        if self.has_started() {
+            return Err(RegistrationError::TooManyPlayers);
         }
 
         let token = self.generate_token();
@@ -365,12 +391,16 @@ impl GameServer {
                             let name = player.player_name.clone();
                             let result = self.register_client(player.clone());
                             let joined = matches!(result, SubscribePlayerResult::Ok);
+                            // Joined before answering: a registered player that never joins
+                            // would hold the start back forever.
+                            if joined {
+                                self.join_game(&player)?;
+                            }
                             send_message(&mut stream, &Message::SubscribePlayerResult(result))?;
                             if !joined {
                                 continue;
                             }
                             // From here on this connection is the player's.
-                            self.join_game(&player)?;
                             return self.play(&mut stream, &name);
                         }
                         _ => {
@@ -435,6 +465,46 @@ mod tests {
             registration_token: String::new(),
             max_players: 3,
         }
+    }
+
+    fn small_server(width: usize, height: usize, team_size: u8) -> GameServer {
+        GameServer::new(ServerConfig {
+            width,
+            height,
+            max_players_per_team: team_size,
+            ..ServerConfig::default()
+        })
+    }
+
+    #[test]
+    fn test_subscription_refused_when_the_maze_has_no_free_cell() {
+        // Two cells, one of them the exit: room for a single player.
+        let server = small_server(1, 2, 2);
+        let token = server.register_team(create_test_team("A")).unwrap();
+
+        assert!(matches!(
+            server.register_client(create_test_client("a", &token)),
+            SubscribePlayerResult::Ok
+        ));
+        assert!(matches!(
+            server.register_client(create_test_client("b", &token)),
+            SubscribePlayerResult::Err(RegistrationError::TooManyPlayers)
+        ));
+    }
+
+    #[test]
+    fn test_nobody_joins_once_the_game_started() {
+        let server = small_server(8, 8, 1);
+        let token = server.register_team(create_test_team("A")).unwrap();
+        let player = create_test_client("a", &token);
+        server.register_client(player.clone());
+        server.join_game(&player).unwrap();
+
+        assert!(server.register_team(create_test_team("B")).is_err());
+        assert!(matches!(
+            server.register_client(create_test_client("a2", &token)),
+            SubscribePlayerResult::Err(_)
+        ));
     }
 
     #[test]
