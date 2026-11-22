@@ -1,4 +1,4 @@
-use crate::instructions;
+use crate::instructions::{self, Algorithm};
 use crate::maze_parser::maze_to_graph;
 use crate::tui::GameState;
 use crate::{data_structures::maze_graph::MazeGraph, maze_parser::Player};
@@ -38,7 +38,7 @@ struct SecretSumModulo {
 struct PlayerContext {
     graph: MazeGraph,
     player: Player,
-    algorithm: String,
+    algorithm: Algorithm,
 }
 
 struct LogContext {
@@ -99,7 +99,7 @@ impl GameClient {
         max_retries: u8,
         num_agents: u8,
         tui_state: Option<Arc<Mutex<GameState>>>,
-        algorithm: String,
+        algorithm: Algorithm,
     ) -> GameResult<()> {
         let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries)?;
         let token = self.register_team(&mut stream)?;
@@ -114,7 +114,6 @@ impl GameClient {
                 secrets: Arc::clone(&self.challenge_secret_sum.secrets),
             };
             let tui_state = tui_state.clone();
-            let algorithm = algorithm.clone();
 
             let handle = thread::Builder::new().name(agent_name.clone()).spawn(
                 move || -> GameResult<()> {
@@ -337,17 +336,18 @@ impl GameClient {
 
         maze_to_graph(&radar_view, &player_ctx.player, &mut player_ctx.graph);
 
-        let action: Action = match player_ctx.algorithm.as_str() {
-            "Tremeaux" => {
+        let action: Action = match player_ctx.algorithm {
+            Algorithm::Tremeaux => {
                 instructions::tremeaux_solver(&mut player_ctx.player, &mut player_ctx.graph)
             }
-            "RightHand" => instructions::right_hand_solver(&radar_view, &mut player_ctx.player),
-            "Alian" => instructions::alian_solver(
+            Algorithm::WallFollower => {
+                instructions::right_hand_solver(&radar_view, &mut player_ctx.player)
+            }
+            Algorithm::Alian => instructions::alian_solver(
                 &mut player_ctx.player,
                 &mut player_ctx.graph,
                 &log_ctx.thread_name,
             ),
-            _ => instructions::tremeaux_solver(&mut player_ctx.player, &mut player_ctx.graph),
         };
 
         player_ctx.player.update_last_position();
@@ -436,7 +436,7 @@ mod tests {
         let game_ctx = PlayerContext {
             graph: MazeGraph::new(),
             player: Player::new(),
-            algorithm: "Tremeaux".to_string(),
+            algorithm: Algorithm::Tremeaux,
         };
 
         let log_ctx = LogContext { thread_name, tui_state: None };
@@ -651,7 +651,7 @@ mod tests {
         let config = ClientConfig { server_addr: addr, team_name: "team".to_string() };
         let client = GameClient::new(config);
 
-        let result = client.run(1, 1, None, "Tremeaux".to_string());
+        let result = client.run(1, 1, None, Algorithm::Tremeaux);
         assert!(result.is_ok());
     }
 }
