@@ -1,4 +1,4 @@
-use crate::instructions::{self, Algorithm};
+use crate::instructions::{self, Algorithm, WallFollowerState};
 use crate::maze_parser::maze_to_graph;
 use crate::tui::GameState;
 use crate::{
@@ -48,6 +48,7 @@ struct PlayerContext {
     blocked_by_opponent: Option<Cell>,
     /// Cell an opponent recently held and turns left to route around it.
     avoid: Option<(Cell, u8)>,
+    wall_follower: WallFollowerState,
     /// Cells the solver may change while choosing a move, restored if the server rejects it.
     saved_cells: Vec<(Cell, MazeCell)>,
 }
@@ -147,6 +148,7 @@ impl GameClient {
                         challenge_modulo: None,
                         blocked_by_opponent: None,
                         avoid: None,
+                        wall_follower: WallFollowerState::default(),
                         saved_cells: Vec::new(),
                     };
 
@@ -364,9 +366,13 @@ impl GameClient {
                     &mut player_ctx.graph,
                     avoid,
                 ),
-                Algorithm::WallFollower => {
-                    instructions::right_hand_solver(&radar_view, &mut player_ctx.player)
-                }
+                Algorithm::WallFollower => instructions::wall_follower_solver(
+                    &radar_view,
+                    &mut player_ctx.player,
+                    &mut player_ctx.graph,
+                    &mut player_ctx.wall_follower,
+                    avoid,
+                ),
                 Algorithm::Alian => instructions::alian_solver(
                     &mut player_ctx.player,
                     &mut player_ctx.graph,
@@ -462,6 +468,7 @@ mod tests {
             challenge_modulo: None,
             blocked_by_opponent: None,
             avoid: None,
+            wall_follower: WallFollowerState::default(),
             saved_cells: Vec::new(),
         };
 

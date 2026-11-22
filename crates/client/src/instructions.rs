@@ -335,6 +335,32 @@ pub fn yield_to_opponent(
     Some(player.step_toward(&retreat))
 }
 
+/// Where a wall follower has already been, to notice when it circles a loop of walls.
+#[derive(Default)]
+pub struct WallFollowerState {
+    seen: HashSet<(Cell, Direction)>,
+    looping: bool,
+}
+
+/// Follows the right-hand wall until the agent is back on a cell facing the same way.
+/// In a maze with loops that means it circles walls not connected to the exit forever,
+/// so it explores with Trémaux from then on.
+pub fn wall_follower_solver(
+    radar_view: &Radar,
+    player: &mut Player,
+    graph: &mut MazeGraph,
+    state: &mut WallFollowerState,
+    avoid: Option<Cell>,
+) -> messages::Action {
+    if !state.looping && !state.seen.insert((player.position, player.direction.clone())) {
+        state.looping = true;
+    }
+    if state.looping {
+        return tremeaux_solver(player, graph, avoid);
+    }
+    right_hand_solver(radar_view, player)
+}
+
 pub fn right_hand_solver(radar_view: &Radar, player: &mut Player) -> messages::Action {
     let messages;
 
@@ -599,6 +625,19 @@ mod tests {
         graph.add_neighbor(&unexplored, &SIDE);
 
         tremeaux_solver(&mut player, &mut graph, Some(BLOCKED));
+
+        assert_eq!(player.position, SIDE);
+    }
+
+    #[test]
+    fn test_wall_follower_switches_to_tremeaux_when_back_where_it_was() {
+        let (mut player, mut graph) = graph_around_player(&[SIDE], BEHIND);
+        let mut state = WallFollowerState::default();
+        state.seen.insert((CURRENT, player.direction.clone()));
+        let no_walls_known =
+            Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() };
+
+        wall_follower_solver(&no_walls_known, &mut player, &mut graph, &mut state, None);
 
         assert_eq!(player.position, SIDE);
     }
