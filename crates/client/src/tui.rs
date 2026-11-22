@@ -66,6 +66,10 @@ impl GameState {
         }
     }
 
+    pub fn has_found_exit(&self, agent: &str) -> bool {
+        self.agents.get(agent).is_some_and(|state| state.found_exit)
+    }
+
     pub fn register_agent(&mut self, name: String) {
         self.agents.insert(name, AgentState::new());
     }

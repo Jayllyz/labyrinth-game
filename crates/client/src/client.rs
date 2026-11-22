@@ -18,7 +18,7 @@ use shared::{
 };
 use std::{
     collections::HashMap,
-    io::Write,
+    io::{Read, Write},
     net::TcpStream,
     sync::{Arc, Mutex},
     thread::{self, ThreadId},
@@ -173,16 +173,7 @@ impl GameClient {
                         }),
                     )?;
 
-                    while let Ok(msg) = receive_message(&mut stream) {
-                        Self::handle_server_message(
-                            &mut stream,
-                            msg,
-                            &mut player_ctx,
-                            &log_ctx,
-                            &secrets,
-                        )?;
-                    }
-                    Ok(())
+                    Self::play(&mut stream, &mut player_ctx, &log_ctx, &secrets)
                 },
             )?;
 
@@ -194,6 +185,33 @@ impl GameClient {
             .map(|handle| handle.join().map_err(|e| GameError::ThreadError(format!("{:?}", e)))?)
             .collect::<Result<Vec<_>, _>>()?;
 
+        Ok(())
+    }
+
+    /// Plays until the server closes the connection, which it does once the agent reaches
+    /// the exit. Guessing the win from the radar misses exits other players stand on.
+    fn play(
+        stream: &mut (impl Read + Write),
+        player_ctx: &mut PlayerContext,
+        log_ctx: &LogContext,
+        secrets: &TeamSecrets,
+    ) -> GameResult<()> {
+        while let Ok(msg) = receive_message(stream) {
+            Self::handle_server_message(stream, msg, player_ctx, log_ctx, secrets)?;
+        }
+
+        Self::log_handler(
+            &log_ctx.tui_state,
+            &log_ctx.thread_name,
+            Logger::get_instance(),
+            "Found the exit!",
+            LogLevel::Info,
+        );
+        if let Some(tui) = &log_ctx.tui_state
+            && let Ok(mut state) = tui.lock()
+        {
+            state.mark_exit_found(&log_ctx.thread_name);
+        }
         Ok(())
     }
 
@@ -221,21 +239,7 @@ impl GameClient {
                 Self::handle_subscription_result(result, log_ctx)?;
             }
             Message::RadarView(view) => {
-                if Self::handle_radar_view(stream, view, player_ctx, log_ctx)? {
-                    Self::log_handler(
-                        &log_ctx.tui_state,
-                        &log_ctx.thread_name,
-                        logger,
-                        "Found the exit!",
-                        LogLevel::Info,
-                    );
-                    if let Some(tui) = &log_ctx.tui_state
-                        && let Ok(mut state) = tui.lock()
-                    {
-                        state.mark_exit_found(&log_ctx.thread_name);
-                    }
-                    return Ok(());
-                }
+                Self::handle_radar_view(stream, view, player_ctx, log_ctx)?;
             }
             Message::Hint(hint) => {
                 Self::handle_hint(hint, secrets);
@@ -351,7 +355,7 @@ impl GameClient {
         view: messages::RadarView,
         player_ctx: &mut PlayerContext,
         log_ctx: &LogContext,
-    ) -> GameResult<bool> {
+    ) -> GameResult<()> {
         let radar_view = extract_data(&decode_base64(&view.0))
             .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {}", e)))?;
 
@@ -396,9 +400,7 @@ impl GameClient {
         };
 
         thread::sleep(player_ctx.move_delay);
-        send_message(stream, &Message::Action(action.clone()))?;
-
-        Ok(instructions::check_win_condition(&radar_view.cells, action))
+        send_message(stream, &Message::Action(action))
     }
 
     fn handle_hint(hint: Hint, secrets: &TeamSecrets) {
@@ -583,6 +585,19 @@ mod tests {
 
         assert_eq!(game_ctx.player.position, current);
         assert_eq!(game_ctx.graph.get_cell_status(current), CellStatus::VISITED);
+    }
+
+    #[test]
+    fn test_agent_found_the_exit_when_server_closes_connection() {
+        let (mut game_ctx, mut log_ctx, secrets) = create_test_contexts("Player1".to_string());
+        let tui = Arc::new(Mutex::new(GameState::new()));
+        tui.lock().unwrap().register_agent("Player1".to_string());
+        log_ctx.tui_state = Some(Arc::clone(&tui));
+        let mut closed_stream = std::io::Cursor::new(Vec::new());
+
+        GameClient::play(&mut closed_stream, &mut game_ctx, &log_ctx, &secrets).unwrap();
+
+        assert!(tui.lock().unwrap().has_found_exit("Player1"));
     }
 
     #[test]

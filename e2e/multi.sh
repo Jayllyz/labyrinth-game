@@ -35,8 +35,9 @@ SERVER_ARGS=(run --port "$PORT" --gui websocket)
 "$SERVER" "${SERVER_ARGS[@]}" > "$LOG" 2>&1 &
 SERVER_PID=$!
 trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+# nc tries IPv6 too: the server listens on localhost, which can resolve to ::1 only.
 for _ in $(seq 50); do
-  (echo > "/dev/tcp/127.0.0.1/$PORT") 2>/dev/null && break
+  nc -z localhost "$PORT" 2>/dev/null && break
   sleep 0.1
 done
 
@@ -49,9 +50,8 @@ for algorithm in "${ALGORITHMS[@]}"; do
   CLIENT_PIDS+=($!)
 done
 if [[ -n "$TUI" ]]; then
-  # --foreground keeps the TUI in the terminal's process group so it can read keys.
-  timeout --foreground "$TIMEOUT" "$CLIENT" --port "$PORT" --team "$TUI" --algorithm "$TUI" --tui \
-    --move-delay "$MOVE_DELAY" || true
+  # No timeout: killing the TUI skips its terminal cleanup. Quit it with q.
+  "$CLIENT" --port "$PORT" --team "$TUI" --algorithm "$TUI" --tui --move-delay "$MOVE_DELAY" || true
 fi
 wait "${CLIENT_PIDS[@]}" || true
 
