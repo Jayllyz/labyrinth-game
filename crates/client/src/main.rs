@@ -1,9 +1,8 @@
 use clap::Parser;
 use client::client::{ClientConfig, GameClient, agent_name};
 use client::instructions::Algorithm;
-use client::tui;
+use client::tui::{self, AgentEvent};
 use shared::logger::Logger;
-use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Parser, Debug)]
@@ -84,13 +83,10 @@ fn main() {
     let client = GameClient::new(config);
 
     if args.tui {
-        let mut tui = tui::Tui::new(args.refresh_rate).expect("Failed to initialize TUI.");
-        let tui_state = tui.get_state();
-
-        if let Ok(mut state) = tui_state.lock() {
-            for i in 0..args.players {
-                state.register_agent(agent_name(args.algorithm, i));
-            }
+        let (mut tui, events) =
+            tui::Tui::new(args.refresh_rate).expect("Failed to initialize TUI.");
+        for i in 0..args.players {
+            tui.register_agent(agent_name(args.algorithm, i));
         }
 
         tui.enter().expect("Failed to enter TUI.");
@@ -101,16 +97,14 @@ fn main() {
             }
         });
 
-        if let Err(e) =
-            client.run(args.retries, args.players, Some(Arc::clone(&tui_state)), args.algorithm)
+        if let Err(e) = client.run(args.retries, args.players, Some(events.clone()), args.algorithm)
         {
             e.log_error(logger);
             std::process::exit(1);
         }
 
-        if let Ok(mut state) = tui_state.lock() {
-            state.mark_finished();
-        }
+        // Fails only if the user already quit the TUI.
+        let _ = events.send(AgentEvent::Finished);
 
         if let Err(e) = tui_handle.join() {
             if let Some(error_str) = e.downcast_ref::<String>() {
