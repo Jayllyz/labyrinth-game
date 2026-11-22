@@ -1,5 +1,6 @@
 use clap::Parser;
 use client::client::{ClientConfig, GameClient};
+use client::instructions::Algorithm;
 use client::tui;
 use shared::logger::Logger;
 
@@ -48,10 +49,10 @@ struct Args {
     #[arg(
         long,
         help = "Select the used algorithm by the agents.",
-        default_value = "Tremeaux",
-        value_parser = ["Tremeaux", "WallFollower", "Alian"]
+        value_enum,
+        default_value_t = Algorithm::Tremeaux
     )]
-    algorithm: String,
+    algorithm: Algorithm,
 }
 
 fn main() {
@@ -111,6 +112,18 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_algorithm_arg_maps_to_matching_solver() {
+        for (name, expected) in [
+            ("Tremeaux", Algorithm::Tremeaux),
+            ("WallFollower", Algorithm::WallFollower),
+            ("Alian", Algorithm::Alian),
+        ] {
+            let args = Args::parse_from(["test", "--algorithm", name]);
+            assert_eq!(args.algorithm, expected);
+        }
+    }
 
     #[test]
     fn test_default_args() {

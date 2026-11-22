@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{
     io::{self, Read, Write},
-    net::{SocketAddr, TcpStream},
+    net::SocketAddr,
 };
 
 use crate::{
@@ -120,7 +120,7 @@ pub struct Teams {
     pub max_players: u8,
 }
 
-pub fn receive_message(stream: &mut TcpStream) -> GameResult<Message> {
+pub fn receive_message(stream: &mut impl Read) -> GameResult<Message> {
     let mut buf_len = [0u8; 4];
     stream.read_exact(&mut buf_len).map_err(|e| match e.kind() {
         io::ErrorKind::UnexpectedEof => GameError::MessageError("Incomplete message length".into()),
@@ -144,7 +144,7 @@ pub fn receive_message(stream: &mut TcpStream) -> GameResult<Message> {
     serde_json::from_str(&str).map_err(|e| GameError::MessageError(format!("Invalid JSON: {}", e)))
 }
 
-pub fn send_message(stream: &mut TcpStream, msg: &Message) -> GameResult<()> {
+pub fn send_message(stream: &mut impl Write, msg: &Message) -> GameResult<()> {
     let json =
         serde_json::to_string(msg).map_err(|e| GameError::SerializationError(e.to_string()))?;
 
@@ -165,6 +165,7 @@ pub fn send_message(stream: &mut TcpStream, msg: &Message) -> GameResult<()> {
 mod tests {
     use super::*;
     use serde_json;
+    use std::io::Cursor;
 
     #[test]
     fn test_all_messages() {
@@ -187,12 +188,53 @@ mod tests {
         for msg in messages {
             let serialized = serde_json::to_string(&msg).unwrap();
             let deserialized: Message = serde_json::from_str(&serialized).unwrap();
-            matches!(deserialized, |Message::RegisterTeam(_)| Message::SubscribePlayer(_)
-                | Message::SubscribePlayerResult(_)
-                | Message::RadarView(_)
-                | Message::Action(_)
-                | Message::ActionError(_)
-                | Message::MessageError(_));
+            assert_eq!(serde_json::to_string(&deserialized).unwrap(), serialized);
         }
+    }
+
+    fn frame(len: u32, body: &[u8]) -> Cursor<Vec<u8>> {
+        let mut bytes = len.to_le_bytes().to_vec();
+        bytes.extend_from_slice(body);
+        Cursor::new(bytes)
+    }
+
+    #[test]
+    fn test_send_then_receive_round_trips() {
+        let msg = Message::Action(Action::MoveTo(Direction::Left));
+        let mut buf = Vec::new();
+        send_message(&mut buf, &msg).unwrap();
+
+        let json = serde_json::to_string(&msg).unwrap();
+        assert_eq!(&buf[..4], &(json.len() as u32).to_le_bytes());
+
+        let received = receive_message(&mut Cursor::new(buf)).unwrap();
+        assert_eq!(serde_json::to_string(&received).unwrap(), json);
+    }
+
+    #[test]
+    fn test_receive_rejects_oversized_message() {
+        let err = receive_message(&mut frame(1024 * 1024 + 1, b"")).unwrap_err();
+        assert!(matches!(err, GameError::MessageError(m) if m == "Message too large"));
+    }
+
+    #[test]
+    fn test_receive_rejects_truncated_length() {
+        let err = receive_message(&mut Cursor::new(vec![1, 0])).unwrap_err();
+        assert!(matches!(err, GameError::MessageError(m) if m == "Incomplete message length"));
+    }
+
+    #[test]
+    fn test_receive_rejects_truncated_body() {
+        let err = receive_message(&mut frame(10, b"{}")).unwrap_err();
+        assert!(matches!(err, GameError::ConnectionError(_)));
+    }
+
+    #[test]
+    fn test_receive_rejects_invalid_utf8_and_json() {
+        let err = receive_message(&mut frame(2, &[0xff, 0xfe])).unwrap_err();
+        assert!(matches!(err, GameError::MessageError(m) if m.starts_with("Invalid UTF-8")));
+
+        let err = receive_message(&mut frame(3, b"{x}")).unwrap_err();
+        assert!(matches!(err, GameError::MessageError(m) if m.starts_with("Invalid JSON")));
     }
 }

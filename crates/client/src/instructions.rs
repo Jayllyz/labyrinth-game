@@ -7,6 +7,14 @@ use shared::radar::{CellType, Passages, Radar};
 use std::collections::HashMap;
 use std::thread::sleep;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+#[value(rename_all = "PascalCase")]
+pub enum Algorithm {
+    Tremeaux,
+    WallFollower,
+    Alian,
+}
+
 // TODO:
 // [X] For each currently visited maze node, there is occupied flag is set to true so that other agents know they cannot
 // go there.

@@ -1,9 +1,9 @@
-FROM rust:1-slim AS base
+FROM rust:1.100-slim-trixie AS base
 WORKDIR /app
 COPY . .
 RUN cargo build -p client --release --bin client
 
-FROM debian:stable-slim AS prod
+FROM debian:trixie-slim AS prod
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -15,7 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libegl1 \
     mesa-vulkan-drivers \
     libgl1-mesa-dri \
-    libgl1-mesa-glx \
+    libgl1 \
+    libglx-mesa0 \
     mesa-utils \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
