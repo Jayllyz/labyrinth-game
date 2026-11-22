@@ -1,5 +1,5 @@
 use crate::maze::{Cell, Maze, PositionType};
-use rand::{Rng, SeedableRng, rngs::StdRng, seq::IndexedMutRandom};
+use rand::{RngExt, SeedableRng, rngs::StdRng, seq::IndexedMutRandom};
 
 /// Generates a maze using the Sidewinder algorithm.
 ///

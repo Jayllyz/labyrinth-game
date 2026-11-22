@@ -79,6 +79,18 @@ pub struct Tui {
     refresh_rate: u64,
 }
 
+#[cfg(not(test))]
+fn backend_err(e: io::Error) -> io::Error {
+    e
+}
+
+#[cfg(test)]
+fn backend_err(
+    e: <ratatui::backend::TestBackend as ratatui::backend::Backend>::Error,
+) -> io::Error {
+    match e {}
+}
+
 #[cfg(test)]
 pub struct Tui {
     terminal: Terminal<ratatui::backend::TestBackend>,
@@ -96,7 +108,7 @@ impl Tui {
 
     #[cfg(test)]
     pub fn new(refresh_rate: u64) -> Result<Self, std::io::Error> {
-        let terminal = Terminal::new(ratatui::backend::TestBackend::new(10, 10))?;
+        let Ok(terminal) = Terminal::new(ratatui::backend::TestBackend::new(10, 10));
         let state = Arc::new(Mutex::new(GameState::new()));
         Ok(Self { terminal, state, refresh_rate })
     }
@@ -139,27 +151,27 @@ impl Tui {
                 last_draw = Instant::now();
             }
 
-            if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    if let KeyCode::Char('q') = key.code {
-                        self.exit()?;
-                        break;
-                    }
+            if event::poll(Duration::from_millis(100))?
+                && let Event::Key(key) = event::read()?
+            {
+                if let KeyCode::Char('q') = key.code {
+                    self.exit()?;
+                    break;
+                }
 
-                    let mut state = match self.state.lock() {
-                        Ok(state) => state,
-                        Err(_) => continue,
-                    };
-                    let agent_count = state.agents.len();
-                    match key.code {
-                        KeyCode::Right => {
-                            Self::select_agent_increment(&mut state, agent_count);
-                        }
-                        KeyCode::Left => {
-                            Self::select_agent_decrement(&mut state, agent_count);
-                        }
-                        _ => {}
+                let mut state = match self.state.lock() {
+                    Ok(state) => state,
+                    Err(_) => continue,
+                };
+                let agent_count = state.agents.len();
+                match key.code {
+                    KeyCode::Right => {
+                        Self::select_agent_increment(&mut state, agent_count);
                     }
+                    KeyCode::Left => {
+                        Self::select_agent_decrement(&mut state, agent_count);
+                    }
+                    _ => {}
                 }
             }
         }
@@ -183,7 +195,7 @@ impl Tui {
     }
 
     fn draw(&mut self) -> io::Result<()> {
-        let terminal_size = self.terminal.size()?;
+        let terminal_size = self.terminal.size().map_err(backend_err)?;
         let area = ratatui::layout::Rect::new(0, 0, terminal_size.width, terminal_size.height);
 
         let full_layout = Layout::default()
@@ -201,10 +213,7 @@ impl Tui {
         let view_height = (maze_area.height as i16).saturating_sub(2);
         let view_width = (maze_area.width as i16).saturating_sub(4);
 
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Failed to lock state"))?;
+        let state = self.state.lock().map_err(|_| io::Error::other("Failed to lock state"))?;
         let agent_names: Vec<String> = state.agents.keys().cloned().collect();
         let selected_tab = state.selected_tab;
 
@@ -228,74 +237,83 @@ impl Tui {
 
         drop(state);
 
-        self.terminal.draw(|f| {
-            let size = f.area();
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .margin(1)
-                .constraints([Constraint::Length(3), Constraint::Length(3), Constraint::Min(10)])
-                .split(size);
+        self.terminal
+            .draw(|f| {
+                let size = f.area();
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .margin(1)
+                    .constraints([
+                        Constraint::Length(3),
+                        Constraint::Length(3),
+                        Constraint::Min(10),
+                    ])
+                    .split(size);
 
-            let tabs = Tabs::new(
-                agent_names
-                    .iter()
-                    .enumerate()
-                    .map(|(i, name)| {
-                        if i == selected_tab {
-                            Line::from(vec![Span::styled(
-                                name.trim(),
-                                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                            )])
-                        } else {
-                            Line::from(vec![Span::styled(name, Style::default().fg(Color::Green))])
-                        }
-                    })
-                    .collect::<Vec<_>>(),
-            )
-            .block(Block::default().borders(Borders::ALL).title("Agents"))
-            .select(selected_tab);
+                let tabs = Tabs::new(
+                    agent_names
+                        .iter()
+                        .enumerate()
+                        .map(|(i, name)| {
+                            if i == selected_tab {
+                                Line::from(vec![Span::styled(
+                                    name.trim(),
+                                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                                )])
+                            } else {
+                                Line::from(vec![Span::styled(
+                                    name,
+                                    Style::default().fg(Color::Green),
+                                )])
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .block(Block::default().borders(Borders::ALL).title("Agents"))
+                .select(selected_tab);
 
-            f.render_widget(tabs, chunks[0]);
+                f.render_widget(tabs, chunks[0]);
 
-            if let Some((stats, logs)) = agent_data {
-                let stats_widget = Paragraph::new(stats)
-                    .block(Block::default().borders(Borders::ALL).title("Statistics"));
-                f.render_widget(stats_widget, chunks[1]);
+                if let Some((stats, logs)) = agent_data {
+                    let stats_widget = Paragraph::new(stats)
+                        .block(Block::default().borders(Borders::ALL).title("Statistics"));
+                    f.render_widget(stats_widget, chunks[1]);
 
-                let content_chunks = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
-                    .split(chunks[2]);
+                    let content_chunks = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+                        .split(chunks[2]);
 
-                let maze_widget = Paragraph::new(maze_viz)
-                    .block(Block::default().borders(Borders::ALL).title("Maze"));
-                f.render_widget(maze_widget, content_chunks[0]);
+                    let maze_widget = Paragraph::new(maze_viz)
+                        .block(Block::default().borders(Borders::ALL).title("Maze"));
+                    f.render_widget(maze_widget, content_chunks[0]);
 
-                let log_height = content_chunks[1].height.saturating_sub(2) as usize;
-                let log_lines: Vec<Line> = logs
-                    .iter()
-                    .rev()
-                    .take(log_height)
-                    .map(|(msg, level)| {
-                        let (color, prefix) = match level {
-                            LogLevel::Info => (Color::Green, "INFO "),
-                            LogLevel::Debug => (Color::Blue, "DEBUG"),
-                            LogLevel::Warning => (Color::Yellow, "WARN "),
-                            LogLevel::Error => (Color::Red, "ERROR"),
-                        };
-                        Line::from(vec![
-                            Span::styled(prefix, Style::default().fg(color)),
-                            Span::raw(" │ "),
-                            Span::styled(msg, Style::default().fg(Color::White)),
-                        ])
-                    })
-                    .collect();
+                    let log_height = content_chunks[1].height.saturating_sub(2) as usize;
+                    let log_lines: Vec<Line> = logs
+                        .iter()
+                        .rev()
+                        .take(log_height)
+                        .map(|(msg, level)| {
+                            let (color, prefix) = match level {
+                                LogLevel::Info => (Color::Green, "INFO "),
+                                LogLevel::Debug => (Color::Blue, "DEBUG"),
+                                LogLevel::Warning => (Color::Yellow, "WARN "),
+                                LogLevel::Error => (Color::Red, "ERROR"),
+                            };
+                            Line::from(vec![
+                                Span::styled(prefix, Style::default().fg(color)),
+                                Span::raw(" │ "),
+                                Span::styled(msg, Style::default().fg(Color::White)),
+                            ])
+                        })
+                        .collect();
 
-                let logs_widget = Paragraph::new(log_lines)
-                    .block(Block::default().borders(Borders::ALL).title("Logs"));
-                f.render_widget(logs_widget, content_chunks[1]);
-            }
-        })?;
+                    let logs_widget = Paragraph::new(log_lines)
+                        .block(Block::default().borders(Borders::ALL).title("Logs"));
+                    f.render_widget(logs_widget, content_chunks[1]);
+                }
+            })
+            .map_err(backend_err)?;
 
         Ok(())
     }

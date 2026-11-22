@@ -22,17 +22,16 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: true
         fetch-depth: 0
 
     - name: Install Rust toolchain
-      uses: moonrepo/setup-rust@v1
+      uses: oxc-project/setup-rust@12a52e3caf7bac9d8b9ca550a82c425ed6343aee # v1.0.18
       with:
-        cache-base: main
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        cache-key: release
+        save-cache: ${{ github.ref_name == 'main' }}
 
     - name: Check and Test
       run: cargo check --all-targets --all-features && cargo test
@@ -45,7 +44,7 @@ jobs:
         git push origin "${GIT_TAG}"
 
     - name: Generate a changelog
-      uses: orhun/git-cliff-action@v4
+      uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
       id: git-cliff
       with:
         config: cliff.toml
@@ -55,7 +54,7 @@ jobs:
         GITHUB_REPO: ${{ github.repository }}
 
     - name: Create github release
-      uses: taiki-e/create-gh-release-action@v1 # zizmor: ignore[ref-confusion]
+      uses: taiki-e/create-gh-release-action@045e5c0ed9c50cc1f96de7e891a09ad3daea245f # v1.12.0
       with:
         branch: main
         changelog: CHANGES.md

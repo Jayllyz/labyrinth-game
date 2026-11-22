@@ -49,7 +49,7 @@ pub fn split_into_chunks(text: &str, chunk_size: usize) -> Vec<String> {
             let mut s = String::with_capacity(chunk_size);
             s.extend(chunk.iter().map(|&b| b as char));
             if s.len() < chunk_size {
-                s.extend(std::iter::repeat('0').take(chunk_size - s.len()));
+                s.extend(std::iter::repeat_n('0', chunk_size - s.len()));
             }
             s
         })

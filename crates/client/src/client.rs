@@ -358,10 +358,10 @@ impl GameClient {
     }
 
     fn handle_hint(hint: Hint, secrets_sum: &SecretSumModulo) {
-        if let Hint::Secret(secret) = hint {
-            if let Ok(mut secrets) = secrets_sum.secrets.lock() {
-                secrets.insert(thread::current().id(), secret);
-            }
+        if let Hint::Secret(secret) = hint
+            && let Ok(mut secrets) = secrets_sum.secrets.lock()
+        {
+            secrets.insert(thread::current().id(), secret);
         }
     }
 
@@ -389,10 +389,10 @@ impl GameClient {
         graph: &MazeGraph,
         player: &Player,
     ) {
-        if let Some(tui) = tui_state {
-            if let Ok(mut state) = tui.lock() {
-                state.update_state(thread_name, graph.clone(), player.clone());
-            }
+        if let Some(tui) = tui_state
+            && let Ok(mut state) = tui.lock()
+        {
+            state.update_state(thread_name, graph.clone(), player.clone());
         }
     }
 

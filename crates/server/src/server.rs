@@ -1,4 +1,4 @@
-use rand::{Rng, rng};
+use rand::{RngExt, rng};
 use shared::errors::{GameError, GameResult};
 use shared::logger::Logger;
 use shared::messages::{
@@ -59,7 +59,7 @@ impl GameState {
     }
 
     fn notify_all_players(&mut self, message: &Message) -> GameResult<()> {
-        for (_, stream) in self.connections.iter_mut() {
+        for stream in self.connections.values_mut() {
             send_message(stream, message)?
         }
         Ok(())
@@ -81,7 +81,7 @@ impl GameState {
                 }
             }
 
-            for (_, stream) in self.connections.iter_mut() {
+            for stream in self.connections.values_mut() {
                 send_message(stream, &Message::Challenge(Challenge::SecretSumModulo(23)))?;
                 send_message(
                     stream,

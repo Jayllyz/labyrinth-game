@@ -135,7 +135,7 @@ mod tests {
         let logger = Logger::get_instance();
 
         let errors = vec![
-            GameError::ConnectionError(IoError::new(ErrorKind::Other, "network error")),
+            GameError::ConnectionError(IoError::other("network error")),
             GameError::TeamRegistrationError("duplicate team".to_string()),
             GameError::AgentSubscriptionError("invalid agent id".to_string()),
             GameError::MessageError("malformed message".to_string()),
