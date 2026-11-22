@@ -4,7 +4,7 @@ use core::time;
 use shared::maze::Cell;
 use shared::messages::{self, Direction};
 use shared::radar::{CellType, Passages, Radar};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::thread::sleep;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -29,6 +29,15 @@ pub enum Algorithm {
 // wait at its current maze node until it becomes free
 // [X] If there is only one way to leave the current node, and all other directional are obstacles or black nodes, the
 // agent marks the current node as a black node so that other agents cannot move there.
+
+/// The parent to backtrack to, or any open neighbor when the parent is not adjacent
+/// (unset or stale), since walking toward a non-neighbor bumps into a wall forever.
+fn backtrack_target(neighbors: &HashSet<Cell>, parent: Cell) -> Cell {
+    if neighbors.contains(&parent) {
+        return parent;
+    }
+    neighbors.iter().next().copied().unwrap_or(parent)
+}
 
 pub fn alian_solver(
     player: &mut Player,
@@ -61,7 +70,7 @@ pub fn alian_solver(
         graph.update_cell_status(player_position, CellStatus::DeadEnd);
     }
 
-    for neighbor_position in neighbor_positions {
+    for &neighbor_position in &neighbor_positions {
         let (walls, mut status, cell_type, visited_by) = {
             let Some(neighbor_cell) = graph.get_cell(neighbor_position) else {
                 continue;
@@ -77,7 +86,9 @@ pub fn alian_solver(
         if walls == 3
             && !(cell_type == CellType::OBJECTIVE
                 || cell_type == CellType::HELP
-                || cell_type == CellType::ObjectiveAlly)
+                || cell_type == CellType::ObjectiveAlly
+                || cell_type == CellType::ObjectiveEnemy
+                || cell_type == CellType::ObjectiveMonster)
         {
             graph.update_cell_status(neighbor_position, CellStatus::DeadEnd);
             status = CellStatus::DeadEnd;
@@ -138,7 +149,7 @@ pub fn alian_solver(
     {
         player.get_next_direction(&visited_by_self[0].0)
     } else {
-        player.get_next_direction(&parent)
+        player.get_next_direction(&backtrack_target(&neighbor_positions, parent))
     };
 
     message = match next_direction {
@@ -174,7 +185,7 @@ pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::
 
     let mut visited: Vec<Cell> = Vec::new();
 
-    for neighbor_position in neighbor_positions {
+    for &neighbor_position in &neighbor_positions {
         let (walls, mut status, cell_type) = {
             let Some(neighbor_cell) = graph.get_cell(neighbor_position) else {
                 continue;
@@ -185,7 +196,9 @@ pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::
         if walls == 3
             && !(cell_type == CellType::OBJECTIVE
                 || cell_type == CellType::HELP
-                || cell_type == CellType::ObjectiveAlly)
+                || cell_type == CellType::ObjectiveAlly
+                || cell_type == CellType::ObjectiveEnemy
+                || cell_type == CellType::ObjectiveMonster)
         {
             graph.update_cell_status(neighbor_position, CellStatus::DeadEnd);
             status = CellStatus::DeadEnd;
@@ -222,13 +235,14 @@ pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::
     }
 
     let parent_status = graph.get_cell_status(parent);
-    let next_direction = if (parent_status == CellStatus::DeadEnd || parent == player.position)
+    let target = if (parent_status == CellStatus::DeadEnd || parent == player.position)
         && !visited.is_empty()
     {
-        player.get_next_direction(&visited[0])
+        visited[0]
     } else {
-        player.get_next_direction(&parent)
+        backtrack_target(&neighbor_positions, parent)
     };
+    let next_direction = player.get_next_direction(&target);
 
     message = match next_direction {
         Direction::Left => {
@@ -252,23 +266,35 @@ pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::
 }
 
 /// Steps away from a cell an opponent is holding, preferring the way we came, so the
-/// opponent can pass. The current cell is reopened so the solver comes back to it later.
+/// opponent can pass.
+///
+/// Retreating to the parent reopens the current cell so the solver comes back to it
+/// later. Retreating sideways into an unexplored cell links it back to the current one,
+/// so backtracking from it returns here.
 pub fn yield_to_opponent(
     player: &mut Player,
     graph: &mut MazeGraph,
     blocked: Cell,
 ) -> Option<messages::Action> {
-    let cell = graph.get_cell(player.position)?;
-    let is_open = |c: &Cell| *c != blocked && *c != player.position;
+    let position = player.position;
+    let cell = graph.get_cell(position)?;
+    let is_open = |c: &Cell| *c != blocked && *c != position;
+
     let retreat = if cell.neighbors.contains(&cell.parent) && is_open(&cell.parent) {
+        if cell.status == CellStatus::VISITED {
+            cell.status = CellStatus::NotVisited;
+        }
         cell.parent
     } else {
-        *cell.neighbors.iter().find(|c| is_open(c))?
+        let side = *cell.neighbors.iter().find(|c| is_open(c))?;
+        if let Some(side_cell) = graph.get_cell(side)
+            && side_cell.status == CellStatus::NotVisited
+        {
+            side_cell.parent = position;
+        }
+        side
     };
 
-    if cell.status == CellStatus::VISITED {
-        cell.status = CellStatus::NotVisited;
-    }
     Some(player.step_toward(&retreat))
 }
 
@@ -508,6 +534,39 @@ mod tests {
     }
 
     #[test]
+    fn test_tremeaux_without_parent_moves_to_a_neighbor() {
+        let (mut player, mut graph) = graph_around_player(&[SIDE], CURRENT);
+        graph.update_cell_status(SIDE, CellStatus::DeadEnd);
+
+        tremeaux_solver(&mut player, &mut graph);
+
+        assert_eq!(player.position, SIDE);
+    }
+
+    #[test]
+    fn test_alian_without_parent_moves_to_a_neighbor() {
+        let (mut player, mut graph) = graph_around_player(&[SIDE], CURRENT);
+        graph.update_cell_status(SIDE, CellStatus::DeadEnd);
+
+        alian_solver(&mut player, &mut graph, "Player1");
+
+        assert_eq!(player.position, SIDE);
+    }
+
+    #[test]
+    fn test_tremeaux_heads_for_exit_held_by_opponent() {
+        let (mut player, mut graph) = graph_around_player(&[BEHIND], BEHIND);
+        graph.update_cell_status(BEHIND, CellStatus::VISITED);
+        graph.add(BLOCKED, CellType::ObjectiveEnemy);
+        graph.update_walls(BLOCKED, 3);
+        graph.add_neighbor(&CURRENT, &BLOCKED);
+
+        tremeaux_solver(&mut player, &mut graph);
+
+        assert_eq!(player.position, BLOCKED);
+    }
+
+    #[test]
     fn test_yield_retreats_to_parent_and_reopens_current_cell() {
         let (mut player, mut graph) = graph_around_player(&[BLOCKED, BEHIND, SIDE], BEHIND);
 
@@ -526,6 +585,9 @@ mod tests {
 
         assert_eq!(action, Some(messages::Action::MoveTo(Direction::Right)));
         assert_eq!(player.position, SIDE);
+        // Backtracking from the side cell must lead back here, without rewriting our parent.
+        assert_eq!(graph.get_cell(SIDE).map(|c| c.parent), Some(CURRENT));
+        assert_eq!(graph.get_cell_status(CURRENT), CellStatus::VISITED);
     }
 
     #[test]

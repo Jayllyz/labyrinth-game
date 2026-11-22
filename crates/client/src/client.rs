@@ -1,7 +1,10 @@
 use crate::instructions::{self, Algorithm};
 use crate::maze_parser::maze_to_graph;
 use crate::tui::GameState;
-use crate::{data_structures::maze_graph::MazeGraph, maze_parser::Player};
+use crate::{
+    data_structures::maze_graph::{MazeCell, MazeGraph},
+    maze_parser::Player,
+};
 use shared::utils::print_error;
 use shared::{
     errors::{GameError, GameResult},
@@ -40,6 +43,31 @@ struct PlayerContext {
     algorithm: Algorithm,
     challenge_modulo: Option<u128>,
     blocked_by_opponent: Option<Cell>,
+    /// Cells the solver may change while choosing a move, restored if the server rejects it.
+    saved_cells: Vec<(Cell, MazeCell)>,
+}
+
+impl PlayerContext {
+    /// Snapshots the player and the cells around it before a move, so a rejected move
+    /// can be undone. Solvers only touch the current cell and its neighbors.
+    fn save_state(&mut self) {
+        self.player.save_state();
+        let position = self.player.position;
+        self.saved_cells = self.graph.cell_map.get(&position).map_or_else(Vec::new, |cell| {
+            std::iter::once(position)
+                .chain(cell.neighbors.iter().copied())
+                .filter_map(|c| self.graph.cell_map.get(&c).map(|saved| (c, saved.clone())))
+                .collect()
+        });
+    }
+
+    /// Undoes a move the server rejected, including the solver's bookkeeping for it.
+    fn revert_move(&mut self) {
+        self.player.revert_move();
+        for (cell, saved) in self.saved_cells.drain(..) {
+            self.graph.cell_map.insert(cell, saved);
+        }
+    }
 }
 
 struct LogContext {
@@ -113,6 +141,7 @@ impl GameClient {
                         algorithm,
                         challenge_modulo: None,
                         blocked_by_opponent: None,
+                        saved_cells: Vec::new(),
                     };
 
                     let log_ctx = LogContext { thread_name: agent_name.clone(), tui_state };
@@ -222,13 +251,13 @@ impl GameClient {
                     // The server follows these with a fresh RadarView, which drives the next move.
                     messages::ActionError::CannotPassThroughOpponent => {
                         let blocked = player_ctx.player.position;
-                        player_ctx.player.revert_move();
+                        player_ctx.revert_move();
                         player_ctx.blocked_by_opponent = Some(blocked);
                     }
                     messages::ActionError::CannotPassThroughWall
                     | messages::ActionError::InvalidMove
                     | messages::ActionError::OutOfMap
-                    | messages::ActionError::Blocked => player_ctx.player.revert_move(),
+                    | messages::ActionError::Blocked => player_ctx.revert_move(),
                     messages::ActionError::NoRunningChallenge => {}
                     messages::ActionError::InvalidChallengeSolution
                     | messages::ActionError::SolveChallengeFirst => {
@@ -308,7 +337,7 @@ impl GameClient {
             .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {}", e)))?;
 
         maze_to_graph(&radar_view, &player_ctx.player, &mut player_ctx.graph);
-        player_ctx.player.save_state();
+        player_ctx.save_state();
 
         // Yield half the time so two agents blocking each other don't retry in lockstep.
         let blocked = player_ctx.blocked_by_opponent.take().filter(|_| rand::random_bool(0.5));
@@ -419,6 +448,7 @@ mod tests {
             algorithm: Algorithm::Tremeaux,
             challenge_modulo: None,
             blocked_by_opponent: None,
+            saved_cells: Vec::new(),
         };
 
         let log_ctx = LogContext { thread_name, tui_state: None };
@@ -486,6 +516,37 @@ mod tests {
 
         assert_eq!(game_ctx.player.position, Player::new().position);
         assert_eq!(game_ctx.blocked_by_opponent, Some(blocked));
+    }
+
+    #[test]
+    fn test_rejected_backtrack_restores_graph() {
+        use crate::data_structures::maze_graph::CellStatus;
+        use shared::radar::CellType;
+
+        let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
+        let current = Cell { row: 0, column: 0 };
+        let parent = Cell { row: 0, column: 1 };
+        for cell in [current, parent] {
+            game_ctx.graph.add(cell, CellType::NOTHING);
+            game_ctx.graph.update_cell_status(cell, CellStatus::VISITED);
+        }
+        game_ctx.graph.add_neighbor(&current, &parent);
+        game_ctx.graph.add_neighbor(&parent, &current);
+        game_ctx.graph.set_parent(current, parent);
+
+        game_ctx.save_state();
+        instructions::tremeaux_solver(&mut game_ctx.player, &mut game_ctx.graph);
+        GameClient::handle_server_message(
+            &mut Vec::new(),
+            Message::ActionError(messages::ActionError::CannotPassThroughOpponent),
+            &mut game_ctx,
+            &log_ctx,
+            &secrets,
+        )
+        .unwrap();
+
+        assert_eq!(game_ctx.player.position, current);
+        assert_eq!(game_ctx.graph.get_cell_status(current), CellStatus::VISITED);
     }
 
     #[test]

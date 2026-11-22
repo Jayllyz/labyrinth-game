@@ -21,6 +21,7 @@ pub enum CellType {
     HELP = 4,
     OBJECTIVE = 8,
     ObjectiveAlly = 9,
+    ObjectiveEnemy = 10,
     ObjectiveMonster = 11,
     INVALID = 15,
 }
@@ -167,22 +168,21 @@ pub fn retrieve_cell(octet: &str) -> Vec<CellType> {
 
     for i in (0..NUM_CELLS).map(|x| x * 4) {
         let bits = &octet[i..i + 4];
-        let value = match u8::from_str_radix(bits, 2) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
+        let value = u8::from_str_radix(bits, 2).unwrap_or(15);
 
         let cell = match value {
             0 => CellType::NOTHING,
             1 => CellType::ALLY,
             2 => CellType::ENEMY,
             3 => CellType::MONSTER,
-            4 => CellType::HELP,
+            // A hint with someone standing on it is still a hint.
+            4..=7 => CellType::HELP,
             8 => CellType::OBJECTIVE,
             9 => CellType::ObjectiveAlly,
+            10 => CellType::ObjectiveEnemy,
             11 => CellType::ObjectiveMonster,
-            15 => CellType::INVALID,
-            _ => continue,
+            // Skipping a cell would shift every following one, so unknown values stay in place.
+            _ => CellType::INVALID,
         };
         data.push(cell);
     }
@@ -362,6 +362,17 @@ mod tests {
         assert_eq!(decode_base64(&encode_base64(test3)), test3);
         let test4 = "qwekasdjladfljadljk";
         assert_eq!(decode_base64(&encode_base64(test4)), test4);
+    }
+
+    #[test]
+    fn test_retrieve_cell_keeps_every_cell_in_place() {
+        // A hint and an exit with an opponent standing on them (values 6 and 10).
+        let cells = retrieve_cell("1111111111110110101011111111000011110000");
+
+        assert_eq!(cells.len(), 9);
+        assert_eq!(cells[3], CellType::HELP);
+        assert_eq!(cells[4], CellType::ObjectiveEnemy);
+        assert_eq!(cells[7], CellType::NOTHING);
     }
 
     #[test]
