@@ -10,7 +10,7 @@ use shared::messages::{
 use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{debug, error, info, warn};
 
 #[derive(Debug, Clone)]
@@ -23,6 +23,8 @@ pub struct ServerConfig {
     pub width: usize,
     pub height: usize,
     pub generator: GeneratorAlgorithm,
+    /// How long after the first player joins the game starts even if teams are not full.
+    pub start_timeout: Duration,
 }
 
 impl Default for ServerConfig {
@@ -35,6 +37,7 @@ impl Default for ServerConfig {
             width: 50,
             height: 50,
             generator: GeneratorAlgorithm::RecursiveBacktracker,
+            start_timeout: Duration::from_secs(30),
         }
     }
 }
@@ -57,6 +60,7 @@ struct Match {
     team_names: Vec<String>,
     /// Players who joined, with their team, until the game starts and places them.
     waiting: Vec<(String, String)>,
+    first_join: Option<Instant>,
     started: bool,
 }
 
@@ -73,6 +77,7 @@ impl Match {
             players: HashMap::new(),
             team_names: Vec::new(),
             waiting: Vec::new(),
+            first_join: None,
             started: false,
         }
     }
@@ -197,6 +202,12 @@ impl GameServer {
         let registered: usize = teams.values().map(|team| team.players.len()).sum();
 
         let mut game = self.lock_match()?;
+        // Only reachable when the start timeout fired while this player was joining.
+        if game.started {
+            game.add_player(&player.player_name, &team);
+            return Ok(());
+        }
+        game.first_join.get_or_insert_with(Instant::now);
         game.waiting.push((player.player_name.clone(), team));
         // A teammate may be registered without having joined yet; starting before it does
         // would leave it off the board.
@@ -206,6 +217,33 @@ impl GameServer {
             self.game.1.notify_all();
         }
         Ok(())
+    }
+
+    /// Waits until the game starts: once every team is full, or once the start timeout
+    /// has passed since the first player joined, with whoever joined by then.
+    fn wait_for_start(&self, name: &str) -> GameResult<usize> {
+        let mut game = self.lock_match()?;
+        while !game.started {
+            let deadline =
+                game.first_join.map_or_else(Instant::now, |at| at + self.config.start_timeout);
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                game.start();
+                info!("Start timeout reached, the game starts with the players who joined");
+                self.game.1.notify_all();
+                break;
+            }
+            game = self
+                .game
+                .1
+                .wait_timeout(game, left)
+                .map_err(|e| GameError::ThreadError(e.to_string()))?
+                .0;
+        }
+        game.players
+            .get(name)
+            .copied()
+            .ok_or_else(|| GameError::ThreadError(format!("{name} is not on the board")))
     }
 
     /// Runs a subscribed player's game until it reaches the exit or leaves.
@@ -223,18 +261,8 @@ impl GameServer {
 
     /// Plays turns; true once the player reaches the exit.
     fn play_turns(&self, stream: &mut TcpStream, name: &str) -> GameResult<bool> {
-        let id = {
-            let mut game = self.lock_match()?;
-            while !game.started {
-                game = self.game.1.wait(game).map_err(|e| GameError::ThreadError(e.to_string()))?;
-            }
-            let id = *game
-                .players
-                .get(name)
-                .ok_or_else(|| GameError::ThreadError(format!("{name} is not on the board")))?;
-            send_message(stream, &game.view(id))?;
-            id
-        };
+        let id = self.wait_for_start(name)?;
+        send_message(stream, &self.lock_match()?.view(id))?;
 
         while let Ok(message) = receive_message(stream) {
             let Message::Action(action) = message else {
@@ -490,6 +518,26 @@ mod tests {
             server.register_client(create_test_client("b", &token)),
             SubscribePlayerResult::Err(RegistrationError::TooManyPlayers)
         ));
+    }
+
+    #[test]
+    fn test_game_starts_after_the_timeout_without_full_teams() {
+        let server = GameServer::new(ServerConfig {
+            width: 8,
+            height: 8,
+            max_players_per_team: 2,
+            start_timeout: Duration::from_millis(100),
+            ..ServerConfig::default()
+        });
+        let token = server.register_team(create_test_team("A")).unwrap();
+        let player = create_test_client("a", &token);
+        server.register_client(player.clone());
+        server.join_game(&player).unwrap();
+
+        let (done, started) = std::sync::mpsc::channel();
+        std::thread::spawn(move || done.send(server.wait_for_start("a").is_ok()));
+
+        assert_eq!(started.recv_timeout(Duration::from_secs(5)), Ok(true));
     }
 
     #[test]

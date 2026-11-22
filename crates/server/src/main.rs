@@ -76,6 +76,7 @@ fn main() {
         width,
         height,
         generator: args.generator.into(),
+        ..ServerConfig::default()
     };
     let level = if args.debug { LevelFilter::DEBUG } else { LevelFilter::INFO };
     tracing_subscriber::fmt().with_max_level(level).init();
