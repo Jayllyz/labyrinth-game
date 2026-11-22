@@ -141,15 +141,13 @@ impl GameClient {
             if let Some((level, text)) = reply.log {
                 Self::log(tui_state, agent.name(), text, level);
             }
-            Self::refresh_tui(tui_state, agent);
-
-            let Some(action) = reply.action else {
-                continue;
-            };
-            if matches!(action, Action::MoveTo(_)) {
-                thread::sleep(move_delay);
+            if let Some(action) = reply.action {
+                if matches!(action, Action::MoveTo(_)) {
+                    thread::sleep(move_delay);
+                }
+                send_message(stream, &Message::Action(action))?;
             }
-            send_message(stream, &Message::Action(action))?;
+            Self::refresh_tui(tui_state, agent);
         }
 
         Self::log(tui_state, agent.name(), "Found the exit!", LogLevel::Info);

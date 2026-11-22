@@ -1,4 +1,4 @@
-use crate::data_structures::maze_graph::{MazeCell, MazeGraph};
+use crate::data_structures::maze_graph::MazeGraph;
 use crate::instructions::{self, Algorithm, WallFollowerState};
 use crate::maze_parser::{Player, maze_to_graph};
 use shared::{
@@ -6,7 +6,7 @@ use shared::{
     logger::LogLevel,
     maze::Cell,
     messages::{Action, ActionError, Challenge, Hint, Message, RadarView, SubscribePlayerResult},
-    radar::{decode_base64, extract_data},
+    radar::{Radar, decode_base64, extract_data},
 };
 use std::{
     collections::HashMap,
@@ -48,8 +48,13 @@ pub struct Agent {
     /// Cell an opponent recently held and turns left to route around it.
     avoid: Option<(Cell, u8)>,
     wall_follower: WallFollowerState,
-    /// Cells the solver may change while choosing a move, restored if the server rejects it.
-    saved_cells: Vec<(Cell, MazeCell)>,
+    /// The agent and its map as they will be once the server accepts the last move.
+    pending: Option<Pending>,
+}
+
+struct Pending {
+    player: Player,
+    graph: MazeGraph,
 }
 
 impl Agent {
@@ -63,7 +68,7 @@ impl Agent {
             challenge_modulo: None,
             avoid: None,
             wall_follower: WallFollowerState::default(),
-            saved_cells: Vec::new(),
+            pending: None,
         }
     }
 
@@ -107,49 +112,59 @@ impl Agent {
         let radar_view = extract_data(&decode_base64(&view.0))
             .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {e}")))?;
 
+        // A radar view after a move means the server accepted it.
+        if let Some(Pending { player, graph }) = self.pending.take() {
+            self.player = player;
+            self.graph = graph;
+        }
         maze_to_graph(&radar_view, &self.player, &mut self.graph);
-        self.save_state();
 
+        let (mut player, mut graph) = (self.player.clone(), self.graph.clone());
+        let action = self.decide(&radar_view, &mut player, &mut graph);
+        self.pending = Some(Pending { player, graph });
+        Ok(action)
+    }
+
+    /// Chooses the next move, updating `player` and `graph` as if the server accepts it.
+    fn decide(&mut self, radar_view: &Radar, player: &mut Player, graph: &mut MazeGraph) -> Action {
         // Right after a block, yield half the time so two agents blocking each other don't
         // retry in lockstep.
         let blocked = self
             .avoid
             .filter(|&(_, turns)| turns == AVOID_OPPONENT_TURNS && rand::random_bool(0.5))
             .map(|(cell, _)| cell);
-        let yielded = blocked.and_then(|cell| {
-            instructions::yield_to_opponent(&mut self.player, &mut self.graph, cell)
-        });
+        let yielded = blocked.and_then(|cell| instructions::yield_to_opponent(player, graph, cell));
 
         let avoid = self.avoid.map(|(cell, _)| cell);
         self.avoid = self.avoid.and_then(|(cell, turns)| (turns > 1).then_some((cell, turns - 1)));
 
-        if let Some(action) = yielded
-            .or_else(|| instructions::step_to_known_exit(&mut self.player, &self.graph, avoid))
+        if let Some(action) =
+            yielded.or_else(|| instructions::step_to_known_exit(player, graph, avoid))
         {
-            return Ok(action);
+            return action;
         }
 
-        Ok(match self.algorithm {
-            Algorithm::Tremeaux => {
-                instructions::tremeaux_solver(&mut self.player, &mut self.graph, avoid)
-            }
+        match self.algorithm {
+            Algorithm::Tremeaux => instructions::tremeaux_solver(player, graph, avoid),
             Algorithm::WallFollower => instructions::wall_follower_solver(
-                &radar_view,
-                &mut self.player,
-                &mut self.graph,
+                radar_view,
+                player,
+                graph,
                 &mut self.wall_follower,
                 avoid,
             ),
-            Algorithm::Alian => {
-                instructions::alian_solver(&mut self.player, &mut self.graph, &self.name)
-            }
-        })
+            Algorithm::Alian => instructions::alian_solver(player, graph, &self.name),
+        }
     }
 
     fn on_hint(&mut self, hint: Hint) -> Reply {
         match hint {
             Hint::RelativeCompass { angle } => {
+                // The hint describes the agent as of the last radar view, before the pending move.
                 self.player.record_compass(angle);
+                if let Some(pending) = &mut self.pending {
+                    pending.player.exit_bearing = self.player.exit_bearing;
+                }
                 Reply::default()
             }
             Hint::Secret(secret) => {
@@ -177,16 +192,16 @@ impl Agent {
         // The server follows move errors with a fresh RadarView, which drives the next move.
         let action = match err {
             ActionError::CannotPassThroughOpponent => {
-                let blocked = self.player.position;
-                self.revert_move();
-                self.avoid = Some((blocked, AVOID_OPPONENT_TURNS));
+                if let Some(rejected) = self.pending.take() {
+                    self.avoid = Some((rejected.player.position, AVOID_OPPONENT_TURNS));
+                }
                 None
             }
             ActionError::CannotPassThroughWall
             | ActionError::InvalidMove
             | ActionError::OutOfMap
             | ActionError::Blocked => {
-                self.revert_move();
+                self.pending = None;
                 None
             }
             ActionError::NoRunningChallenge => None,
@@ -201,30 +216,6 @@ impl Agent {
         let secrets = self.secrets.lock().ok()?;
         Some(Action::SolveChallenge { answer: instructions::solve_sum_modulo(modulo, &secrets) })
     }
-
-    /// Snapshots the player and the cells around it before a move, so a rejected move
-    /// can be undone. Solvers only touch the current cell and its neighbors.
-    fn save_state(&mut self) {
-        self.player.save_state();
-        let position = self.player.position;
-        self.saved_cells.clear();
-        let Some(cell) = self.graph.cell_map.get(&position) else {
-            return;
-        };
-        self.saved_cells.extend(
-            std::iter::once(position)
-                .chain(cell.neighbors.iter().copied())
-                .filter_map(|c| self.graph.cell_map.get(&c).map(|saved| (c, saved.clone()))),
-        );
-    }
-
-    /// Undoes a move the server rejected, including the solver's bookkeeping for it.
-    fn revert_move(&mut self) {
-        self.player.revert_move();
-        for (cell, saved) in self.saved_cells.drain(..) {
-            self.graph.cell_map.insert(cell, saved);
-        }
-    }
 }
 
 #[cfg(test)]
@@ -236,6 +227,14 @@ mod tests {
 
     fn agent(name: &str) -> Agent {
         Agent::new(name.to_string(), Algorithm::Tremeaux, TeamSecrets::default())
+    }
+
+    /// Chooses a move from the current map, as a radar view would.
+    fn propose_move(agent: &mut Agent) {
+        let radar = Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() };
+        let (mut player, mut graph) = (agent.player.clone(), agent.graph.clone());
+        agent.decide(&radar, &mut player, &mut graph);
+        agent.pending = Some(Pending { player, graph });
     }
 
     fn answer(reply: Reply) -> String {
@@ -263,9 +262,10 @@ mod tests {
     #[test]
     fn test_opponent_block_reverts_and_remembers_blocked_cell() {
         let mut agent = agent("Player1");
-        agent.player.save_state();
-        agent.player.move_forward();
-        let blocked = agent.player.position;
+        let mut moved = agent.player.clone();
+        moved.move_forward();
+        let blocked = moved.position;
+        agent.pending = Some(Pending { player: moved, graph: agent.graph.clone() });
 
         agent.on_message(Message::ActionError(ActionError::CannotPassThroughOpponent)).unwrap();
 
@@ -286,8 +286,7 @@ mod tests {
         agent.graph.add_neighbor(&parent, &current);
         agent.graph.set_parent(current, parent);
 
-        agent.save_state();
-        instructions::tremeaux_solver(&mut agent.player, &mut agent.graph, None);
+        propose_move(&mut agent);
         agent.on_message(Message::ActionError(ActionError::CannotPassThroughOpponent)).unwrap();
 
         assert_eq!(agent.player.position, current);
@@ -324,14 +323,29 @@ mod tests {
     }
 
     #[test]
+    fn test_move_is_applied_only_once_the_server_accepts_it() {
+        let mut agent = agent("Player1");
+        let radar = || Message::RadarView(messages::RadarView("bKgGjsIyap8p8aa".to_string()));
+
+        agent.on_message(radar()).unwrap();
+        let before_answer = agent.player.position;
+        agent.on_message(radar()).unwrap();
+
+        assert_eq!(before_answer, Player::new().position);
+        assert_ne!(agent.player.position, Player::new().position);
+    }
+
+    #[test]
     fn test_compass_hint_is_stored_in_the_agent_frame() {
         let mut agent = agent("Player1");
         agent.player.direction = messages::Direction::Right;
-        agent.player.save_state();
-        agent.player.turn_right();
+        let mut turned = agent.player.clone();
+        turned.turn_right();
+        agent.pending = Some(Pending { player: turned, graph: agent.graph.clone() });
 
         agent.on_message(Message::Hint(Hint::RelativeCompass { angle: 90.0 })).unwrap();
 
         assert_eq!(agent.player.exit_bearing, Some(180.0));
+        assert_eq!(agent.pending.map(|p| p.player.exit_bearing), Some(Some(180.0)));
     }
 }
