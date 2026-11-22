@@ -3,7 +3,7 @@ use crate::maze_parser::Player;
 use shared::maze::Cell;
 use shared::messages::{self, Direction};
 use shared::radar::{CellType, Passages, Radar};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 #[value(rename_all = "PascalCase")]
@@ -30,7 +30,7 @@ pub enum Algorithm {
 
 /// The parent to backtrack to, or any open neighbor when the parent is not adjacent
 /// (unset or stale), since walking toward a non-neighbor bumps into a wall forever.
-fn backtrack_target(neighbors: &HashSet<Cell>, parent: Cell) -> Cell {
+fn backtrack_target(neighbors: &BTreeSet<Cell>, parent: Cell) -> Cell {
     if neighbors.contains(&parent) {
         return parent;
     }
@@ -164,7 +164,7 @@ fn first_step_to(
 }
 
 /// `neighbors` of `from`, those whose direction is closest to the exit bearing first.
-fn toward_exit(from: Cell, neighbors: &HashSet<Cell>, exit_bearing: Option<f32>) -> Vec<Cell> {
+fn toward_exit(from: Cell, neighbors: &BTreeSet<Cell>, exit_bearing: Option<f32>) -> Vec<Cell> {
     let mut cells: Vec<Cell> = neighbors.iter().copied().collect();
     let Some(bearing) = exit_bearing else {
         return cells;
@@ -456,6 +456,19 @@ mod tests {
         tremeaux_solver(&mut player, &mut graph, Some(BLOCKED));
 
         assert_eq!(player.position, SIDE);
+    }
+
+    #[test]
+    fn test_same_map_gives_same_move() {
+        let chosen: HashSet<Cell> = (0..20)
+            .map(|_| {
+                let (mut player, mut graph) = graph_around_player(&[BLOCKED, SIDE], BEHIND);
+                tremeaux_solver(&mut player, &mut graph, None);
+                player.position
+            })
+            .collect();
+
+        assert_eq!(chosen.len(), 1);
     }
 
     #[test]
