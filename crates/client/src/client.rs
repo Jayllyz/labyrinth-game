@@ -190,6 +190,11 @@ impl GameClient {
                         "Found the exit!",
                         LogLevel::Info,
                     );
+                    if let Some(tui) = &log_ctx.tui_state
+                        && let Ok(mut state) = tui.lock()
+                    {
+                        state.mark_exit_found(&log_ctx.thread_name);
+                    }
                     return Ok(());
                 }
             }

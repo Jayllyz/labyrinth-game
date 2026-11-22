@@ -3,6 +3,7 @@ use client::client::{ClientConfig, GameClient};
 use client::instructions::Algorithm;
 use client::tui;
 use shared::logger::Logger;
+use std::sync::Arc;
 
 #[derive(Parser, Debug)]
 #[command(name = "Labyrinth-client")]
@@ -87,9 +88,15 @@ fn main() {
             }
         });
 
-        if let Err(e) = client.run(args.retries, args.players, Some(tui_state), args.algorithm) {
+        if let Err(e) =
+            client.run(args.retries, args.players, Some(Arc::clone(&tui_state)), args.algorithm)
+        {
             e.log_error(logger);
             std::process::exit(1);
+        }
+
+        if let Ok(mut state) = tui_state.lock() {
+            state.mark_finished();
         }
 
         if let Err(e) = tui_handle.join() {
