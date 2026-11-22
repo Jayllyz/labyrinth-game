@@ -1,0 +1,41 @@
+# server-arm --maze 10,10 --seed 1 --generator recursive-backtracking --decimation 0
+exit 6 6
+┏━┳━━━━━━━━━┳━━━━━━━┓
+┃ ┃         ┃       ┃
+┃ ┗━━━┓ ┏━┓ ┃ ┏━╸ ╻ ┃
+┃     ┃ ┃ ┃ ┃ ┃   ┃ ┃
+┣━━━┓ ┃ ┃ ┃ ┣━┛ ┏━┛ ┃
+┃   ┃ ┃ ┃ ┃ ┃   ┃   ┃
+┃ ╺━┫ ┃ ┃ ┃ ╹ ┏━┫ ╺━┫
+┃   ┃ ┃ ┃ ┃   ┃ ┃   ┃
+┣━╸ ┃ ╹ ┃ ┗━━━┫ ┣━╸ ┃
+┃   ┃   ┃     ┃ ┃   ┃
+┃ ╻ ┗━┳━┫ ╺━┓ ╹ ┃ ┏━┫
+┃ ┃   ┃ ┃   ┃   ┃ ┃ ┃
+┃ ┣━╸ ╹ ┃ ╻ ┣━╸ ┃ ╹ ┃
+┃ ┃     ┃ ┃ ┃   ┃   ┃
+┃ ┗━━━┓ ┗━┛ ┣━━━┻━╸ ┃
+┃     ┃     ┃       ┃
+┃ ╺━┓ ┗━┓ ┏━┛ ┏━━━━━┫
+┃   ┃   ┃ ┃   ┃     ┃
+┣━╸ ┗━┓ ┗━┛ ╺━┻━╸ ╻ ┃
+┃     ┃           ┃ ┃
+┗━━━━━┻━━━━━━━━━━━┻━┛
+1 6 North Gjiiacuc/W8a//a
+2 6 East kewMAjIwaaapapa
+3 6 East LjKgMjyb/Waaapa
+3 7 South byMbjvIad/ap8aa
+4 7 East MggGwczyap8aapa
+4 8 South gyeaLIGa//8paaa
+4 7 North IjLfkjzcdWaa8pa
+5 7 East bOKcjLGa//ap8aa
+5 6 North gefGwcIyap8papa
+5 5 North jivbQjIad/apapa
+4 5 West AAKcwPua//aaaaa
+4 4 North HweqjIuO8p8a8aa
+5 4 East kKeKvsGM8a8paaa
+6 4 East Hjeikcyb/W8a8pa
+6 5 South gOwbPzIad/apaaa
+7 5 East wQKcMLya//aaaia
+7 6 South HAeajIya//8i8aa
+6 6 West cOeajsGa//+p8aa

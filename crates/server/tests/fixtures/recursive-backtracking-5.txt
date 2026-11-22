@@ -1,0 +1,68 @@
+# server-arm --maze 10,10 --seed 5 --generator recursive-backtracking --decimation 0.4
+exit 8 4
+┏━━━━━━━━━━━━━━━━━━━┓
+┃                   ┃
+┃             ╻     ┃
+┃             ┃     ┃
+┃             ╹     ┃
+┃                   ┃
+┣━╸       ╻         ┃
+┃         ┃         ┃
+┃         ╹         ┃
+┃                   ┃
+┃ ╻                 ┃
+┃ ┃                 ┃
+┃ ╹ ╺━╸     ╻ ╻     ┃
+┃           ┃ ┃     ┃
+┃     ╺━╸ ╻ ╹ ╹     ┃
+┃         ┃         ┃
+┃         ╹         ┃
+┃                   ┃
+┃       ╺━╸         ┃
+┃                   ┃
+┗━━━━━━━━━━━━━━━━━━━┛
+3 6 West zvfuvsvzaa8aaaa
+3 5 North wvLvvvvvaaaaaaa
+4 5 East vvvzvLvvaaaaaaa
+4 6 South vwvvvzvLaaaaaaa
+2 6 West fuvzzvHvaaapaaa
+2 7 South wvLvvvvvaaaaaaa
+2 8 South zvwPvvvvaaaaaaa
+2 9 South vAucvvua//aaaaa
+1 9 West rveOjsuL8a8a8aa
+0 9 West rAeajsua//8a8aa
+0 8 North sLeujsuL8a8a8aa
+1 8 East ALvvvLzwaaaaaaa
+1 7 North vvvzLzwvaaaaaaa
+0 7 West vAucvvua//aaaaa
+0 6 North rveujsuP8a8a8aa
+1 6 East ALLvvvvLaaaaaaa
+1 5 North LvfuLswvaa8aaaa
+2 5 East guvvvvHwaaapaaa
+3 5 East vvvvwvzvaaaaaaa
+4 7 South LvfKLsvvaa8aaaa
+4 8 South vPwjzvvbdWaaaaa
+3 8 West vLvvPzAvaaaaaaa
+3 9 South vAKcvvua//aaaaa
+4 9 East fefqwcHyap8papa
+5 9 East fevrAfHyapapapa
+6 9 East fevrwfHyapapapa
+7 9 East fevrwfHyapapapa
+8 9 East fewHwfHyapapapa
+9 9 East fiucwfGa//apapa
+9 8 North kevrwfHyapapapa
+8 8 West ALvvLzwvaaaaaaa
+7 8 West vvvvLzwvaaaaaaa
+6 8 West vvvzLzwvaaaaaaa
+5 8 West vwvvLzwLaaaaaaa
+5 7 North zvfuvsvAaa8aaaa
+6 7 East wvLwvvvvaaaaaaa
+7 7 East zvLvvvvvaaaaaaa
+8 7 East zvwPvvvvaaaaaaa
+9 7 East vAucvvua//aaaaa
+9 6 North fevrwfHyapapapa
+8 6 West ALvLvvvvaaaaaaa
+7 6 West vzvfvvvbdWaaaaa
+7 5 North vvvvPvvvaiaaaaa
+8 5 East vLwPvvvvaaGaaaa
+8 4 North vvvvvLzwaacaaaa

@@ -2,6 +2,7 @@ use crate::maze_generator::sidewinder;
 use crate::utils::ColorsAnsi;
 use std::ops::Add;
 
+#[derive(Clone)]
 pub struct Maze {
     pub map: Vec<Vec<u16>>,
     pub row_len: usize,

@@ -1,7 +1,10 @@
-use shared::{maze::Cell, messages::Direction};
+use crate::{maze::Cell, messages::Direction};
 
-/// Where the agent faces on its own map. North is the heading it starts with, since the
-/// server never says which way the agent faces.
+/// Where a player faces. Players start facing North. The client never learns its real
+/// heading, so on its own map North is simply the heading it started with.
+///
+/// In `delta` and `rotate`, a `Cell`'s `row` grows towards East and its `column` towards
+/// South.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Heading {
     North,

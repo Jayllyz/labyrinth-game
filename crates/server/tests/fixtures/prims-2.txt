@@ -1,0 +1,49 @@
+# server-arm --maze 12,8 --seed 2 --generator prims --decimation 0
+exit 7 3
+┏━━━━━━━━━┳━━━━━┳━━━━━┳━┓
+┃         ┃     ┃     ┃ ┃
+┣━━━━━┓ ╺━┛ ┏━╸ ┃ ┏━╸ ╹ ┃
+┃     ┃     ┃   ┃ ┃     ┃
+┃ ╺━┳━┻━━━┓ ┃ ┏━┛ ┃ ┏━━━┫
+┃   ┃     ┃ ┃ ┃   ┃ ┃   ┃
+┣━┓ ╹ ╻ ┏━┛ ┃ ┃ ┏━┛ ┗━┓ ┃
+┃ ┃   ┃ ┃   ┃ ┃ ┃     ┃ ┃
+┃ ┗━━━┫ ╹ ╻ ┃ ┗━┫ ┏━╸ ┃ ┃
+┃     ┃   ┃ ┃   ┃ ┃   ┃ ┃
+┣━━━╸ ┣━╸ ┃ ┗━┓ ╹ ┗━┳━┛ ┃
+┃     ┃   ┃   ┃     ┃   ┃
+┃ ╺━━━╋━━━┻━━━┻━┓ ╻ ╹ ╺━┫
+┃     ┃         ┃ ┃     ┃
+┣━╸ ╻ ╹ ╻ ╺━━━┓ ┗━┛ ┏━╸ ┃
+┃   ┃   ┃     ┃     ┃   ┃
+┗━━━┻━━━┻━━━━━┻━━━━━┻━━━┛
+11 4 East qQOcavya//aa/Wa
+11 5 South Hjeikcyb/W8a8pa
+10 5 West kOwbzzHad/apaaa
+10 6 South wPMjMzAbdWaaaaa
+9 6 West HzLfjPAbdWaa8aa
+9 5 North jOvbPvIad/apaaa
+8 5 West MgKMwjuM8aaaapa
+8 4 North jueKLIGL8a8paaa
+8 3 North Hjeekcuc/W8a8pa
+9 3 East cKKQjvGM8aap8aa
+10 3 East zQeawIya//8aaaa
+10 4 South IAeajsya//8a8aa
+9 4 West cOeajIGa//8p8aa
+10 4 East giucAjGa//apapa
+10 3 North kiLbMfIad/apapa
+9 3 West QggGMcvyap8aapa
+9 2 North gueKLIGL8a8paaa
+9 1 North Hjeikcuc/W8a8pa
+10 1 East gKwIPzIyapapaaa
+11 1 East fiKcMjGa//apapa
+11 0 North kieawcGa//8papa
+11 1 South sQeaksua//8a8aa
+10 1 West ILgKjIzAaa8a8aa
+10 0 North gOKcLLGa//apaaa
+9 0 West gegGMcHyap8papa
+8 0 West biKckfGa//ap8pa
+8 1 South keeKwcGM8a8papa
+8 2 South Hjeikcyc/48a8pa
+7 2 West cOKcjzGa//Gp8aa
+7 3 South gieaMcGa//+papa

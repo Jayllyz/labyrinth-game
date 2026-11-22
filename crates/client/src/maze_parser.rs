@@ -6,7 +6,7 @@ use shared::{
 };
 
 use crate::data_structures::maze_graph::MazeGraph;
-use crate::heading::Heading;
+use shared::heading::Heading;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Player {
