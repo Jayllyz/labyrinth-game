@@ -31,11 +31,11 @@ fn main() {
     let config = ServerConfig { host: args.host, port: args.port, seed, max_players_per_team: 3 };
     Logger::init(args.debug);
     let logger = Logger::get_instance();
-    logger.debug(&format!("Server seed: {:?}", seed));
+    logger.debug(&format!("Server seed: {seed:?}"));
 
     let server = GameServer::new(config);
     if let Err(e) = server.run(logger) {
-        logger.error(&format!("{}", e));
+        logger.error(&format!("{e}"));
     }
 }
 

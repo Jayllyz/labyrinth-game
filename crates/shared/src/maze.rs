@@ -33,7 +33,7 @@ impl Maze {
         }
     }
 
-    pub fn print_maze(maze: &Maze) {
+    pub fn print_maze(maze: &Self) {
         for row in &maze.map {
             for cell in row {
                 print!(
@@ -54,7 +54,7 @@ impl Maze {
         let gradient: Vec<String> = (0..=steps)
             .map(|step| {
                 let gradient_value = 255 - (255 * step / steps);
-                format!("\x1b[38;2;255;{};0m", gradient_value)
+                format!("\x1b[38;2;255;{gradient_value};0m")
             })
             .collect();
 
@@ -93,7 +93,7 @@ impl Maze {
         let gradient: Vec<String> = (0..=steps)
             .map(|step| {
                 let gradient_value = 255 - (255 * step / steps);
-                format!("\x1b[38;2;255;{};0m", gradient_value)
+                format!("\x1b[38;2;255;{gradient_value};0m")
             })
             .collect();
 
@@ -189,10 +189,10 @@ pub struct Cell {
 }
 
 impl Add for Cell {
-    type Output = Cell;
+    type Output = Self;
 
-    fn add(self, other: Cell) -> Cell {
-        Cell { row: self.row + other.row, column: self.column + other.column }
+    fn add(self, other: Self) -> Self {
+        Self { row: self.row + other.row, column: self.column + other.column }
     }
 }
 

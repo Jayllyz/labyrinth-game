@@ -83,7 +83,7 @@ impl GameState {
     pub fn update_state(&mut self, agent: &str, graph: MazeGraph, player: Player) {
         if let Some(state) = self.agents.get_mut(agent) {
             state.graph = graph;
-            state.player = player.clone();
+            state.player = player;
         }
     }
 }
@@ -175,9 +175,8 @@ impl Tui {
                     break;
                 }
 
-                let mut state = match self.state.lock() {
-                    Ok(state) => state,
-                    Err(_) => continue,
+                let Ok(mut state) = self.state.lock() else {
+                    continue;
                 };
                 let agent_count = state.agents.len();
                 match key.code {
@@ -370,7 +369,7 @@ impl Tui {
         let (summary, color) = if found == total {
             ("All agents found the exit!".to_string(), Color::Green)
         } else {
-            (format!("{}/{} agents found the exit", found, total), Color::Yellow)
+            (format!("{found}/{total} agents found the exit"), Color::Yellow)
         };
 
         let area = f.area().centered(Constraint::Length(40), Constraint::Length(5));
@@ -601,8 +600,8 @@ impl Tui {
 
         for row in row_start..=row_end {
             let label = match row {
-                r if r % 5 == 0 && r <= -100 => format!("{:3}", row),
-                r if r % 5 == 0 => format!("{:3} ", row),
+                r if r % 5 == 0 && r <= -100 => format!("{row:3}"),
+                r if r % 5 == 0 => format!("{row:3} "),
                 _ => "    ".to_string(),
             };
             let mut spans = vec![Span::raw(label), Span::styled("│", wall)];
@@ -640,7 +639,7 @@ impl Tui {
 impl Drop for Tui {
     fn drop(&mut self) {
         if let Err(e) = self.exit() {
-            eprintln!("Failed to exit TUI: {}", e);
+            eprintln!("Failed to exit TUI: {e}");
         }
     }
 }
@@ -696,7 +695,7 @@ mod tests {
             exit_bearing: None,
         };
 
-        game_state.update_state("agent1", graph.clone(), player.clone());
+        game_state.update_state("agent1", graph.clone(), player);
 
         let agent_state = &game_state.agents["agent1"];
         assert_eq!(agent_state.player.position, cell);

@@ -138,10 +138,10 @@ pub fn receive_message(stream: &mut impl Read) -> GameResult<Message> {
 
     let str = match String::from_utf8(buf) {
         Ok(s) => s,
-        Err(e) => return Err(GameError::MessageError(format!("Invalid UTF-8: {}", e))),
+        Err(e) => return Err(GameError::MessageError(format!("Invalid UTF-8: {e}"))),
     };
 
-    serde_json::from_str(&str).map_err(|e| GameError::MessageError(format!("Invalid JSON: {}", e)))
+    serde_json::from_str(&str).map_err(|e| GameError::MessageError(format!("Invalid JSON: {e}")))
 }
 
 pub fn send_message(stream: &mut impl Write, msg: &Message) -> GameResult<()> {
@@ -150,7 +150,7 @@ pub fn send_message(stream: &mut impl Write, msg: &Message) -> GameResult<()> {
 
     if let Message::Action(Action::SolveChallenge { answer }) = msg {
         Logger::get_instance()
-            .debug(&format!("Sending message: Action::SolveChallenge {{ answer: {} }}", answer));
+            .debug(&format!("Sending message: Action::SolveChallenge {{ answer: {answer} }}"));
     }
 
     let len = json.len();

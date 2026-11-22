@@ -17,10 +17,10 @@ pub struct Logger {
 
 impl Logger {
     pub fn init(debug_enabled: bool) {
-        let _ = INSTANCE.set(Logger { debug_enabled });
+        let _ = INSTANCE.set(Self { debug_enabled });
     }
 
-    pub fn get_instance() -> &'static Logger {
+    pub fn get_instance() -> &'static Self {
         INSTANCE.get().expect("Logger must be initialized before use.")
     }
 

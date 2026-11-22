@@ -90,7 +90,7 @@ fn main() {
         tui.enter().expect("Failed to enter TUI.");
         let tui_handle = std::thread::spawn(move || {
             if let Err(err) = tui.run() {
-                logger.error(&format!("TUI error: {}", err));
+                logger.error(&format!("TUI error: {err}"));
                 std::process::exit(1);
             }
         });
@@ -108,9 +108,9 @@ fn main() {
 
         if let Err(e) = tui_handle.join() {
             if let Some(error_str) = e.downcast_ref::<String>() {
-                logger.error(&format!("TUI thread error: {}", error_str));
+                logger.error(&format!("TUI thread error: {error_str}"));
             } else {
-                logger.error(&format!("TUI thread error: {:?}", e));
+                logger.error(&format!("TUI thread error: {e:?}"));
             }
         }
     } else {

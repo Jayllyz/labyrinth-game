@@ -31,11 +31,11 @@ impl CellType {
     pub fn is_goal_or_help(&self) -> bool {
         matches!(
             self,
-            CellType::OBJECTIVE
-                | CellType::HELP
-                | CellType::ObjectiveAlly
-                | CellType::ObjectiveEnemy
-                | CellType::ObjectiveMonster
+            Self::OBJECTIVE
+                | Self::HELP
+                | Self::ObjectiveAlly
+                | Self::ObjectiveEnemy
+                | Self::ObjectiveMonster
         )
     }
 }
@@ -81,17 +81,15 @@ pub fn split_into_chunks(text: &str, chunk_size: usize) -> Vec<String> {
 ///
 /// A Base64-encoded string representation of the input data
 pub fn encode_base64<T: ToBinary>(input: T) -> String {
-    let binary_text = match input.to_binary() {
-        Ok(b) => b,
-        Err(_) => return String::new(),
+    let Ok(binary_text) = input.to_binary() else {
+        return String::new();
     };
     let subs = split_into_chunks(&binary_text, 6);
     let mut encoded = String::with_capacity(subs.len());
 
     for sub in subs {
-        let decimal = match u8::from_str_radix(&sub, 2) {
-            Ok(d) => d,
-            Err(_) => continue,
+        let Ok(decimal) = u8::from_str_radix(&sub, 2) else {
+            continue;
         };
 
         if let Some(c) = BASE64_CHARS.chars().nth(decimal as usize) {
@@ -223,9 +221,8 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec
 
     for i in (0..NUM_HORIZONTAL).map(|x| x * 2) {
         let bits = &horizontal[i..i + 2];
-        let value = match u8::from_str_radix(bits, 2) {
-            Ok(v) => v,
-            Err(_) => continue,
+        let Ok(value) = u8::from_str_radix(bits, 2) else {
+            continue;
         };
 
         let passage = match value {
@@ -239,9 +236,8 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec
 
     for i in (0..NUM_VERTICAL).map(|x| x * 2) {
         let bits = &vertical[i..i + 2];
-        let value = match u8::from_str_radix(bits, 2) {
-            Ok(v) => v,
-            Err(_) => continue,
+        let Ok(value) = u8::from_str_radix(bits, 2) else {
+            continue;
         };
 
         let passage = match value {
@@ -274,11 +270,8 @@ pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec
 /// - Next 24 bits (3 bytes): Vertical passage data (in little-endian)
 /// - Last 40 bits (5 bytes): Cell type data
 pub fn extract_data<T: ToBinary>(input: T) -> Result<Radar, std::fmt::Error> {
-    let binary = match input.to_binary() {
-        Ok(b) => b,
-        Err(_) => {
-            return Ok(Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() });
-        }
+    let Ok(binary) = input.to_binary() else {
+        return Ok(Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() });
     };
 
     if binary.len() < 88 {

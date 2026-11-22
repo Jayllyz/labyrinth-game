@@ -11,7 +11,7 @@ pub struct Node {
 }
 
 impl Ord for Node {
-    fn cmp(&self, other: &Node) -> Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         self.priority_f.cmp(&other.priority_f).reverse()
     }
 }
