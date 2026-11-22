@@ -26,6 +26,20 @@ pub enum CellType {
     INVALID = 15,
 }
 
+impl CellType {
+    /// Cells worth entering even when walled on three sides.
+    pub fn is_goal_or_help(&self) -> bool {
+        matches!(
+            self,
+            CellType::OBJECTIVE
+                | CellType::HELP
+                | CellType::ObjectiveAlly
+                | CellType::ObjectiveEnemy
+                | CellType::ObjectiveMonster
+        )
+    }
+}
+
 #[derive(Debug)]
 pub struct Radar {
     pub horizontal: Vec<Passages>,

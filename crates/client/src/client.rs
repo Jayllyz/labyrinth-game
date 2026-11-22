@@ -45,7 +45,6 @@ struct PlayerContext {
     player: Player,
     algorithm: Algorithm,
     challenge_modulo: Option<u128>,
-    blocked_by_opponent: Option<Cell>,
     /// Cell an opponent recently held and turns left to route around it.
     avoid: Option<(Cell, u8)>,
     wall_follower: WallFollowerState,
@@ -59,12 +58,15 @@ impl PlayerContext {
     fn save_state(&mut self) {
         self.player.save_state();
         let position = self.player.position;
-        self.saved_cells = self.graph.cell_map.get(&position).map_or_else(Vec::new, |cell| {
+        self.saved_cells.clear();
+        let Some(cell) = self.graph.cell_map.get(&position) else {
+            return;
+        };
+        self.saved_cells.extend(
             std::iter::once(position)
                 .chain(cell.neighbors.iter().copied())
-                .filter_map(|c| self.graph.cell_map.get(&c).map(|saved| (c, saved.clone())))
-                .collect()
-        });
+                .filter_map(|c| self.graph.cell_map.get(&c).map(|saved| (c, saved.clone()))),
+        );
     }
 
     /// Undoes a move the server rejected, including the solver's bookkeeping for it.
@@ -146,7 +148,6 @@ impl GameClient {
                         player: Player::new(),
                         algorithm,
                         challenge_modulo: None,
-                        blocked_by_opponent: None,
                         avoid: None,
                         wall_follower: WallFollowerState::default(),
                         saved_cells: Vec::new(),
@@ -260,7 +261,6 @@ impl GameClient {
                     messages::ActionError::CannotPassThroughOpponent => {
                         let blocked = player_ctx.player.position;
                         player_ctx.revert_move();
-                        player_ctx.blocked_by_opponent = Some(blocked);
                         player_ctx.avoid = Some((blocked, AVOID_OPPONENT_TURNS));
                     }
                     messages::ActionError::CannotPassThroughWall
@@ -348,8 +348,12 @@ impl GameClient {
         maze_to_graph(&radar_view, &player_ctx.player, &mut player_ctx.graph);
         player_ctx.save_state();
 
-        // Yield half the time so two agents blocking each other don't retry in lockstep.
-        let blocked = player_ctx.blocked_by_opponent.take().filter(|_| rand::random_bool(0.5));
+        // Right after a block, yield half the time so two agents blocking each other don't
+        // retry in lockstep.
+        let blocked = player_ctx
+            .avoid
+            .filter(|&(_, turns)| turns == AVOID_OPPONENT_TURNS && rand::random_bool(0.5))
+            .map(|(cell, _)| cell);
         let yielded = blocked.and_then(|cell| {
             instructions::yield_to_opponent(&mut player_ctx.player, &mut player_ctx.graph, cell)
         });
@@ -466,7 +470,6 @@ mod tests {
             player: Player::new(),
             algorithm: Algorithm::Tremeaux,
             challenge_modulo: None,
-            blocked_by_opponent: None,
             avoid: None,
             wall_follower: WallFollowerState::default(),
             saved_cells: Vec::new(),
@@ -536,7 +539,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(game_ctx.player.position, Player::new().position);
-        assert_eq!(game_ctx.blocked_by_opponent, Some(blocked));
+        assert_eq!(game_ctx.avoid, Some((blocked, AVOID_OPPONENT_TURNS)));
     }
 
     #[test]

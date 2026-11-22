@@ -44,8 +44,6 @@ pub fn alian_solver(
     graph: &mut MazeGraph,
     thread_name: &str,
 ) -> messages::Action {
-    let mut message: messages::Action = messages::Action::MoveTo(messages::Direction::Front);
-
     let (neighbor_positions, parent, player_position) = {
         let Some(player_cell) = graph.get_cell(player.position) else {
             return messages::Action::MoveTo(messages::Direction::Front);
@@ -83,13 +81,7 @@ pub fn alian_solver(
             )
         };
 
-        if walls == 3
-            && !(cell_type == CellType::OBJECTIVE
-                || cell_type == CellType::HELP
-                || cell_type == CellType::ObjectiveAlly
-                || cell_type == CellType::ObjectiveEnemy
-                || cell_type == CellType::ObjectiveMonster)
-        {
+        if walls == 3 && !cell_type.is_goal_or_help() {
             graph.update_cell_status(neighbor_position, CellStatus::DeadEnd);
             status = CellStatus::DeadEnd;
         }
@@ -102,27 +94,9 @@ pub fn alian_solver(
             }
             graph.update_cell_status(player_position, CellStatus::VISITED);
             graph.set_visited(player_position, thread_name);
-            let next_direction = player.get_next_direction(&neighbor_position);
-
-            message = match next_direction {
-                Direction::Left => {
-                    player.turn_left();
-                    messages::Action::MoveTo(messages::Direction::Left)
-                }
-                Direction::Right => {
-                    player.turn_right();
-                    messages::Action::MoveTo(messages::Direction::Right)
-                }
-                Direction::Back => {
-                    player.turn_back();
-                    messages::Action::MoveTo(messages::Direction::Back)
-                }
-                _ => messages::Action::MoveTo(messages::Direction::Front),
-            };
 
             graph.set_parent(neighbor_position, player_position);
-            player.move_forward();
-            return message;
+            return player.step_toward(&neighbor_position);
         }
 
         if status == CellStatus::VISITED {
@@ -140,37 +114,20 @@ pub fn alian_solver(
     visited_by_self.sort_by_key(|a| a.1);
 
     let parent_status = graph.get_cell_status(parent);
-    let next_direction = if (parent_status == CellStatus::DeadEnd || parent == player_position)
+    let target = if (parent_status == CellStatus::DeadEnd || parent == player_position)
         && !not_visited_by_self.is_empty()
     {
-        player.get_next_direction(&not_visited_by_self[0])
+        not_visited_by_self[0]
     } else if (parent_status == CellStatus::DeadEnd || parent == player_position)
         && !visited.is_empty()
     {
-        player.get_next_direction(&visited_by_self[0].0)
+        visited_by_self[0].0
     } else {
-        player.get_next_direction(&backtrack_target(&neighbor_positions, parent))
-    };
-
-    message = match next_direction {
-        Direction::Left => {
-            player.turn_left();
-            messages::Action::MoveTo(messages::Direction::Left)
-        }
-        Direction::Right => {
-            player.turn_right();
-            messages::Action::MoveTo(messages::Direction::Right)
-        }
-        Direction::Back => {
-            player.turn_back();
-            messages::Action::MoveTo(messages::Direction::Back)
-        }
-        _ => message,
+        backtrack_target(&neighbor_positions, parent)
     };
 
     graph.update_cell_status(player_position, CellStatus::DeadEnd);
-    player.move_forward();
-    message
+    player.step_toward(&target)
 }
 
 /// First step of the shortest known path to the nearest unexplored cell.
@@ -206,16 +163,12 @@ pub fn tremeaux_solver(
     graph: &mut MazeGraph,
     avoid: Option<Cell>,
 ) -> messages::Action {
-    let mut message: messages::Action = messages::Action::MoveTo(messages::Direction::Front);
-
     let (neighbor_positions, parent) = {
         let Some(player_cell) = graph.get_cell(player.position) else {
             return messages::Action::MoveTo(messages::Direction::Front);
         };
         (player_cell.neighbors.clone(), player_cell.parent)
     };
-
-    let mut visited: Vec<Cell> = Vec::new();
 
     for &neighbor_position in &neighbor_positions {
         if Some(neighbor_position) == avoid {
@@ -228,78 +181,22 @@ pub fn tremeaux_solver(
             (neighbor_cell.walls, neighbor_cell.status.clone(), neighbor_cell.cell_type.clone())
         };
 
-        if walls == 3
-            && !(cell_type == CellType::OBJECTIVE
-                || cell_type == CellType::HELP
-                || cell_type == CellType::ObjectiveAlly
-                || cell_type == CellType::ObjectiveEnemy
-                || cell_type == CellType::ObjectiveMonster)
-        {
+        if walls == 3 && !cell_type.is_goal_or_help() {
             graph.update_cell_status(neighbor_position, CellStatus::DeadEnd);
             status = CellStatus::DeadEnd;
         }
 
         if status == CellStatus::NotVisited {
             graph.update_cell_status(player.position, CellStatus::VISITED);
-            let next_direction = player.get_next_direction(&neighbor_position);
-
-            message = match next_direction {
-                Direction::Left => {
-                    player.turn_left();
-                    messages::Action::MoveTo(messages::Direction::Left)
-                }
-                Direction::Right => {
-                    player.turn_right();
-                    messages::Action::MoveTo(messages::Direction::Right)
-                }
-                Direction::Back => {
-                    player.turn_back();
-                    messages::Action::MoveTo(messages::Direction::Back)
-                }
-                _ => messages::Action::MoveTo(messages::Direction::Front),
-            };
-
             graph.set_parent(neighbor_position, player.position);
-            player.move_forward();
-            return message;
-        }
-
-        if status == CellStatus::VISITED {
-            visited.push(neighbor_position);
+            return player.step_toward(&neighbor_position);
         }
     }
 
-    let parent_status = graph.get_cell_status(parent);
-    let target = if let Some(step) = first_step_to_unexplored(graph, player.position, avoid) {
-        step
-    } else if (parent_status == CellStatus::DeadEnd || parent == player.position)
-        && !visited.is_empty()
-    {
-        visited[0]
-    } else {
-        backtrack_target(&neighbor_positions, parent)
-    };
-    let next_direction = player.get_next_direction(&target);
-
-    message = match next_direction {
-        Direction::Left => {
-            player.turn_left();
-            messages::Action::MoveTo(messages::Direction::Left)
-        }
-        Direction::Right => {
-            player.turn_right();
-            messages::Action::MoveTo(messages::Direction::Right)
-        }
-        Direction::Back => {
-            player.turn_back();
-            messages::Action::MoveTo(messages::Direction::Back)
-        }
-        _ => message,
-    };
-
+    let target = first_step_to_unexplored(graph, player.position, avoid)
+        .unwrap_or_else(|| backtrack_target(&neighbor_positions, parent));
     graph.update_cell_status(player.position, CellStatus::DeadEnd);
-    player.move_forward();
-    message
+    player.step_toward(&target)
 }
 
 /// Steps away from a cell an opponent is holding, preferring the way we came, so the

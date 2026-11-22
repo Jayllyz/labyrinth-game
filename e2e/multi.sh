@@ -34,7 +34,10 @@ SERVER_ARGS=(run --port "$PORT" --gui websocket)
 "$SERVER" "${SERVER_ARGS[@]}" > "$LOG" 2>&1 &
 SERVER_PID=$!
 trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
-sleep 1
+for _ in $(seq 50); do
+  (echo > "/dev/tcp/127.0.0.1/$PORT") 2>/dev/null && break
+  sleep 0.1
+done
 
 echo "Maze ${MAZE:-default}, timeout ${TIMEOUT}s, server log: $LOG"
 CLIENT_PIDS=()
