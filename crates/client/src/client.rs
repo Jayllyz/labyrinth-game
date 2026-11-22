@@ -195,7 +195,7 @@ impl GameClient {
                     &log_ctx.thread_name,
                     logger,
                     format!("{:?}", value),
-                    LogLevel::Info,
+                    LogLevel::Debug,
                 );
 
                 let Challenge::SecretSumModulo(modulo) = value;
@@ -203,12 +203,17 @@ impl GameClient {
                 Self::solve_challenge(stream, secrets, modulo)?;
             }
             Message::ActionError(err) => {
+                let level = match err {
+                    messages::ActionError::CannotPassThroughWall
+                    | messages::ActionError::CannotPassThroughOpponent => LogLevel::Debug,
+                    _ => LogLevel::Error,
+                };
                 Self::log_handler(
                     &log_ctx.tui_state,
                     &log_ctx.thread_name,
                     logger,
                     format!("Action error: {:?}", err),
-                    LogLevel::Error,
+                    level,
                 );
                 match err {
                     // The server follows these with a fresh RadarView, which drives the next move.
@@ -357,6 +362,10 @@ impl GameClient {
         message: impl Into<String>,
         level: LogLevel,
     ) {
+        if matches!(level, LogLevel::Debug) && !logger.is_debug_enabled() {
+            return;
+        }
+
         match tui_state.as_ref() {
             Some(tui) => {
                 if let Ok(mut state) = tui.lock() {
