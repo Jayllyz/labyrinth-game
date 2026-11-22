@@ -242,7 +242,7 @@ impl GameClient {
                 Self::handle_radar_view(stream, view, player_ctx, log_ctx)?;
             }
             Message::Hint(hint) => {
-                Self::handle_hint(hint, player_ctx, secrets);
+                Self::handle_hint(hint, player_ctx, log_ctx, secrets);
             }
             Message::Challenge(value) => {
                 Self::log_handler(
@@ -403,7 +403,12 @@ impl GameClient {
         send_message(stream, &Message::Action(action))
     }
 
-    fn handle_hint(hint: Hint, player_ctx: &mut PlayerContext, secrets: &TeamSecrets) {
+    fn handle_hint(
+        hint: Hint,
+        player_ctx: &mut PlayerContext,
+        log_ctx: &LogContext,
+        secrets: &TeamSecrets,
+    ) {
         match hint {
             Hint::RelativeCompass { angle } => player_ctx.player.record_compass(angle),
             Hint::Secret(secret) => {
@@ -411,7 +416,20 @@ impl GameClient {
                     secrets.insert(thread::current().id(), secret);
                 }
             }
-            Hint::GridSize { .. } | Hint::SOS => {}
+            Hint::GridSize { columns, rows } => Self::log_handler(
+                &log_ctx.tui_state,
+                &log_ctx.thread_name,
+                Logger::get_instance(),
+                format!("Maze is {columns}x{rows}"),
+                LogLevel::Info,
+            ),
+            Hint::SOS => Self::log_handler(
+                &log_ctx.tui_state,
+                &log_ctx.thread_name,
+                Logger::get_instance(),
+                "Received an SOS hint",
+                LogLevel::Info,
+            ),
         }
     }
 
