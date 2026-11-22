@@ -18,6 +18,10 @@ test:
 # Run clippy and tests
 check: clippy test
 
+# Run one team per algorithm on a local server, e.g. `just multi 20,20 60 Alian` (last arg shows that team's TUI)
+multi maze="" timeout="120" tui="":
+    TUI="{{tui}}" e2e/multi.sh "{{maze}}" "{{timeout}}"
+
 # Update changelog
 changelog:
     npx --yes git-cliff@latest -o CHANGELOG.md
