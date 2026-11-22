@@ -1,5 +1,5 @@
 use clap::Parser;
-use client::client::{ClientConfig, GameClient};
+use client::client::{ClientConfig, GameClient, agent_name};
 use client::instructions::Algorithm;
 use client::tui;
 use shared::logger::Logger;
@@ -83,7 +83,7 @@ fn main() {
 
         if let Ok(mut state) = tui_state.lock() {
             for i in 0..args.players {
-                state.register_agent(format!("Player{}", i + 1));
+                state.register_agent(agent_name(args.algorithm, i));
             }
         }
 

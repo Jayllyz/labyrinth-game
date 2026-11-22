@@ -40,6 +40,11 @@ pub struct GameClient {
 
 type TeamSecrets = Arc<Mutex<HashMap<ThreadId, u128>>>;
 
+/// Name of the agent at `index`, shared by the server subscription and the TUI tabs.
+pub fn agent_name(algorithm: Algorithm, index: u8) -> String {
+    format!("{:?}{}", algorithm, index + 1)
+}
+
 /// Opponents move on quickly, so a held cell is only avoided for a few moves.
 const AVOID_OPPONENT_TURNS: u8 = 3;
 
@@ -139,7 +144,7 @@ impl GameClient {
         for i in 0..num_agents {
             let config = self.config.clone();
             let agent_token = token.clone();
-            let agent_name = format!("{:?}{}", algorithm, i + 1);
+            let agent_name = agent_name(algorithm, i);
             let secrets = Arc::clone(&self.secrets);
             let tui_state = tui_state.clone();
 
@@ -578,6 +583,12 @@ mod tests {
 
         assert_eq!(game_ctx.player.position, current);
         assert_eq!(game_ctx.graph.get_cell_status(current), CellStatus::VISITED);
+    }
+
+    #[test]
+    fn test_agents_are_named_after_their_algorithm() {
+        assert_eq!(agent_name(Algorithm::Alian, 0), "Alian1");
+        assert_eq!(agent_name(Algorithm::WallFollower, 2), "WallFollower3");
     }
 
     #[test]
