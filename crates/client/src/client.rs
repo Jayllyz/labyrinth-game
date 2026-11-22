@@ -28,12 +28,10 @@ pub struct ClientConfig {
 
 pub struct GameClient {
     config: ClientConfig,
-    challenge_secret_sum: SecretSumModulo,
+    secrets: TeamSecrets,
 }
 
-struct SecretSumModulo {
-    secrets: Arc<Mutex<HashMap<ThreadId, u128>>>,
-}
+type TeamSecrets = Arc<Mutex<HashMap<ThreadId, u128>>>;
 
 struct PlayerContext {
     graph: MazeGraph,
@@ -47,16 +45,9 @@ struct LogContext {
     tui_state: Option<Arc<Mutex<GameState>>>,
 }
 
-struct Challenges {
-    secrets_sum: SecretSumModulo,
-}
-
 impl GameClient {
     pub fn new(config: ClientConfig) -> Self {
-        Self {
-            config,
-            challenge_secret_sum: SecretSumModulo { secrets: Arc::new(Mutex::new(HashMap::new())) },
-        }
+        Self { config, secrets: Arc::new(Mutex::new(HashMap::new())) }
     }
 
     fn connect_to_server(address: &str, mut max_retries: u8) -> GameResult<TcpStream> {
@@ -107,8 +98,7 @@ impl GameClient {
             let config = self.config.clone();
             let agent_token = token.clone();
             let agent_name = format!("Player{}", i + 1);
-            let secrets_sum =
-                SecretSumModulo { secrets: Arc::clone(&self.challenge_secret_sum.secrets) };
+            let secrets = Arc::clone(&self.secrets);
             let tui_state = tui_state.clone();
 
             let handle = thread::Builder::new().name(agent_name.clone()).spawn(
@@ -124,8 +114,6 @@ impl GameClient {
 
                     let log_ctx = LogContext { thread_name: agent_name.clone(), tui_state };
 
-                    let challenge_ctx = Challenges { secrets_sum };
-
                     send_message(
                         &mut stream,
                         &Message::SubscribePlayer(SubscribePlayer {
@@ -140,7 +128,7 @@ impl GameClient {
                             msg,
                             &mut player_ctx,
                             &log_ctx,
-                            &challenge_ctx,
+                            &secrets,
                         )?;
                     }
                     Ok(())
@@ -163,7 +151,7 @@ impl GameClient {
         message: Message,
         player_ctx: &mut PlayerContext,
         log_ctx: &LogContext,
-        challenge_ctx: &Challenges,
+        secrets: &TeamSecrets,
     ) -> GameResult<()> {
         let logger = Logger::get_instance();
 
@@ -199,7 +187,7 @@ impl GameClient {
                 }
             }
             Message::Hint(hint) => {
-                Self::handle_hint(hint, &challenge_ctx.secrets_sum);
+                Self::handle_hint(hint, secrets);
             }
             Message::Challenge(value) => {
                 Self::log_handler(
@@ -212,7 +200,7 @@ impl GameClient {
 
                 let Challenge::SecretSumModulo(modulo) = value;
                 player_ctx.challenge_modulo = Some(modulo);
-                Self::solve_challenge(stream, &challenge_ctx.secrets_sum.secrets, modulo)?;
+                Self::solve_challenge(stream, secrets, modulo)?;
             }
             Message::ActionError(err) => {
                 Self::log_handler(
@@ -233,11 +221,7 @@ impl GameClient {
                     messages::ActionError::InvalidChallengeSolution
                     | messages::ActionError::SolveChallengeFirst => {
                         if let Some(modulo) = player_ctx.challenge_modulo {
-                            Self::solve_challenge(
-                                stream,
-                                &challenge_ctx.secrets_sum.secrets,
-                                modulo,
-                            )?;
+                            Self::solve_challenge(stream, secrets, modulo)?;
                         }
                     }
                 }
@@ -333,9 +317,9 @@ impl GameClient {
         Ok(instructions::check_win_condition(&radar_view.cells, action))
     }
 
-    fn handle_hint(hint: Hint, secrets_sum: &SecretSumModulo) {
+    fn handle_hint(hint: Hint, secrets: &TeamSecrets) {
         if let Hint::Secret(secret) = hint
-            && let Ok(mut secrets) = secrets_sum.secrets.lock()
+            && let Ok(mut secrets) = secrets.lock()
         {
             secrets.insert(thread::current().id(), secret);
         }
@@ -343,13 +327,13 @@ impl GameClient {
 
     fn solve_challenge(
         stream: &mut impl Write,
-        secrets: &Arc<Mutex<HashMap<ThreadId, u128>>>,
+        secrets: &TeamSecrets,
         modulo: u128,
     ) -> GameResult<()> {
-        let Ok(secrets) = secrets.lock() else {
-            return Ok(());
+        let answer = match secrets.lock() {
+            Ok(secrets) => instructions::solve_sum_modulo(modulo, &secrets),
+            Err(_) => return Ok(()),
         };
-        let answer = instructions::solve_sum_modulo(modulo, &secrets);
         send_message(stream, &Message::Action(Action::SolveChallenge { answer }))
     }
 
@@ -402,7 +386,7 @@ mod tests {
         (listener, format!("127.0.0.1:{}", addr.port()))
     }
 
-    fn create_test_contexts(thread_name: String) -> (PlayerContext, LogContext, Challenges) {
+    fn create_test_contexts(thread_name: String) -> (PlayerContext, LogContext, TeamSecrets) {
         Logger::init(true);
         let game_ctx = PlayerContext {
             graph: MazeGraph::new(),
@@ -413,11 +397,7 @@ mod tests {
 
         let log_ctx = LogContext { thread_name, tui_state: None };
 
-        let challenge_ctx = Challenges {
-            secrets_sum: SecretSumModulo { secrets: Arc::new(Mutex::new(HashMap::new())) },
-        };
-
-        (game_ctx, log_ctx, challenge_ctx)
+        (game_ctx, log_ctx, Arc::new(Mutex::new(HashMap::new())))
     }
 
     fn sent_messages(buf: Vec<u8>) -> Vec<Message> {
@@ -446,8 +426,7 @@ mod tests {
             messages::ActionError::CannotPassThroughOpponent,
             messages::ActionError::NoRunningChallenge,
         ] {
-            let (mut game_ctx, log_ctx, challenge_ctx) =
-                create_test_contexts("Player1".to_string());
+            let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
             let mut sent = Vec::new();
 
             GameClient::handle_server_message(
@@ -455,7 +434,7 @@ mod tests {
                 Message::ActionError(err),
                 &mut game_ctx,
                 &log_ctx,
-                &challenge_ctx,
+                &secrets,
             )
             .unwrap();
 
@@ -465,30 +444,18 @@ mod tests {
 
     #[test]
     fn test_each_agent_answers_challenge_with_its_own_modulo() {
-        let (mut agent_a, log_a, challenge_ctx) = create_test_contexts("Player1".to_string());
+        let (mut agent_a, log_a, secrets) = create_test_contexts("Player1".to_string());
         let (mut agent_b, log_b, _) = create_test_contexts("Player2".to_string());
-        challenge_ctx.secrets_sum.secrets.lock().unwrap().insert(thread::current().id(), 25);
+        secrets.lock().unwrap().insert(thread::current().id(), 25);
 
         let mut sent = Vec::new();
         let challenge = |m| Message::Challenge(Challenge::SecretSumModulo(m));
         let invalid = Message::ActionError(messages::ActionError::InvalidChallengeSolution);
-        GameClient::handle_server_message(
-            &mut sent,
-            challenge(10),
-            &mut agent_a,
-            &log_a,
-            &challenge_ctx,
-        )
-        .unwrap();
-        GameClient::handle_server_message(
-            &mut sent,
-            challenge(7),
-            &mut agent_b,
-            &log_b,
-            &challenge_ctx,
-        )
-        .unwrap();
-        GameClient::handle_server_message(&mut sent, invalid, &mut agent_a, &log_a, &challenge_ctx)
+        GameClient::handle_server_message(&mut sent, challenge(10), &mut agent_a, &log_a, &secrets)
+            .unwrap();
+        GameClient::handle_server_message(&mut sent, challenge(7), &mut agent_b, &log_b, &secrets)
+            .unwrap();
+        GameClient::handle_server_message(&mut sent, invalid, &mut agent_a, &log_a, &secrets)
             .unwrap();
 
         assert_eq!(answers(sent), ["5", "4", "5"]);
@@ -543,14 +510,14 @@ mod tests {
 
         let mut stream = TcpStream::connect(addr).unwrap();
         let message = Message::SubscribePlayerResult(SubscribePlayerResult::Ok);
-        let (mut game_ctx, log_ctx, challenge_ctx) = create_test_contexts("Player1".to_string());
+        let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
 
         let result = GameClient::handle_server_message(
             &mut stream,
             message,
             &mut game_ctx,
             &log_ctx,
-            &challenge_ctx,
+            &secrets,
         );
 
         assert!(result.is_ok());
@@ -567,34 +534,6 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_secret_sum_modulo() {
-        let (listener, addr) = setup_mock_server();
-
-        thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let msg = receive_message(&mut stream).unwrap();
-            if let Message::Action(Action::SolveChallenge { answer: _ }) = msg {
-            } else {
-                panic!("Message inattendu reçu");
-            }
-        });
-
-        let mut stream = TcpStream::connect(addr).unwrap();
-        let message = Message::Challenge(Challenge::SecretSumModulo(10));
-        let (mut game_ctx, log_ctx, challenge_ctx) = create_test_contexts("Player1".to_string());
-
-        let result = GameClient::handle_server_message(
-            &mut stream,
-            message,
-            &mut game_ctx,
-            &log_ctx,
-            &challenge_ctx,
-        );
-
-        assert!(result.is_ok());
-    }
-
-    #[test]
     fn test_handle_radar_view() {
         let (listener, addr) = setup_mock_server();
 
@@ -606,14 +545,14 @@ mod tests {
 
         let mut stream = TcpStream::connect(addr).unwrap();
         let message = Message::RadarView(messages::RadarView("bKgGjsIyap8p8aa".to_string()));
-        let (mut game_ctx, log_ctx, challenge_ctx) = create_test_contexts("Player1".to_string());
+        let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
 
         let result = GameClient::handle_server_message(
             &mut stream,
             message,
             &mut game_ctx,
             &log_ctx,
-            &challenge_ctx,
+            &secrets,
         );
 
         assert!(result.is_ok());
@@ -625,7 +564,7 @@ mod tests {
         thread::spawn(move || if let Ok((_stream, _)) = listener.accept() {});
 
         let mut stream = TcpStream::connect(addr).unwrap();
-        let (mut game_ctx, log_ctx, challenge_ctx) = create_test_contexts("Player1".to_string());
+        let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
 
         let message = Message::Hint(Hint::Secret(10));
 
@@ -634,7 +573,7 @@ mod tests {
             message,
             &mut game_ctx,
             &log_ctx,
-            &challenge_ctx,
+            &secrets,
         );
 
         assert!(result.is_ok());

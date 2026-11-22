@@ -29,7 +29,7 @@ fn rotate_right_90(cells: &mut [Cell]) {
 pub struct Player {
     pub direction: Direction,
     pub position: Cell,
-    pub last_position: Option<(Cell, Direction)>,
+    pub saved_state: Option<(Cell, Direction)>,
 }
 
 impl Player {
@@ -37,7 +37,7 @@ impl Player {
         Self {
             position: Cell { row: 0, column: 0 },
             direction: Direction::Front,
-            last_position: None,
+            saved_state: None,
         }
     }
 
@@ -114,11 +114,11 @@ impl Player {
     }
 
     pub fn save_state(&mut self) {
-        self.last_position = Some((self.position, self.direction.clone()));
+        self.saved_state = Some((self.position, self.direction.clone()));
     }
 
     pub fn revert_move(&mut self) {
-        if let Some((position, direction)) = self.last_position.take() {
+        if let Some((position, direction)) = self.saved_state.take() {
             self.position = position;
             self.direction = direction;
         }
@@ -322,7 +322,7 @@ mod tests {
         let mut p = Player {
             position: Cell { row: 0, column: 0 },
             direction: Direction::Front,
-            last_position: None,
+            saved_state: None,
         };
         let mut m = MazeGraph::new();
         maze_to_graph(&data, &p, &mut m);
@@ -512,7 +512,7 @@ mod tests {
         let mut player = Player {
             position: Cell { row: 5, column: 5 },
             direction: Direction::Front,
-            last_position: None,
+            saved_state: None,
         };
 
         player.move_forward();
