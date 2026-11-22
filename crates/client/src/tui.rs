@@ -693,6 +693,7 @@ mod tests {
             position: cell,
             direction: shared::messages::Direction::Front,
             saved_state: None,
+            exit_bearing: None,
         };
 
         game_state.update_state("agent1", graph.clone(), player.clone());
@@ -759,6 +760,7 @@ mod tests {
             position: Cell { row: 0, column: 0 },
             direction: Direction::Front,
             saved_state: None,
+            exit_bearing: None,
         };
 
         let viz = tui.create_maze_visualization(&graph, &player, 10, 10);
@@ -787,6 +789,7 @@ mod tests {
             position: Cell { row: 0, column: 0 },
             direction: Direction::Front,
             saved_state: None,
+            exit_bearing: None,
         };
 
         let (row_start, row_end, col_start, col_end) =
@@ -807,6 +810,7 @@ mod tests {
             position: Cell { row: 2, column: 3 },
             direction: Direction::Front,
             saved_state: None,
+            exit_bearing: None,
         };
         let (row_start, row_end, col_start, col_end) =
             Tui::calculate_view_bounds(bounds, &edge_player, 12, 6);

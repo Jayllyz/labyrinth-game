@@ -30,6 +30,8 @@ pub struct Player {
     pub direction: Direction,
     pub position: Cell,
     pub saved_state: Option<(Cell, Direction)>,
+    /// Last compass hint, as clockwise degrees from the starting heading (`Front`).
+    pub exit_bearing: Option<f32>,
 }
 
 impl Player {
@@ -38,7 +40,22 @@ impl Player {
             position: Cell { row: 0, column: 0 },
             direction: Direction::Front,
             saved_state: None,
+            exit_bearing: None,
         }
+    }
+
+    /// Records a compass hint: clockwise degrees from the heading to the exit.
+    /// The hint describes the agent as of the last radar view, before the move
+    /// already applied here.
+    pub fn record_compass(&mut self, angle: f32) {
+        let heading = self.saved_state.as_ref().map_or(&self.direction, |(_, d)| d);
+        let degrees = match heading {
+            Direction::Front => 0.0,
+            Direction::Right => 90.0,
+            Direction::Back => 180.0,
+            Direction::Left => 270.0,
+        };
+        self.exit_bearing = Some((degrees + angle).rem_euclid(360.0));
     }
 
     pub fn move_forward(&mut self) {
@@ -335,6 +352,7 @@ mod tests {
             position: Cell { row: 0, column: 0 },
             direction: Direction::Front,
             saved_state: None,
+            exit_bearing: None,
         };
         let mut m = MazeGraph::new();
         maze_to_graph(&data, &p, &mut m);
@@ -525,6 +543,7 @@ mod tests {
             position: Cell { row: 5, column: 5 },
             direction: Direction::Front,
             saved_state: None,
+            exit_bearing: None,
         };
 
         player.move_forward();

@@ -242,7 +242,7 @@ impl GameClient {
                 Self::handle_radar_view(stream, view, player_ctx, log_ctx)?;
             }
             Message::Hint(hint) => {
-                Self::handle_hint(hint, secrets);
+                Self::handle_hint(hint, player_ctx, secrets);
             }
             Message::Challenge(value) => {
                 Self::log_handler(
@@ -403,11 +403,15 @@ impl GameClient {
         send_message(stream, &Message::Action(action))
     }
 
-    fn handle_hint(hint: Hint, secrets: &TeamSecrets) {
-        if let Hint::Secret(secret) = hint
-            && let Ok(mut secrets) = secrets.lock()
-        {
-            secrets.insert(thread::current().id(), secret);
+    fn handle_hint(hint: Hint, player_ctx: &mut PlayerContext, secrets: &TeamSecrets) {
+        match hint {
+            Hint::RelativeCompass { angle } => player_ctx.player.record_compass(angle),
+            Hint::Secret(secret) => {
+                if let Ok(mut secrets) = secrets.lock() {
+                    secrets.insert(thread::current().id(), secret);
+                }
+            }
+            Hint::GridSize { .. } | Hint::SOS => {}
         }
     }
 
@@ -747,6 +751,26 @@ mod tests {
         );
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_compass_hint_is_stored_in_the_agent_frame() {
+        let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
+        game_ctx.player.direction = messages::Direction::Right;
+        game_ctx.player.save_state();
+        game_ctx.player.turn_right();
+        let exit_on_its_right = Message::Hint(Hint::RelativeCompass { angle: 90.0 });
+
+        GameClient::handle_server_message(
+            &mut Vec::new(),
+            exit_on_its_right,
+            &mut game_ctx,
+            &log_ctx,
+            &secrets,
+        )
+        .unwrap();
+
+        assert_eq!(game_ctx.player.exit_bearing, Some(180.0));
     }
 
     #[test]

@@ -135,12 +135,19 @@ pub fn alian_solver(
 /// Backtracking along parents breaks once the agent is pushed off its path (by an
 /// opponent), so the path goes through every known cell, dead ends included, except
 /// `avoid` (a cell an opponent holds).
-fn first_step_to_unexplored(graph: &MazeGraph, from: Cell, avoid: Option<Cell>) -> Option<Cell> {
+fn first_step_to_unexplored(
+    graph: &MazeGraph,
+    from: Cell,
+    avoid: Option<Cell>,
+    exit_bearing: Option<f32>,
+) -> Option<Cell> {
     let mut came_from: HashMap<Cell, Cell> = HashMap::from([(from, from)]);
     let mut queue = VecDeque::from([from]);
 
     while let Some(cell) = queue.pop_front() {
-        for &next in &graph.cell_map.get(&cell)?.neighbors {
+        // Trying first steps toward the exit first breaks ties between equally close cells.
+        let bearing = exit_bearing.filter(|_| cell == from);
+        for next in toward_exit(cell, &graph.cell_map.get(&cell)?.neighbors, bearing) {
             if came_from.contains_key(&next) || !graph.contains(&next) || Some(next) == avoid {
                 continue;
             }
@@ -158,6 +165,20 @@ fn first_step_to_unexplored(graph: &MazeGraph, from: Cell, avoid: Option<Cell>) 
     None
 }
 
+/// `neighbors` of `from`, those whose direction is closest to the exit bearing first.
+fn toward_exit(from: Cell, neighbors: &HashSet<Cell>, exit_bearing: Option<f32>) -> Vec<Cell> {
+    let mut cells: Vec<Cell> = neighbors.iter().copied().collect();
+    let Some(bearing) = exit_bearing else {
+        return cells;
+    };
+    cells.sort_by_cached_key(|cell| {
+        let (rows, columns) = ((cell.row - from.row) as f32, (cell.column - from.column) as f32);
+        let diff = (rows.atan2(-columns).to_degrees() - bearing).rem_euclid(360.0);
+        diff.min(360.0 - diff) as u32
+    });
+    cells
+}
+
 pub fn tremeaux_solver(
     player: &mut Player,
     graph: &mut MazeGraph,
@@ -169,8 +190,8 @@ pub fn tremeaux_solver(
         };
         (player_cell.neighbors.clone(), player_cell.parent)
     };
-
-    for &neighbor_position in &neighbor_positions {
+    for neighbor_position in toward_exit(player.position, &neighbor_positions, player.exit_bearing)
+    {
         if Some(neighbor_position) == avoid {
             continue;
         }
@@ -193,7 +214,7 @@ pub fn tremeaux_solver(
         }
     }
 
-    let target = first_step_to_unexplored(graph, player.position, avoid)
+    let target = first_step_to_unexplored(graph, player.position, avoid, player.exit_bearing)
         .unwrap_or_else(|| backtrack_target(&neighbor_positions, parent));
     graph.update_cell_status(player.position, CellStatus::DeadEnd);
     player.step_toward(&target)
@@ -419,6 +440,33 @@ mod tests {
         graph.add_neighbor(&unexplored, &SIDE);
 
         tremeaux_solver(&mut player, &mut graph, Some(BLOCKED));
+
+        assert_eq!(player.position, SIDE);
+    }
+
+    #[test]
+    fn test_tremeaux_explores_toward_the_exit_first() {
+        let (mut player, mut graph) = graph_around_player(&[BLOCKED, SIDE], BEHIND);
+        player.exit_bearing = Some(90.0);
+
+        tremeaux_solver(&mut player, &mut graph, None);
+
+        assert_eq!(player.position, SIDE);
+    }
+
+    #[test]
+    fn test_tremeaux_backtracks_toward_the_exit_when_unexplored_cells_are_as_close() {
+        let (mut player, mut graph) = graph_around_player(&[BLOCKED, SIDE], BEHIND);
+        for (via, unexplored) in
+            [(BLOCKED, Cell { row: 5, column: 3 }), (SIDE, Cell { row: 7, column: 5 })]
+        {
+            graph.update_cell_status(via, CellStatus::VISITED);
+            graph.add(unexplored, CellType::NOTHING);
+            graph.add_neighbor(&via, &unexplored);
+        }
+        player.exit_bearing = Some(90.0);
+
+        tremeaux_solver(&mut player, &mut graph, None);
 
         assert_eq!(player.position, SIDE);
     }
