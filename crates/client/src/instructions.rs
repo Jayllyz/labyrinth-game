@@ -1,6 +1,6 @@
 use crate::data_structures::maze_graph::{CellStatus, MazeGraph};
-use crate::heading::Heading;
 use crate::maze_parser::Player;
+use shared::heading::Heading;
 use shared::maze::Cell;
 use shared::messages;
 use shared::radar::{CellType, Passages, Radar};

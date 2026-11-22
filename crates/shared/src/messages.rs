@@ -75,7 +75,7 @@ pub enum Action {
     SolveChallenge { answer: String },
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub enum ActionError {
     InvalidMove,
     OutOfMap,

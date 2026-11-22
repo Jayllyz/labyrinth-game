@@ -1,0 +1,217 @@
+# server-arm --maze 10,10 --seed 3 --generator growing-tree --decimation 0
+exit 1 6
+┏━━━━━━━━━━━┳━┳━━━┳━┓
+┃           ┃ ┃   ┃ ┃
+┃ ╺━┓ ╻ ╻ ╻ ┃ ╹ ╻ ┃ ┃
+┃   ┃ ┃ ┃ ┃ ┃   ┃ ┃ ┃
+┣━┓ ┗━┫ ┃ ┗━┛ ╺━┫ ┃ ┃
+┃ ┃   ┃ ┃       ┃ ┃ ┃
+┃ ┗━┓ ┃ ┗━┳━━━━━┛ ┃ ┃
+┃   ┃ ┃   ┃       ┃ ┃
+┃ ╻ ┃ ┃ ╺━┫ ╺━━━┳━┛ ┃
+┃ ┃ ┃ ┃   ┃     ┃   ┃
+┃ ┃ ┗━┻━╸ ┗━┳━╸ ┃ ╺━┫
+┃ ┃         ┃   ┃   ┃
+┃ ┣━━━━━━━━━┫ ╻ ┣━╸ ┃
+┃ ┃         ┃ ┃ ┃   ┃
+┃ ┗━┳━━━━━┓ ╹ ┣━┛ ┏━┫
+┃   ┃     ┃   ┃   ┃ ┃
+┃ ╻ ┃ ╺━┓ ┣━━━┫ ╺━┛ ┃
+┃ ┃ ┃   ┃ ┃   ┃     ┃
+┃ ┃ ┗━╸ ┃ ╹ ╻ ╹ ┏━╸ ┃
+┃ ┃     ┃   ┃   ┃   ┃
+┗━┻━━━━━┻━━━┻━━━┻━━━┛
+5 7 North GfkKaczAaa8a//a
+6 7 East giKcMfGa//apapa
+6 6 North keeKMcGM8a8papa
+6 5 North rPeikIyc/W8a8aa
+7 5 East MQucPzya//aaaaa
+7 6 South bOeajIGa//8p8aa
+7 5 North gewIQjHyapapapa
+7 4 North fiKcMfGa//apapa
+6 4 West keeOwcGM8a8papa
+5 4 West rAeakIya//8a8aa
+5 3 North IQeajsua//8a8aa
+6 3 East cKeqjIGO8p8p8aa
+7 3 East begGkcHyap8p8pa
+8 3 East biKckfGa//ap8pa
+8 2 North keeqwcGO8p8papa
+8 1 North begGkcIyap8p8pa
+8 0 North jiucAjGa//apapa
+7 0 West kiMbwjHad/apapa
+7 1 South APeiMIyb/W8aaaa
+6 1 West QAvbPPAad/aaaaa
+6 0 North bOeajIGa//8p8aa
+6 1 South kewQAjIvaaapapa
+6 2 South LkKcMjua//aaapa
+5 2 West bueOjsGL8a8p8aa
+4 2 West Hkeakcua//8a8pa
+4 1 North cKgOjsHwaa8p8aa
+4 0 North vQucQLya//aaaaa
+5 0 East HQeajsya//8a8aa
+5 1 South cOeajsGa//8p8aa
+5 0 North giucQfGa//apapa
+4 0 West keMsMfHyapapapa
+3 0 West jeMswfIyapapapa
+2 0 West jeKswjGO8papapa
+1 0 West jegGMcIyap8papa
+0 0 West jiucAjGa//apapa
+0 1 South kiMbwjHad/apapa
+1 1 East QjeiMcyb/W8aapa
+1 2 South cyLbjPIad/ap8aa
+2 2 East MkeaMcua//8aapa
+2 3 South cueGjIGO8p8p8aa
+2 4 South bieakcGa//8p8pa
+2 3 North cefGkcIyap8p8pa
+2 2 North biMbkjHad/ap8pa
+1 2 West Qjeiwcyb/W8aapa
+1 1 North cyMbjPIad/ap8aa
+0 1 West wAeaMIya//8aaaa
+0 0 North IAeajIua//8a8aa
+1 0 East cKeyjIGM8a8p8aa
+2 0 East HgeykcyL8a8a8pa
+2 1 South kOeavsGa//8paaa
+2 0 North sAKckLua//aa8aa
+3 0 East HMeyjIuL8a8a8aa
+3 1 South kKeqvsGO8p8paaa
+3 2 South begqkcIyap8p8pa
+3 3 South beLIkjIyapap8pa
+3 4 South jiMbMjHad/apapa
+4 4 East AzeiwIyc/W8aaaa
+4 5 South IAKcjPua//aa8aa
+3 5 West bKeqjIGO8p8p8aa
+2 5 West beeOkcGL8a8p8pa
+1 5 West Hkeakcua//8a8pa
+1 4 North cKfGjsIyap8p8aa
+1 3 North fiwbQjIad/apapa
+0 3 West QkKcwfya//aaapa
+0 2 North byeajIGa//8p8aa
+0 3 South ceLrkjIOapap8pa
+0 4 South jeeqMcGO8p8papa
+0 5 South beeqkcGO8p8p8pa
+0 6 South befqkcIyap8p8pa
+0 7 South beLrkjIOapap8pa
+0 8 South jeeGMcGO8p8papa
+0 9 South bieakcGa//8p8pa
+0 8 North ceeykcGM8a8p8pa
+0 7 North rweqkIyO8p8a8aa
+1 7 East QQeavsua//8aaaa
+1 8 South cugGjIHyap8p8aa
+1 9 South biKckfGa//ap8pa
+2 9 East kegGwcIyap8papa
+3 9 East jiucAjGa//apapa
+3 8 North kiMbwjIad/apapa
+2 8 West AAeaMIya//8aaaa
+2 7 North IAeajIua//8a8aa
+3 7 East cKeOjIGL8a8p8aa
+4 7 East Hkeakcua//8a8pa
+4 8 South cKgGjsIyap8p8aa
+4 9 South jiucAjGa//apapa
+5 9 East kiMbwjIad/apapa
+5 8 North AQeaMsya//8aaaa
+6 8 East IzeijIyc/W8a8aa
+6 9 South gOuczPGa//apaaa
+7 9 East giLbMfIad/apapa
+7 8 North QgeKMcuM8a8aapa
+8 8 East kugOLIIwaa8paaa
+9 8 East rQKckPya//aa8aa
+9 9 South HQeajsya//8a8aa
+8 9 West cOeajsGa//8p8aa
+9 9 East giucQfGa//apapa
+9 8 North keKIMfGO8papapa
+9 7 North jieawcGa//8papa
+9 8 South IgeOkcuM8a8a8pa
+8 8 West kKfOLIIwaa8paaa
+7 8 West rQMbkzAad/aa8aa
+7 7 North HPeijsyb/W8a8aa
+8 7 East cOMbjzHad/ap8aa
+8 6 North MjeiMcyc/W8aapa
+9 6 East kyuczPGa//apaaa
+9 5 North giMbMjIad/apapa
+8 5 West AQeaMsya//8aaaa
+8 4 North IzeejIyc/W8a8aa
+9 4 East cOKcjLGa//ap8aa
+9 3 North geeqMcGO8p8papa
+9 2 North beeqkcGO8p8p8pa
+9 1 North beeGkcGO8p8p8pa
+9 0 North bieakcGa//8p8pa
+9 1 South ceeqkcGO8p8p8pa
+9 2 South beeqkcGO8p8p8pa
+9 3 South beeKkcGM8a8p8pa
+9 4 South Hjeikcyc/W8a8pa
+8 4 West kOuczzGa//apaaa
+8 5 South giMbMjIad/apapa
+9 5 East AQeaMsya//8aaaa
+9 6 South IzeijIyb/W8a8aa
+8 6 West cOMbjPHad/ap8aa
+8 7 South MjeeMcyc/W8aapa
+7 7 West gyucPLGa//apaaa
+7 8 South geKQMfGM8aapapa
+7 9 South zQeawsya//8aaaa
+6 9 West Izeijsyc/W8a8aa
+6 8 North kOuczPGa//apaaa
+5 8 West giMbMjIad/apapa
+5 9 South AAeaMIya//8aaaa
+4 9 West IAeajIua//8a8aa
+4 8 North cKgGjIHyap8p8aa
+4 7 North biKckfGa//ap8pa
+3 7 West kegGwcIyap8papa
+2 7 West jiucAjGa//apapa
+2 8 South kiMbwjIad/apapa
+3 8 East AAeaMIya//8aaaa
+3 9 South IAeajIua//8a8aa
+2 9 West cKeOjIGL8a8p8aa
+1 9 West Hkeakcua//8a8pa
+1 8 North cKfGjsIyap8p8aa
+1 7 North fivbQjIad/apapa
+0 7 West QkKcwfua//aaapa
+0 6 North bueqjIGO8p8p8aa
+0 5 North beeqkcGO8p8p8pa
+0 4 North beeykcGM8a8p8pa
+0 3 North rweGkIyO8p8a8aa
+1 3 East QQeaLsua//8aaaa
+1 4 South cugGjIHyap8p8aa
+1 5 South biKckfGa//ap8pa
+2 5 East keeqwcGO8p8papa
+3 5 East begqkcIyap8p8pa
+4 5 East jeuIAjGO8papapa
+5 5 East fieaMcGa//8papa
+4 5 West IfeykcyP8a8a8pa
+4 4 North kOLbvPIad/apaaa
+3 4 West wQeaMIua//8aaaa
+3 3 North IweqjIyO8p8a8aa
+4 3 East kOeavIGa//8paaa
+3 3 West QkucAjua//aaapa
+3 2 North bKeqjIGO8p8p8aa
+3 1 North begOkcHvaa8p8pa
+3 0 North zAucQLua//aaaaa
+4 0 East HMeOjsuM8a8a8aa
+4 1 South kKgGLsHyap8paaa
+4 2 South biKckfGa//ap8pa
+5 2 East kefqwcHyap8papa
+6 2 East beMHkfHOapap8pa
+7 2 East jieawcGa//8papa
+6 2 West sMeqksuO8p8a8aa
+6 1 North QLeOvIyP8a8aaaa
+7 1 East kyMbLPIad/apaaa
+7 0 North wAeaMIya//8aaaa
+8 0 East IAeajIua//8a8aa
+8 1 South cKeqjIGO8p8p8aa
+8 2 South beeOkcGL8a8p8pa
+8 3 South Hkeakcua//8a8pa
+7 3 West cKeqjsGO8p8p8aa
+6 3 West begGkcIyap8p8pa
+5 3 West fiucQjGa//apapa
+5 4 South kiKcwfGa//apapa
+6 4 East keeOMcGL8a8papa
+7 4 East rQeaksua//8a8aa
+7 5 South ILeKjsyQ8a8a8aa
+6 5 West kOKcLLGa//apaaa
+6 6 South geeOMcGM8a8papa
+6 7 South rQeaksya//8a8aa
+5 7 West IPeejsyc/W8a8aa
+5 6 North cOKcjLGa//ap8aa
+4 6 West geeqMcGO8p8papa
+3 6 West beeqkcGO8p8p8pa
+2 6 West beeGkcGO+p8p8pa
+1 6 West bieakcGa//+p8pa

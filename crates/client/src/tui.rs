@@ -1,5 +1,4 @@
 use crate::data_structures::maze_graph::{CellStatus, MazeCell, MazeGraph};
-use crate::heading::Heading;
 use crate::maze_parser::Player;
 use ratatui::crossterm::{
     cursor,
@@ -13,6 +12,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Gauge, Paragraph, Tabs},
 };
+use shared::heading::Heading;
 use shared::{maze::Cell, radar::CellType};
 use std::{
     collections::HashMap,

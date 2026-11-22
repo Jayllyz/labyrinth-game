@@ -218,7 +218,7 @@ impl Agent {
 mod tests {
     use super::*;
     use crate::data_structures::maze_graph::CellStatus;
-    use crate::heading::Heading;
+    use shared::heading::Heading;
     use shared::messages::{self, Direction};
     use shared::radar::CellType;
 
