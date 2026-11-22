@@ -29,7 +29,7 @@ fn rotate_right_90(cells: &mut [Cell]) {
 pub struct Player {
     pub direction: Direction,
     pub position: Cell,
-    pub last_position: Option<(i16, i16)>,
+    pub saved_state: Option<(Cell, Direction)>,
 }
 
 impl Player {
@@ -37,7 +37,7 @@ impl Player {
         Self {
             position: Cell { row: 0, column: 0 },
             direction: Direction::Front,
-            last_position: None,
+            saved_state: None,
         }
     }
 
@@ -113,16 +113,14 @@ impl Player {
         }
     }
 
-    pub fn update_last_position(&mut self) {
-        self.last_position = Some((self.position.row, self.position.column));
+    pub fn save_state(&mut self) {
+        self.saved_state = Some((self.position, self.direction.clone()));
     }
 
     pub fn revert_move(&mut self) {
-        if let Some((row, column)) = self.last_position {
-            // Restore the previous position
-            self.position = Cell { row, column };
-            // Clear the last position after reverting to it
-            self.last_position = None;
+        if let Some((position, direction)) = self.saved_state.take() {
+            self.position = position;
+            self.direction = direction;
         }
     }
 }
@@ -324,7 +322,7 @@ mod tests {
         let mut p = Player {
             position: Cell { row: 0, column: 0 },
             direction: Direction::Front,
-            last_position: None,
+            saved_state: None,
         };
         let mut m = MazeGraph::new();
         maze_to_graph(&data, &p, &mut m);
@@ -514,7 +512,7 @@ mod tests {
         let mut player = Player {
             position: Cell { row: 5, column: 5 },
             direction: Direction::Front,
-            last_position: None,
+            saved_state: None,
         };
 
         player.move_forward();
@@ -537,19 +535,16 @@ mod tests {
     }
 
     #[test]
-    fn test_last_position() {
+    fn test_revert_move_restores_position_and_direction() {
         let mut player = Player::new();
-        assert_eq!(player.last_position, None);
-
         player.position = Cell { row: 1, column: 1 };
 
-        player.update_last_position();
-        assert_eq!(player.last_position, Some((1, 1)));
-
-        player.position = Cell { row: 2, column: 2 };
-
+        player.save_state();
+        player.turn_right();
+        player.move_forward();
         player.revert_move();
+
         assert_eq!(player.position, Cell { row: 1, column: 1 });
-        assert_eq!(player.last_position, None);
+        assert_eq!(player.direction, Direction::Front);
     }
 }
