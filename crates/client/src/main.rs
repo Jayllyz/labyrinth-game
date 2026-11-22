@@ -1,9 +1,10 @@
 use clap::Parser;
-use client::client::{ClientConfig, GameClient};
+use client::client::{ClientConfig, GameClient, agent_name};
 use client::instructions::Algorithm;
 use client::tui;
 use shared::logger::Logger;
 use std::sync::Arc;
+use std::time::Duration;
 
 #[derive(Parser, Debug)]
 #[command(name = "Labyrinth-client")]
@@ -47,6 +48,9 @@ struct Args {
     #[arg(long, help = "TUI refresh rate in milliseconds.", default_value = "150")]
     refresh_rate: u64,
 
+    #[arg(long, help = "Pause before each move in milliseconds.", default_value = "0")]
+    move_delay: u64,
+
     #[arg(
         long,
         help = "Select the used algorithm by the agents.",
@@ -66,8 +70,11 @@ fn main() {
         return;
     }
 
-    let config =
-        ClientConfig { server_addr: format!("{}:{}", args.host, args.port), team_name: args.team };
+    let config = ClientConfig {
+        server_addr: format!("{}:{}", args.host, args.port),
+        team_name: args.team,
+        move_delay: Duration::from_millis(args.move_delay),
+    };
     let client = GameClient::new(config);
 
     if args.tui {
@@ -76,7 +83,7 @@ fn main() {
 
         if let Ok(mut state) = tui_state.lock() {
             for i in 0..args.players {
-                state.register_agent(format!("Player{}", i + 1));
+                state.register_agent(agent_name(args.algorithm, i));
             }
         }
 
@@ -179,6 +186,7 @@ mod tests {
         let config = ClientConfig {
             server_addr: format!("{}:{}", args.host, args.port),
             team_name: args.team,
+            move_delay: Duration::from_millis(args.move_delay),
         };
 
         assert_eq!(config.server_addr, "example.com:9000");

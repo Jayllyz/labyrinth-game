@@ -18,16 +18,19 @@ use shared::{
 };
 use std::{
     collections::HashMap,
-    io::Write,
+    io::{Read, Write},
     net::TcpStream,
     sync::{Arc, Mutex},
     thread::{self, ThreadId},
+    time::Duration,
 };
 
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
     pub server_addr: String,
     pub team_name: String,
+    /// Pause before each move, so a game can be followed in the TUI.
+    pub move_delay: Duration,
 }
 
 pub struct GameClient {
@@ -36,6 +39,11 @@ pub struct GameClient {
 }
 
 type TeamSecrets = Arc<Mutex<HashMap<ThreadId, u128>>>;
+
+/// Name of the agent at `index`, shared by the server subscription and the TUI tabs.
+pub fn agent_name(algorithm: Algorithm, index: u8) -> String {
+    format!("{:?}{}", algorithm, index + 1)
+}
 
 /// Opponents move on quickly, so a held cell is only avoided for a few moves.
 const AVOID_OPPONENT_TURNS: u8 = 3;
@@ -50,6 +58,7 @@ struct PlayerContext {
     wall_follower: WallFollowerState,
     /// Cells the solver may change while choosing a move, restored if the server rejects it.
     saved_cells: Vec<(Cell, MazeCell)>,
+    move_delay: Duration,
 }
 
 impl PlayerContext {
@@ -135,7 +144,7 @@ impl GameClient {
         for i in 0..num_agents {
             let config = self.config.clone();
             let agent_token = token.clone();
-            let agent_name = format!("Player{}", i + 1);
+            let agent_name = agent_name(algorithm, i);
             let secrets = Arc::clone(&self.secrets);
             let tui_state = tui_state.clone();
 
@@ -151,6 +160,7 @@ impl GameClient {
                         avoid: None,
                         wall_follower: WallFollowerState::default(),
                         saved_cells: Vec::new(),
+                        move_delay: config.move_delay,
                     };
 
                     let log_ctx = LogContext { thread_name: agent_name.clone(), tui_state };
@@ -163,16 +173,7 @@ impl GameClient {
                         }),
                     )?;
 
-                    while let Ok(msg) = receive_message(&mut stream) {
-                        Self::handle_server_message(
-                            &mut stream,
-                            msg,
-                            &mut player_ctx,
-                            &log_ctx,
-                            &secrets,
-                        )?;
-                    }
-                    Ok(())
+                    Self::play(&mut stream, &mut player_ctx, &log_ctx, &secrets)
                 },
             )?;
 
@@ -184,6 +185,33 @@ impl GameClient {
             .map(|handle| handle.join().map_err(|e| GameError::ThreadError(format!("{:?}", e)))?)
             .collect::<Result<Vec<_>, _>>()?;
 
+        Ok(())
+    }
+
+    /// Plays until the server closes the connection, which it does once the agent reaches
+    /// the exit. Guessing the win from the radar misses exits other players stand on.
+    fn play(
+        stream: &mut (impl Read + Write),
+        player_ctx: &mut PlayerContext,
+        log_ctx: &LogContext,
+        secrets: &TeamSecrets,
+    ) -> GameResult<()> {
+        while let Ok(msg) = receive_message(stream) {
+            Self::handle_server_message(stream, msg, player_ctx, log_ctx, secrets)?;
+        }
+
+        Self::log_handler(
+            &log_ctx.tui_state,
+            &log_ctx.thread_name,
+            Logger::get_instance(),
+            "Found the exit!",
+            LogLevel::Info,
+        );
+        if let Some(tui) = &log_ctx.tui_state
+            && let Ok(mut state) = tui.lock()
+        {
+            state.mark_exit_found(&log_ctx.thread_name);
+        }
         Ok(())
     }
 
@@ -211,21 +239,7 @@ impl GameClient {
                 Self::handle_subscription_result(result, log_ctx)?;
             }
             Message::RadarView(view) => {
-                if Self::handle_radar_view(stream, view, player_ctx, log_ctx)? {
-                    Self::log_handler(
-                        &log_ctx.tui_state,
-                        &log_ctx.thread_name,
-                        logger,
-                        "Found the exit!",
-                        LogLevel::Info,
-                    );
-                    if let Some(tui) = &log_ctx.tui_state
-                        && let Ok(mut state) = tui.lock()
-                    {
-                        state.mark_exit_found(&log_ctx.thread_name);
-                    }
-                    return Ok(());
-                }
+                Self::handle_radar_view(stream, view, player_ctx, log_ctx)?;
             }
             Message::Hint(hint) => {
                 Self::handle_hint(hint, secrets);
@@ -341,7 +355,7 @@ impl GameClient {
         view: messages::RadarView,
         player_ctx: &mut PlayerContext,
         log_ctx: &LogContext,
-    ) -> GameResult<bool> {
+    ) -> GameResult<()> {
         let radar_view = extract_data(&decode_base64(&view.0))
             .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {}", e)))?;
 
@@ -385,9 +399,8 @@ impl GameClient {
             },
         };
 
-        send_message(stream, &Message::Action(action.clone()))?;
-
-        Ok(instructions::check_win_condition(&radar_view.cells, action))
+        thread::sleep(player_ctx.move_delay);
+        send_message(stream, &Message::Action(action))
     }
 
     fn handle_hint(hint: Hint, secrets: &TeamSecrets) {
@@ -473,6 +486,7 @@ mod tests {
             avoid: None,
             wall_follower: WallFollowerState::default(),
             saved_cells: Vec::new(),
+            move_delay: Duration::ZERO,
         };
 
         let log_ctx = LogContext { thread_name, tui_state: None };
@@ -574,6 +588,25 @@ mod tests {
     }
 
     #[test]
+    fn test_agent_found_the_exit_when_server_closes_connection() {
+        let (mut game_ctx, mut log_ctx, secrets) = create_test_contexts("Player1".to_string());
+        let tui = Arc::new(Mutex::new(GameState::new()));
+        tui.lock().unwrap().register_agent("Player1".to_string());
+        log_ctx.tui_state = Some(Arc::clone(&tui));
+        let mut closed_stream = std::io::Cursor::new(Vec::new());
+
+        GameClient::play(&mut closed_stream, &mut game_ctx, &log_ctx, &secrets).unwrap();
+
+        assert!(tui.lock().unwrap().has_found_exit("Player1"));
+    }
+
+    #[test]
+    fn test_agents_are_named_after_their_algorithm() {
+        assert_eq!(agent_name(Algorithm::Alian, 0), "Alian1");
+        assert_eq!(agent_name(Algorithm::WallFollower, 2), "WallFollower3");
+    }
+
+    #[test]
     fn test_each_agent_answers_challenge_with_its_own_modulo() {
         let (mut agent_a, log_a, secrets) = create_test_contexts("Player1".to_string());
         let (mut agent_b, log_b, _) = create_test_contexts("Player2".to_string());
@@ -624,8 +657,11 @@ mod tests {
         });
 
         let mut stream = TcpStream::connect(addr.clone()).unwrap();
-        let client =
-            GameClient::new(ClientConfig { server_addr: addr, team_name: "team".to_string() });
+        let client = GameClient::new(ClientConfig {
+            server_addr: addr,
+            team_name: "team".to_string(),
+            move_delay: Duration::ZERO,
+        });
 
         let token = client.register_team(&mut stream).unwrap();
         assert_eq!(token, "test_token");
@@ -656,8 +692,11 @@ mod tests {
 
     #[test]
     fn test_new_client() {
-        let config =
-            ClientConfig { server_addr: "addr".to_string(), team_name: "team".to_string() };
+        let config = ClientConfig {
+            server_addr: "addr".to_string(),
+            team_name: "team".to_string(),
+            move_delay: Duration::ZERO,
+        };
 
         let client = GameClient::new(config.clone());
         assert_eq!(client.config.server_addr, config.server_addr);
@@ -761,7 +800,11 @@ mod tests {
             }
         });
 
-        let config = ClientConfig { server_addr: addr, team_name: "team".to_string() };
+        let config = ClientConfig {
+            server_addr: addr,
+            team_name: "team".to_string(),
+            move_delay: Duration::ZERO,
+        };
         let client = GameClient::new(config);
 
         let result = client.run(1, 1, None, Algorithm::Tremeaux);
