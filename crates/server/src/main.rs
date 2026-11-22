@@ -1,5 +1,6 @@
 use clap::Parser;
 use server::server::{GameServer, ServerConfig};
+use shared::maze::GeneratorAlgorithm;
 use tracing::{error, info};
 use tracing_subscriber::filter::LevelFilter;
 
@@ -32,8 +33,28 @@ struct Args {
     #[arg(long, help = "Players per team.", default_value = "3")]
     team_size: u8,
 
+    #[arg(long, help = "Maze generator.", value_enum, default_value_t = Generator::RecursiveBacktracking)]
+    generator: Generator,
+
     #[arg(long, help = "Enable debug logs.", default_value = "false")]
     debug: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum Generator {
+    /// Long winding corridors and deep dead ends, like the reference server's default.
+    RecursiveBacktracking,
+    /// Easier: an open top row that every cell can reach going up.
+    Sidewinder,
+}
+
+impl From<Generator> for GeneratorAlgorithm {
+    fn from(generator: Generator) -> Self {
+        match generator {
+            Generator::RecursiveBacktracking => Self::RecursiveBacktracker,
+            Generator::Sidewinder => Self::Sidewinder,
+        }
+    }
 }
 
 fn parse_size(text: &str) -> Result<(usize, usize), String> {
@@ -53,6 +74,7 @@ fn main() {
         max_players_per_team: args.team_size,
         width,
         height,
+        generator: args.generator.into(),
     };
     let level = if args.debug { LevelFilter::DEBUG } else { LevelFilter::INFO };
     tracing_subscriber::fmt().with_max_level(level).init();

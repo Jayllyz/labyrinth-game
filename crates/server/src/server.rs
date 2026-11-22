@@ -2,7 +2,7 @@ use crate::game::{Game, Moved, Position};
 use rand::{RngExt, SeedableRng, rng, rngs::StdRng};
 use shared::errors::{GameError, GameResult};
 use shared::heading::Heading;
-use shared::maze_generator::sidewinder;
+use shared::maze::{GeneratorAlgorithm, Maze};
 use shared::messages::{
     Action, ActionError, Client, Message, MessageError, RadarView, RegisterTeamResult,
     RegistrationError, SubscribePlayerResult, Teams, receive_message, send_message,
@@ -22,6 +22,7 @@ pub struct ServerConfig {
     /// Maze size in cells.
     pub width: usize,
     pub height: usize,
+    pub generator: GeneratorAlgorithm,
 }
 
 impl Default for ServerConfig {
@@ -33,6 +34,7 @@ impl Default for ServerConfig {
             max_players_per_team: 3,
             width: 50,
             height: 50,
+            generator: GeneratorAlgorithm::RecursiveBacktracker,
         }
     }
 }
@@ -62,7 +64,8 @@ impl Match {
     /// Builds the maze and places the exit from the seed, so a game can be replayed.
     fn new(config: &ServerConfig) -> Self {
         let mut rng = StdRng::seed_from_u64(config.seed);
-        let maze = sidewinder(config.width, config.height, false, config.seed);
+        let maze =
+            Maze::generate(config.generator, config.width, config.height, false, config.seed);
         let exit = random_cell(&mut rng, config);
         Self {
             game: Game::new(maze, exit),

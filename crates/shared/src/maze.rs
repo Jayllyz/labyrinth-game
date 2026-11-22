@@ -1,4 +1,4 @@
-use crate::maze_generator::sidewinder;
+use crate::maze_generator::{recursive_backtracker, sidewinder};
 use crate::utils::ColorsAnsi;
 use std::ops::Add;
 
@@ -11,8 +11,10 @@ pub struct Maze {
     pub exit: Cell,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeneratorAlgorithm {
     Sidewinder,
+    RecursiveBacktracker,
 }
 
 impl Maze {
@@ -31,6 +33,7 @@ impl Maze {
     ) -> Self {
         match algorithm {
             GeneratorAlgorithm::Sidewinder => sidewinder(width, height, print, seed),
+            GeneratorAlgorithm::RecursiveBacktracker => recursive_backtracker(width, height, seed),
         }
     }
 
