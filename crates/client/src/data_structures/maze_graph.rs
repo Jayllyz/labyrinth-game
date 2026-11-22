@@ -38,6 +38,8 @@ impl MazeCell {
 #[derive(Debug, Clone)]
 pub struct MazeGraph {
     pub cell_map: HashMap<Cell, MazeCell>,
+    /// Lets callers skip looking for a path to the exit until one is on the map.
+    pub exit_seen: bool,
 }
 
 impl Default for MazeGraph {
@@ -48,7 +50,7 @@ impl Default for MazeGraph {
 
 impl MazeGraph {
     pub fn new() -> Self {
-        Self { cell_map: HashMap::new() }
+        Self { cell_map: HashMap::new(), exit_seen: false }
     }
 
     pub fn contains(&self, cell: &Cell) -> bool {
@@ -56,6 +58,7 @@ impl MazeGraph {
     }
 
     pub fn add(&mut self, cell: Cell, cell_type: CellType) {
+        self.exit_seen |= cell_type.is_exit();
         self.cell_map.insert(
             cell,
             MazeCell {

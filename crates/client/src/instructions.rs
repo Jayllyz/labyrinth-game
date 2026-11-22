@@ -127,12 +127,11 @@ pub fn alian_solver(
     player.step_toward(&target)
 }
 
-/// First step of the shortest known path to the nearest unexplored cell.
+/// First step on the shortest known path from `from` to the nearest cell matching `is_target`.
 ///
 /// Backtracking along parents breaks once the agent is pushed off its path (by an
 /// opponent), so the path goes through every known cell, dead ends included, except
 /// `avoid` (a cell an opponent holds).
-/// First step on the shortest known path from `from` to the nearest cell matching `is_target`.
 fn first_step_to(
     graph: &MazeGraph,
     from: Cell,
@@ -178,13 +177,16 @@ fn toward_exit(from: Cell, neighbors: &HashSet<Cell>, exit_bearing: Option<f32>)
     cells
 }
 
-/// Steps toward the exit once it is on the map, whatever the algorithm. Exploring on
-/// after seeing it wasted 7-15% of all moves.
+/// Steps toward the exit once it is on the map, whatever the algorithm, instead of
+/// exploring on after seeing it.
 pub fn step_to_known_exit(
     player: &mut Player,
     graph: &MazeGraph,
     avoid: Option<Cell>,
 ) -> Option<messages::Action> {
+    if !graph.exit_seen {
+        return None;
+    }
     let is_exit = |cell| graph.cell_map.get(&cell).is_some_and(|c| c.cell_type.is_exit());
     let step = first_step_to(graph, player.position, avoid, None, is_exit)?;
     Some(player.step_toward(&step))
