@@ -1,11 +1,9 @@
 use crate::data_structures::maze_graph::{CellStatus, MazeGraph};
 use crate::maze_parser::Player;
-use core::time;
 use shared::maze::Cell;
 use shared::messages::{self, Direction};
 use shared::radar::{CellType, Passages, Radar};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::thread::sleep;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 #[value(rename_all = "PascalCase")]
@@ -87,9 +85,8 @@ pub fn alian_solver(
         }
 
         if status == CellStatus::NotVisited {
+            // A rejected move is handled by stepping aside, so don't wait for the opponent.
             if cell_type == CellType::ENEMY {
-                let five_millis: std::time::Duration = time::Duration::from_millis(500);
-                sleep(five_millis);
                 graph.update_cell_type(neighbor_position, CellType::NOTHING);
             }
             graph.update_cell_status(player_position, CellStatus::VISITED);
@@ -502,6 +499,17 @@ mod tests {
         alian_solver(&mut player, &mut graph, "Player1");
 
         assert_eq!(player.position, SIDE);
+    }
+
+    #[test]
+    fn test_alian_does_not_wait_when_an_opponent_is_next_to_it() {
+        let (mut player, mut graph) = graph_around_player(&[SIDE], BEHIND);
+        graph.update_cell_type(SIDE, CellType::ENEMY);
+        let start = std::time::Instant::now();
+
+        alian_solver(&mut player, &mut graph, "Player1");
+
+        assert!(start.elapsed() < std::time::Duration::from_millis(100));
     }
 
     #[test]
