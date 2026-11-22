@@ -6,11 +6,11 @@ use ratatui::crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
-    Terminal,
-    layout::{Constraint, Direction, Layout},
+    Frame, Terminal,
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Tabs},
+    widgets::{Block, Borders, Clear, Paragraph, Tabs},
 };
 use shared::{logger::LogLevel, maze::Cell, radar::CellType};
 use std::{
@@ -24,6 +24,7 @@ pub struct AgentState {
     pub logs: Vec<(String, LogLevel)>,
     pub graph: MazeGraph,
     pub player: Player,
+    pub found_exit: bool,
 }
 
 impl Default for AgentState {
@@ -34,13 +35,14 @@ impl Default for AgentState {
 
 impl AgentState {
     pub fn new() -> Self {
-        Self { logs: Vec::new(), graph: MazeGraph::new(), player: Player::new() }
+        Self { logs: Vec::new(), graph: MazeGraph::new(), player: Player::new(), found_exit: false }
     }
 }
 
 pub struct GameState {
     agents: HashMap<String, AgentState>,
     selected_tab: usize,
+    finished: bool,
 }
 
 impl Default for GameState {
@@ -51,7 +53,17 @@ impl Default for GameState {
 
 impl GameState {
     pub fn new() -> Self {
-        Self { agents: HashMap::new(), selected_tab: 0 }
+        Self { agents: HashMap::new(), selected_tab: 0, finished: false }
+    }
+
+    pub fn mark_finished(&mut self) {
+        self.finished = true;
+    }
+
+    pub fn mark_exit_found(&mut self, agent: &str) {
+        if let Some(state) = self.agents.get_mut(agent) {
+            state.found_exit = true;
+        }
     }
 
     pub fn register_agent(&mut self, name: String) {
@@ -216,6 +228,10 @@ impl Tui {
         let state = self.state.lock().map_err(|_| io::Error::other("Failed to lock state"))?;
         let agent_names: Vec<String> = state.agents.keys().cloned().collect();
         let selected_tab = state.selected_tab;
+        let result = state.finished.then(|| {
+            let found = state.agents.values().filter(|agent| agent.found_exit).count();
+            (found, state.agents.len())
+        });
 
         let (maze_viz, agent_data) = if let Some(agent_name) = agent_names.get(selected_tab) {
             if let Some(agent) = state.agents.get(agent_name) {
@@ -312,10 +328,34 @@ impl Tui {
                         .block(Block::default().borders(Borders::ALL).title("Logs"));
                     f.render_widget(logs_widget, content_chunks[1]);
                 }
+
+                if let Some((found, total)) = result {
+                    Self::render_finished_popup(f, found, total);
+                }
             })
             .map_err(backend_err)?;
 
         Ok(())
+    }
+
+    fn render_finished_popup(f: &mut Frame, found: usize, total: usize) {
+        let (summary, color) = if found == total {
+            ("All agents found the exit!".to_string(), Color::Green)
+        } else {
+            (format!("{}/{} agents found the exit", found, total), Color::Yellow)
+        };
+
+        let area = f.area().centered(Constraint::Length(40), Constraint::Length(5));
+        let popup = Paragraph::new(vec![
+            Line::styled(summary, Style::default().fg(color).add_modifier(Modifier::BOLD)),
+            Line::from(""),
+            Line::from("Press q to quit"),
+        ])
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL).title("Game finished"));
+
+        f.render_widget(Clear, area);
+        f.render_widget(popup, area);
     }
 
     fn create_stats(&self, agent: &AgentState) -> String {
@@ -751,5 +791,44 @@ mod tests {
 
         let cell = MazeCell::new(CellType::OBJECTIVE);
         assert_eq!(Tui::render_cell(&cell), " ✅ ".to_string());
+    }
+
+    fn rendered_text(finished: bool, exits_found: &[&str]) -> String {
+        let Ok(terminal) = Terminal::new(ratatui::backend::TestBackend::new(80, 24));
+        let state = Arc::new(Mutex::new(GameState::new()));
+        {
+            let mut state = state.lock().unwrap();
+            state.register_agent("Player1".to_string());
+            state.register_agent("Player2".to_string());
+            for agent in exits_found {
+                state.mark_exit_found(agent);
+            }
+            if finished {
+                state.mark_finished();
+            }
+        }
+
+        let mut tui = Tui { terminal, state, refresh_rate: 0 };
+        tui.draw().unwrap();
+        tui.terminal.backend().buffer().content().iter().map(|c| c.symbol()).collect()
+    }
+
+    #[test]
+    fn test_finished_popup_hidden_while_game_running() {
+        assert!(!rendered_text(false, &["Player1", "Player2"]).contains("Game finished"));
+    }
+
+    #[test]
+    fn test_finished_popup_when_all_agents_found_exit() {
+        let text = rendered_text(true, &["Player1", "Player2"]);
+        assert!(text.contains("All agents found the exit!"));
+        assert!(text.contains("Press q to quit"));
+    }
+
+    #[test]
+    fn test_finished_popup_reports_partial_result() {
+        let text = rendered_text(true, &["Player2"]);
+        assert!(text.contains("1/2 agents found the exit"));
+        assert!(!text.contains("All agents found the exit!"));
     }
 }
