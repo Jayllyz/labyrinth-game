@@ -1,8 +1,3 @@
-use crate::to_binary::ToBinary;
-use core::str;
-use std::char;
-use std::fmt::Write;
-
 const BASE64_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
 
 #[derive(Clone, Debug, PartialEq)]
@@ -48,54 +43,23 @@ pub struct Radar {
     pub cells: Vec<CellType>,
 }
 
-/// Splits a string into chunks of specified size, padding the last chunk if necessary.
-///
-/// # Arguments
-///
-/// * `text` - The input string to split
-/// * `chunk_size` - The desired size of each chunk
-///
-/// # Returns
-///
-/// A vector of strings, each of length `chunk_size` (possibly padded with '0's)
-pub fn split_into_chunks(text: &str, chunk_size: usize) -> Vec<String> {
-    text.as_bytes()
-        .chunks(chunk_size)
-        .map(|chunk| {
-            let mut s = String::with_capacity(chunk_size);
-            s.extend(chunk.iter().map(|&b| b as char));
-            if s.len() < chunk_size {
-                s.extend(std::iter::repeat_n('0', chunk_size - s.len()));
-            }
-            s
-        })
-        .collect::<Vec<String>>()
-}
+/// Encodes bytes to Base64 using the custom alphabet, without padding characters.
+pub fn encode_base64(bytes: &[u8]) -> String {
+    let alphabet = BASE64_CHARS.as_bytes();
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    let mut buffer: u32 = 0;
+    let mut bits: u32 = 0;
 
-/// Encodes data to Base64 representation using the custom Base64 alphabet.
-///
-/// # Arguments
-///
-/// * `input` - Any data type that implements the `ToBinary` trait
-///
-/// # Returns
-///
-/// A Base64-encoded string representation of the input data
-pub fn encode_base64<T: ToBinary>(input: T) -> String {
-    let Ok(binary_text) = input.to_binary() else {
-        return String::new();
-    };
-    let subs = split_into_chunks(&binary_text, 6);
-    let mut encoded = String::with_capacity(subs.len());
-
-    for sub in subs {
-        let Ok(decimal) = u8::from_str_radix(&sub, 2) else {
-            continue;
-        };
-
-        if let Some(c) = BASE64_CHARS.chars().nth(decimal as usize) {
-            encoded.push(c);
+    for &byte in bytes {
+        buffer = (buffer << 8) | u32::from(byte);
+        bits += 8;
+        while bits >= 6 {
+            bits -= 6;
+            encoded.push(char::from(alphabet[((buffer >> bits) & 0x3F) as usize]));
         }
+    }
+    if bits > 0 {
+        encoded.push(char::from(alphabet[((buffer << (6 - bits)) & 0x3F) as usize]));
     }
 
     encoded
@@ -117,18 +81,17 @@ pub fn encode_base64<T: ToBinary>(input: T) -> String {
 ///   - +/ (62-63)
 ///
 /// # Returns
-/// A `String` containing the decoded data.
+/// The decoded bytes.
 ///
 /// # Examples
 /// ```
 /// use shared::radar::{encode_base64, decode_base64};
-/// let encoded = encode_base64("Hello");
-/// let decoded = decode_base64(&encoded);
-/// assert_eq!(decoded, "Hello");
+/// let encoded = encode_base64(b"Hello");
+/// assert_eq!(decode_base64(&encoded), b"Hello");
 ///
 /// // Single byte values
-/// assert_eq!(decode_base64("aa"), "\0");
-/// assert_eq!(decode_base64("gq"), "\x19");
+/// assert_eq!(decode_base64("aa"), [0]);
+/// assert_eq!(decode_base64("gq"), [0x19]);
 /// ```
 ///
 /// # Bit Processing
@@ -138,8 +101,8 @@ pub fn encode_base64<T: ToBinary>(input: T) -> String {
 /// Output:   |01001001|00000101|11100011|
 /// Chars:    |   I    |   E    |   š    |
 /// ```
-pub fn decode_base64(input: &str) -> String {
-    let mut decoded = String::new();
+pub fn decode_base64(input: &str) -> Vec<u8> {
+    let mut decoded = Vec::with_capacity(input.len() * 3 / 4);
     let mut buffer: u32 = 0;
     let mut bits: u32 = 0;
 
@@ -158,32 +121,17 @@ pub fn decode_base64(input: &str) -> String {
 
         while bits >= 8 {
             bits -= 8;
-            let byte = ((buffer >> bits) & 0xFF) as u8; // Shift buffer to the right by bits and pad with 0s
-            decoded.push(byte as char);
+            decoded.push(((buffer >> bits) & 0xFF) as u8);
         }
     }
 
     decoded
 }
 
-/// Parses cell data from a binary string and converts it to a vector of CellType enums.
-///
-/// # Arguments
-///
-/// * `octet` - A binary string containing cell data where each cell is represented by 4 bits
-///
-/// # Returns
-///
-/// A vector of CellType enums representing the cell types in the maze
-pub fn retrieve_cell(octet: &str) -> Vec<CellType> {
-    const NUM_CELLS: usize = 9; // 4 bits per cell, remove the last 4 bits (padding)
-    let mut data = Vec::with_capacity(NUM_CELLS);
-
-    for i in (0..NUM_CELLS).map(|x| x * 4) {
-        let bits = &octet[i..i + 4];
-        let value = u8::from_str_radix(bits, 2).unwrap_or(15);
-
-        let cell = match value {
+/// Reads the 9 cells of the radar, 4 bits each, from the high bits of a 40-bit field.
+pub fn retrieve_cell(bits: u64) -> Vec<CellType> {
+    (0..9)
+        .map(|i| match (bits >> (36 - 4 * i)) & 0xF {
             0 => CellType::NOTHING,
             1 => CellType::ALLY,
             2 => CellType::ENEMY,
@@ -196,150 +144,57 @@ pub fn retrieve_cell(octet: &str) -> Vec<CellType> {
             11 => CellType::ObjectiveMonster,
             // Skipping a cell would shift every following one, so unknown values stay in place.
             _ => CellType::INVALID,
-        };
-        data.push(cell);
-    }
-
-    data
+        })
+        .collect()
 }
 
-/// Parses horizontal and vertical passage data from binary strings.
-///
-/// # Arguments
-///
-/// * `horizontal` - A binary string containing horizontal passage data
-/// * `vertical` - A binary string containing vertical passage data
-///
-/// # Returns
-///
-/// A tuple containing two vectors: (horizontal passages, vertical passages)
-pub fn retrieve_passage(horizontal: &str, vertical: &str) -> (Vec<Passages>, Vec<Passages>) {
-    const NUM_HORIZONTAL: usize = 12;
-    const NUM_VERTICAL: usize = 12;
-
-    let mut horizontal_data = Vec::with_capacity(NUM_HORIZONTAL);
-    let mut vertical_data = Vec::with_capacity(NUM_VERTICAL);
-
-    for i in (0..NUM_HORIZONTAL).map(|x| x * 2) {
-        let bits = &horizontal[i..i + 2];
-        let Ok(value) = u8::from_str_radix(bits, 2) else {
-            continue;
-        };
-
-        let passage = match value {
-            0 => Passages::UNDEFINED,
-            1 => Passages::OPEN,
-            2 => Passages::WALL,
-            _ => continue,
-        };
-        horizontal_data.push(passage);
-    }
-
-    for i in (0..NUM_VERTICAL).map(|x| x * 2) {
-        let bits = &vertical[i..i + 2];
-        let Ok(value) = u8::from_str_radix(bits, 2) else {
-            continue;
-        };
-
-        let passage = match value {
-            0 => Passages::UNDEFINED,
-            1 => Passages::OPEN,
-            2 => Passages::WALL,
-            _ => continue,
-        };
-        vertical_data.push(passage);
-    }
-
-    (horizontal_data, vertical_data)
+/// Reads 12 passages, 2 bits each, from the high bits of a 24-bit field.
+fn passages(bits: u32) -> Vec<Passages> {
+    (0..12)
+        .filter_map(|i| match (bits >> (22 - 2 * i)) & 0b11 {
+            0 => Some(Passages::UNDEFINED),
+            1 => Some(Passages::OPEN),
+            2 => Some(Passages::WALL),
+            _ => None,
+        })
+        .collect()
 }
 
-/// Extracts radar data from encoded input.
+/// Reads the horizontal and vertical passages from their 24-bit fields.
+pub fn retrieve_passage(horizontal: u32, vertical: u32) -> (Vec<Passages>, Vec<Passages>) {
+    (passages(horizontal), passages(vertical))
+}
+
+/// Extracts the radar from its decoded bytes.
 ///
-/// # Arguments
+/// Layout (11 bytes):
+/// - bytes 0..3: horizontal passages, little-endian
+/// - bytes 3..6: vertical passages, little-endian
+/// - bytes 6..11: cells
 ///
-/// * `input` - Any data type that implements the `ToBinary` trait
-///
-/// # Returns
-///
-/// A Result containing a Radar struct with horizontal passages, vertical passages,
-/// and cell types, or a formatting error
-///
-/// # Details
-///
-/// The binary data is expected to be structured as follows:
-/// - First 24 bits (3 bytes): Horizontal passage data (in little-endian)
-/// - Next 24 bits (3 bytes): Vertical passage data (in little-endian)
-/// - Last 40 bits (5 bytes): Cell type data
-pub fn extract_data<T: ToBinary>(input: T) -> Result<Radar, std::fmt::Error> {
-    let Ok(binary) = input.to_binary() else {
-        return Ok(Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() });
+/// Shorter input gives an empty radar.
+pub fn extract_data(bytes: &[u8]) -> Radar {
+    let Some(bytes) = bytes.get(..11) else {
+        return Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() };
     };
+    let little_endian_24 = |b: &[u8]| u32::from_le_bytes([b[0], b[1], b[2], 0]);
+    let cells = bytes[6..11].iter().fold(0u64, |acc, &b| (acc << 8) | u64::from(b));
 
-    if binary.len() < 88 {
-        return Ok(Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() });
-    }
-
-    // 3 first octets are for horizontal, 3 next for vertical, and the last 5 for cells
-    // Horizontal and vertical are in little-endian order so we need to reverse them
-    let mut horizontal_bits = String::with_capacity(24);
-    write!(horizontal_bits, "{}{}{}", &binary[16..24], &binary[8..16], &binary[0..8])?;
-
-    let mut vertical_bits = String::with_capacity(24);
-    write!(vertical_bits, "{}{}{}", &binary[40..48], &binary[32..40], &binary[24..32])?;
-
-    let cell_bits = &binary[48..88];
-
-    let (horizontal, vertical) = retrieve_passage(&horizontal_bits, &vertical_bits);
-    let cells = retrieve_cell(cell_bits);
-
-    Ok(Radar { horizontal, vertical, cells })
+    let (horizontal, vertical) =
+        retrieve_passage(little_endian_24(&bytes[0..3]), little_endian_24(&bytes[3..6]));
+    Radar { horizontal, vertical, cells: retrieve_cell(cells) }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Tests for the `split_into_chunks` function
-    #[test]
-    fn test_empty_string() {
-        let result = split_into_chunks("", 3);
-        assert_eq!(result, Vec::<String>::new());
+    fn bits_u64(bits: &str) -> u64 {
+        u64::from_str_radix(bits, 2).unwrap()
     }
 
-    #[test]
-    fn test_string_shorter_than_chunk() {
-        let result = split_into_chunks("ab", 3);
-        assert_eq!(result, vec!["ab0"]);
-    }
-
-    #[test]
-    fn test_string_equal_to_chunk() {
-        let result = split_into_chunks("abc", 3);
-        assert_eq!(result, vec!["abc"]);
-    }
-
-    #[test]
-    fn test_string_longer_than_chunk() {
-        let result = split_into_chunks("abcdef", 3);
-        assert_eq!(result, vec!["abc", "def"]);
-    }
-
-    #[test]
-    fn test_string_with_partial_last_chunk() {
-        let result = split_into_chunks("abcdefgh", 3);
-        assert_eq!(result, vec!["abc", "def", "gh0"]);
-    }
-
-    #[test]
-    fn test_large_chunk_size() {
-        let result = split_into_chunks("hello", 10);
-        assert_eq!(result, vec!["hello00000"]);
-    }
-
-    #[test]
-    fn test_multiple_complete_chunks() {
-        let result = split_into_chunks("abcdefghi", 3);
-        assert_eq!(result, vec!["abc", "def", "ghi"]);
+    fn bits_u32(bits: &str) -> u32 {
+        u32::from_str_radix(bits, 2).unwrap()
     }
 
     #[test]
@@ -352,10 +207,10 @@ mod tests {
         assert_eq!(encode_base64(&[61]), "pq");
         assert_eq!(encode_base64(&[62]), "pG");
         assert_eq!(encode_base64(&[63]), "pW");
-        assert_eq!(encode_base64("Hello, World!"), "sgvSBg8SifDVCMXKiq");
-        let numbers: Vec<i32> = (0..=255).collect();
+        assert_eq!(encode_base64(b"Hello, World!"), "sgvSBg8SifDVCMXKiq");
+        let numbers: Vec<u8> = (0..=255).collect();
         assert_eq!(
-            encode_base64(&numbers[..]),
+            encode_base64(&numbers),
             "aaecaWqfbGCicqOlda0odXareHmufryxgbKAgXWDhH8GisiJjcuMjYGPkISSls4VmdeYmZq1nJC4otO7pd0+p0bbqKneruzhseLks0XntK9quvjtvfvwv1HzwLTCxv5FygfIy2rLzMDOAwPRBg1UB3bXCNn0Dxz3EhL6E3X9FN+aGykdHiwgH4IjIOUmJy6pKjgsK5svLPEyMzQBNj2EN6cHOQoKPAANQkMQQ6YTRQ+WSBkZTlw2T7I5URU8VB6/WmhcW8tfXSFiYCRlZm3oZ9dr0Tpu1DBx2nNA29ZD3T/G4ElJ5oxM5+JP6UVS7E7V8phY8/t19VF4+FR7/p3+/W"
         );
     }
@@ -363,19 +218,19 @@ mod tests {
     #[test]
     fn test_decode_prof() {
         let test1 = "Hello, World!";
-        assert_eq!(decode_base64(&encode_base64(test1)), test1);
+        assert_eq!(decode_base64(&encode_base64(test1.as_bytes())), test1.as_bytes());
         let test2 = "#123";
-        assert_eq!(decode_base64(&encode_base64(test2)), test2);
+        assert_eq!(decode_base64(&encode_base64(test2.as_bytes())), test2.as_bytes());
         let test3 = "Hier, je suis rentré chez moi vers 18h, j'ai manger du poulet avec du riz et ainsi que fait mon exercice de Schooding.";
-        assert_eq!(decode_base64(&encode_base64(test3)), test3);
+        assert_eq!(decode_base64(&encode_base64(test3.as_bytes())), test3.as_bytes());
         let test4 = "qwekasdjladfljadljk";
-        assert_eq!(decode_base64(&encode_base64(test4)), test4);
+        assert_eq!(decode_base64(&encode_base64(test4.as_bytes())), test4.as_bytes());
     }
 
     #[test]
     fn test_retrieve_cell_keeps_every_cell_in_place() {
         // A hint and an exit with an opponent standing on them (values 6 and 10).
-        let cells = retrieve_cell("1111111111110110101011111111000011110000");
+        let cells = retrieve_cell(bits_u64("1111111111110110101011111111000011110000"));
 
         assert_eq!(cells.len(), 9);
         assert_eq!(cells[3], CellType::HELP);
@@ -386,7 +241,7 @@ mod tests {
     #[test]
     fn test_retrieve_cell() {
         assert_eq!(
-            retrieve_cell("1111111111111111000011111111000000000000"),
+            retrieve_cell(bits_u64("1111111111111111000011111111000000000000")),
             vec![
                 CellType::INVALID,
                 CellType::INVALID,
@@ -401,7 +256,7 @@ mod tests {
         );
 
         assert_eq!(
-            retrieve_cell("1111111111110000000011110000000011110000"),
+            retrieve_cell(bits_u64("1111111111110000000011110000000011110000")),
             vec![
                 CellType::INVALID,
                 CellType::INVALID,
@@ -416,7 +271,7 @@ mod tests {
         );
 
         assert_eq!(
-            retrieve_cell("1111111111110000000011110000000011110000"),
+            retrieve_cell(bits_u64("1111111111110000000011110000000011110000")),
             vec![
                 CellType::INVALID,
                 CellType::INVALID,
@@ -433,8 +288,10 @@ mod tests {
 
     #[test]
     fn test_retrieve_passage() {
-        let (horizontal, vertical) =
-            retrieve_passage("000000001010000101100110", "000000000010011010011010");
+        let (horizontal, vertical) = retrieve_passage(
+            bits_u32("000000001010000101100110"),
+            bits_u32("000000000010011010011010"),
+        );
         assert_eq!(
             horizontal,
             vec![
@@ -470,8 +327,10 @@ mod tests {
             ]
         );
 
-        let (horizontal, vertical) =
-            retrieve_passage("000000101000010100011000", "000000001001100001101000");
+        let (horizontal, vertical) = retrieve_passage(
+            bits_u32("000000101000010100011000"),
+            bits_u32("000000001001100001101000"),
+        );
         assert_eq!(
             horizontal,
             vec![
@@ -510,8 +369,7 @@ mod tests {
 
     #[test]
     fn test_extract_data() {
-        let input = decode_base64("jivbQjIad/apapa");
-        let radar_view = extract_data(&input).unwrap();
+        let radar_view = extract_data(&decode_base64("jivbQjIad/apapa"));
         assert_eq!(radar_view.horizontal.len(), 12);
         assert_eq!(radar_view.vertical.len(), 12);
         assert_eq!(radar_view.cells.len(), 9);
@@ -566,14 +424,5 @@ mod tests {
             ],
             radar_view.cells
         );
-    }
-
-    #[test]
-    fn test_split_into_chunks() {
-        assert_eq!(split_into_chunks("001100", 2), vec!["00", "11", "00"]);
-
-        assert_eq!(split_into_chunks("00001111", 4), vec!["0000", "1111"]);
-
-        assert_eq!(split_into_chunks("0011000", 2), vec!["00", "11", "00", "00"]);
     }
 }
