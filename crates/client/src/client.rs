@@ -37,12 +37,17 @@ pub struct GameClient {
 
 type TeamSecrets = Arc<Mutex<HashMap<ThreadId, u128>>>;
 
+/// Opponents move on quickly, so a held cell is only avoided for a few moves.
+const AVOID_OPPONENT_TURNS: u8 = 3;
+
 struct PlayerContext {
     graph: MazeGraph,
     player: Player,
     algorithm: Algorithm,
     challenge_modulo: Option<u128>,
     blocked_by_opponent: Option<Cell>,
+    /// Cell an opponent recently held and turns left to route around it.
+    avoid: Option<(Cell, u8)>,
     /// Cells the solver may change while choosing a move, restored if the server rejects it.
     saved_cells: Vec<(Cell, MazeCell)>,
 }
@@ -141,6 +146,7 @@ impl GameClient {
                         algorithm,
                         challenge_modulo: None,
                         blocked_by_opponent: None,
+                        avoid: None,
                         saved_cells: Vec::new(),
                     };
 
@@ -253,6 +259,7 @@ impl GameClient {
                         let blocked = player_ctx.player.position;
                         player_ctx.revert_move();
                         player_ctx.blocked_by_opponent = Some(blocked);
+                        player_ctx.avoid = Some((blocked, AVOID_OPPONENT_TURNS));
                     }
                     messages::ActionError::CannotPassThroughWall
                     | messages::ActionError::InvalidMove
@@ -345,12 +352,18 @@ impl GameClient {
             instructions::yield_to_opponent(&mut player_ctx.player, &mut player_ctx.graph, cell)
         });
 
+        let avoid = player_ctx.avoid.map(|(cell, _)| cell);
+        player_ctx.avoid =
+            player_ctx.avoid.and_then(|(cell, turns)| (turns > 1).then_some((cell, turns - 1)));
+
         let action: Action = match yielded {
             Some(action) => action,
             None => match player_ctx.algorithm {
-                Algorithm::Tremeaux => {
-                    instructions::tremeaux_solver(&mut player_ctx.player, &mut player_ctx.graph)
-                }
+                Algorithm::Tremeaux => instructions::tremeaux_solver(
+                    &mut player_ctx.player,
+                    &mut player_ctx.graph,
+                    avoid,
+                ),
                 Algorithm::WallFollower => {
                     instructions::right_hand_solver(&radar_view, &mut player_ctx.player)
                 }
@@ -448,6 +461,7 @@ mod tests {
             algorithm: Algorithm::Tremeaux,
             challenge_modulo: None,
             blocked_by_opponent: None,
+            avoid: None,
             saved_cells: Vec::new(),
         };
 
@@ -535,7 +549,7 @@ mod tests {
         game_ctx.graph.set_parent(current, parent);
 
         game_ctx.save_state();
-        instructions::tremeaux_solver(&mut game_ctx.player, &mut game_ctx.graph);
+        instructions::tremeaux_solver(&mut game_ctx.player, &mut game_ctx.graph, None);
         GameClient::handle_server_message(
             &mut Vec::new(),
             Message::ActionError(messages::ActionError::CannotPassThroughOpponent),

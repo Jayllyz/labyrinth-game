@@ -4,7 +4,7 @@ use core::time;
 use shared::maze::Cell;
 use shared::messages::{self, Direction};
 use shared::radar::{CellType, Passages, Radar};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::thread::sleep;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -173,7 +173,39 @@ pub fn alian_solver(
     message
 }
 
-pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::Action {
+/// First step of the shortest known path to the nearest unexplored cell.
+///
+/// Backtracking along parents breaks once the agent is pushed off its path (by an
+/// opponent), so the path goes through every known cell, dead ends included, except
+/// `avoid` (a cell an opponent holds).
+fn first_step_to_unexplored(graph: &MazeGraph, from: Cell, avoid: Option<Cell>) -> Option<Cell> {
+    let mut came_from: HashMap<Cell, Cell> = HashMap::from([(from, from)]);
+    let mut queue = VecDeque::from([from]);
+
+    while let Some(cell) = queue.pop_front() {
+        for &next in &graph.cell_map.get(&cell)?.neighbors {
+            if came_from.contains_key(&next) || !graph.contains(&next) || Some(next) == avoid {
+                continue;
+            }
+            came_from.insert(next, cell);
+            if graph.get_cell_status(next) == CellStatus::NotVisited {
+                let mut step = next;
+                while came_from[&step] != from {
+                    step = came_from[&step];
+                }
+                return Some(step);
+            }
+            queue.push_back(next);
+        }
+    }
+    None
+}
+
+pub fn tremeaux_solver(
+    player: &mut Player,
+    graph: &mut MazeGraph,
+    avoid: Option<Cell>,
+) -> messages::Action {
     let mut message: messages::Action = messages::Action::MoveTo(messages::Direction::Front);
 
     let (neighbor_positions, parent) = {
@@ -186,6 +218,9 @@ pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::
     let mut visited: Vec<Cell> = Vec::new();
 
     for &neighbor_position in &neighbor_positions {
+        if Some(neighbor_position) == avoid {
+            continue;
+        }
         let (walls, mut status, cell_type) = {
             let Some(neighbor_cell) = graph.get_cell(neighbor_position) else {
                 continue;
@@ -235,7 +270,9 @@ pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::
     }
 
     let parent_status = graph.get_cell_status(parent);
-    let target = if (parent_status == CellStatus::DeadEnd || parent == player.position)
+    let target = if let Some(step) = first_step_to_unexplored(graph, player.position, avoid) {
+        step
+    } else if (parent_status == CellStatus::DeadEnd || parent == player.position)
         && !visited.is_empty()
     {
         visited[0]
@@ -392,7 +429,7 @@ mod tests {
         let mut graph = MazeGraph::new();
         maze_to_graph(&radar, &player, &mut graph);
 
-        let result = tremeaux_solver(&mut player, &mut graph);
+        let result = tremeaux_solver(&mut player, &mut graph, None);
 
         assert!(matches!(
             result,
@@ -534,11 +571,44 @@ mod tests {
     }
 
     #[test]
+    fn test_tremeaux_heads_back_to_unexplored_cell_after_being_pushed_aside() {
+        // Pushed onto CURRENT, whose parent BEHIND leads away from the unexplored cell
+        // still waiting next to SIDE.
+        let unexplored = Cell { row: 7, column: 5 };
+        let (mut player, mut graph) = graph_around_player(&[BEHIND, SIDE], BEHIND);
+        graph.update_cell_status(BEHIND, CellStatus::VISITED);
+        graph.update_cell_status(SIDE, CellStatus::VISITED);
+        graph.add(unexplored, CellType::NOTHING);
+        graph.add_neighbor(&SIDE, &unexplored);
+        graph.add_neighbor(&unexplored, &SIDE);
+
+        tremeaux_solver(&mut player, &mut graph, None);
+        assert_eq!(player.position, SIDE);
+
+        tremeaux_solver(&mut player, &mut graph, None);
+        assert_eq!(player.position, unexplored);
+    }
+
+    #[test]
+    fn test_tremeaux_routes_around_cell_held_by_opponent() {
+        let unexplored = Cell { row: 7, column: 5 };
+        let (mut player, mut graph) = graph_around_player(&[BLOCKED, SIDE], BEHIND);
+        graph.update_cell_status(SIDE, CellStatus::VISITED);
+        graph.add(unexplored, CellType::NOTHING);
+        graph.add_neighbor(&SIDE, &unexplored);
+        graph.add_neighbor(&unexplored, &SIDE);
+
+        tremeaux_solver(&mut player, &mut graph, Some(BLOCKED));
+
+        assert_eq!(player.position, SIDE);
+    }
+
+    #[test]
     fn test_tremeaux_without_parent_moves_to_a_neighbor() {
         let (mut player, mut graph) = graph_around_player(&[SIDE], CURRENT);
         graph.update_cell_status(SIDE, CellStatus::DeadEnd);
 
-        tremeaux_solver(&mut player, &mut graph);
+        tremeaux_solver(&mut player, &mut graph, None);
 
         assert_eq!(player.position, SIDE);
     }
@@ -561,7 +631,7 @@ mod tests {
         graph.update_walls(BLOCKED, 3);
         graph.add_neighbor(&CURRENT, &BLOCKED);
 
-        tremeaux_solver(&mut player, &mut graph);
+        tremeaux_solver(&mut player, &mut graph, None);
 
         assert_eq!(player.position, BLOCKED);
     }
