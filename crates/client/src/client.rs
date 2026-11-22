@@ -14,6 +14,7 @@ use shared::{
 };
 use std::{
     collections::HashMap,
+    io::Write,
     net::TcpStream,
     sync::{Arc, Mutex},
     thread::{self, ThreadId},
@@ -31,7 +32,6 @@ pub struct GameClient {
 }
 
 struct SecretSumModulo {
-    sum: Arc<Mutex<u128>>,
     secrets: Arc<Mutex<HashMap<ThreadId, u128>>>,
 }
 
@@ -39,6 +39,7 @@ struct PlayerContext {
     graph: MazeGraph,
     player: Player,
     algorithm: Algorithm,
+    challenge_modulo: Option<u128>,
 }
 
 struct LogContext {
@@ -54,10 +55,7 @@ impl GameClient {
     pub fn new(config: ClientConfig) -> Self {
         Self {
             config,
-            challenge_secret_sum: SecretSumModulo {
-                sum: Arc::new(Mutex::new(0)),
-                secrets: Arc::new(Mutex::new(HashMap::new())),
-            },
+            challenge_secret_sum: SecretSumModulo { secrets: Arc::new(Mutex::new(HashMap::new())) },
         }
     }
 
@@ -109,18 +107,20 @@ impl GameClient {
             let config = self.config.clone();
             let agent_token = token.clone();
             let agent_name = format!("Player{}", i + 1);
-            let secrets_sum = SecretSumModulo {
-                sum: Arc::clone(&self.challenge_secret_sum.sum),
-                secrets: Arc::clone(&self.challenge_secret_sum.secrets),
-            };
+            let secrets_sum =
+                SecretSumModulo { secrets: Arc::clone(&self.challenge_secret_sum.secrets) };
             let tui_state = tui_state.clone();
 
             let handle = thread::Builder::new().name(agent_name.clone()).spawn(
                 move || -> GameResult<()> {
                     let mut stream = Self::connect_to_server(&config.server_addr, max_retries)?;
 
-                    let mut player_ctx =
-                        PlayerContext { graph: MazeGraph::new(), player: Player::new(), algorithm };
+                    let mut player_ctx = PlayerContext {
+                        graph: MazeGraph::new(),
+                        player: Player::new(),
+                        algorithm,
+                        challenge_modulo: None,
+                    };
 
                     let log_ctx = LogContext { thread_name: agent_name.clone(), tui_state };
 
@@ -159,7 +159,7 @@ impl GameClient {
     }
 
     fn handle_server_message(
-        stream: &mut TcpStream,
+        stream: &mut impl Write,
         message: Message,
         player_ctx: &mut PlayerContext,
         log_ctx: &LogContext,
@@ -210,66 +210,38 @@ impl GameClient {
                     LogLevel::Info,
                 );
 
-                let Challenge::SecretSumModulo(challenge) = value;
-                Self::handle_secret_sum_modulo(
-                    stream,
-                    &challenge_ctx.secrets_sum.secrets,
-                    &challenge_ctx.secrets_sum.sum,
-                    Some(challenge),
-                )?;
+                let Challenge::SecretSumModulo(modulo) = value;
+                player_ctx.challenge_modulo = Some(modulo);
+                Self::solve_challenge(stream, &challenge_ctx.secrets_sum.secrets, modulo)?;
             }
-            Message::ActionError(err) => match err {
-                messages::ActionError::InvalidChallengeSolution => {
-                    Self::log_handler(
-                        &log_ctx.tui_state,
-                        &log_ctx.thread_name,
-                        logger,
-                        "Invalid challenge solution, retrying...",
-                        LogLevel::Error,
-                    );
-                    Self::handle_secret_sum_modulo(
-                        stream,
-                        &challenge_ctx.secrets_sum.secrets,
-                        &challenge_ctx.secrets_sum.sum,
-                        None,
-                    )?;
+            Message::ActionError(err) => {
+                Self::log_handler(
+                    &log_ctx.tui_state,
+                    &log_ctx.thread_name,
+                    logger,
+                    format!("Action error: {:?}", err),
+                    LogLevel::Error,
+                );
+                match err {
+                    // The server follows these with a fresh RadarView, which drives the next move.
+                    messages::ActionError::CannotPassThroughWall
+                    | messages::ActionError::CannotPassThroughOpponent
+                    | messages::ActionError::InvalidMove
+                    | messages::ActionError::OutOfMap
+                    | messages::ActionError::Blocked => player_ctx.player.revert_move(),
+                    messages::ActionError::NoRunningChallenge => {}
+                    messages::ActionError::InvalidChallengeSolution
+                    | messages::ActionError::SolveChallengeFirst => {
+                        if let Some(modulo) = player_ctx.challenge_modulo {
+                            Self::solve_challenge(
+                                stream,
+                                &challenge_ctx.secrets_sum.secrets,
+                                modulo,
+                            )?;
+                        }
+                    }
                 }
-                messages::ActionError::SolveChallengeFirst => {
-                    Self::log_handler(
-                        &log_ctx.tui_state,
-                        &log_ctx.thread_name,
-                        logger,
-                        "Solve the challenge first",
-                        LogLevel::Error,
-                    );
-                    Self::handle_secret_sum_modulo(
-                        stream,
-                        &challenge_ctx.secrets_sum.secrets,
-                        &challenge_ctx.secrets_sum.sum,
-                        None,
-                    )?;
-                }
-                _ => {
-                    Self::log_handler(
-                        &log_ctx.tui_state,
-                        &log_ctx.thread_name,
-                        logger,
-                        format!("Action error: {:?}", err),
-                        LogLevel::Error,
-                    );
-                    player_ctx.player.revert_move();
-
-                    let action: Action = instructions::alian_solver(
-                        &mut player_ctx.player,
-                        &mut player_ctx.graph,
-                        &log_ctx.thread_name,
-                    );
-
-                    player_ctx.player.update_last_position();
-
-                    send_message(stream, &Message::Action(action.clone()))?;
-                }
-            },
+            }
 
             Message::MessageError(err) => {
                 Self::log_handler(
@@ -331,7 +303,7 @@ impl GameClient {
     }
 
     fn handle_radar_view(
-        stream: &mut TcpStream,
+        stream: &mut impl Write,
         view: messages::RadarView,
         player_ctx: &mut PlayerContext,
         log_ctx: &LogContext,
@@ -340,6 +312,7 @@ impl GameClient {
             .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {}", e)))?;
 
         maze_to_graph(&radar_view, &player_ctx.player, &mut player_ctx.graph);
+        player_ctx.player.save_state();
 
         let action: Action = match player_ctx.algorithm {
             Algorithm::Tremeaux => {
@@ -355,8 +328,6 @@ impl GameClient {
             ),
         };
 
-        player_ctx.player.update_last_position();
-
         send_message(stream, &Message::Action(action.clone()))?;
 
         Ok(instructions::check_win_condition(&radar_view.cells, action))
@@ -370,22 +341,16 @@ impl GameClient {
         }
     }
 
-    fn handle_secret_sum_modulo(
-        stream: &mut TcpStream,
+    fn solve_challenge(
+        stream: &mut impl Write,
         secrets: &Arc<Mutex<HashMap<ThreadId, u128>>>,
-        secret_sum: &Arc<Mutex<u128>>,
-        new_sum: Option<u128>,
+        modulo: u128,
     ) -> GameResult<()> {
-        if let Ok(mut sum) = secret_sum.lock() {
-            if let Some(new_sum) = new_sum {
-                *sum = new_sum;
-            }
-            if let Ok(secrets) = secrets.lock() {
-                let result = instructions::solve_sum_modulo(*sum, &secrets);
-                send_message(stream, &Message::Action(Action::SolveChallenge { answer: result }))?;
-            }
-        }
-        Ok(())
+        let Ok(secrets) = secrets.lock() else {
+            return Ok(());
+        };
+        let answer = instructions::solve_sum_modulo(modulo, &secrets);
+        send_message(stream, &Message::Action(Action::SolveChallenge { answer }))
     }
 
     fn refresh_tui(
@@ -438,22 +403,95 @@ mod tests {
     }
 
     fn create_test_contexts(thread_name: String) -> (PlayerContext, LogContext, Challenges) {
+        Logger::init(true);
         let game_ctx = PlayerContext {
             graph: MazeGraph::new(),
             player: Player::new(),
             algorithm: Algorithm::Tremeaux,
+            challenge_modulo: None,
         };
 
         let log_ctx = LogContext { thread_name, tui_state: None };
 
         let challenge_ctx = Challenges {
-            secrets_sum: SecretSumModulo {
-                sum: Arc::new(Mutex::new(0)),
-                secrets: Arc::new(Mutex::new(HashMap::new())),
-            },
+            secrets_sum: SecretSumModulo { secrets: Arc::new(Mutex::new(HashMap::new())) },
         };
 
         (game_ctx, log_ctx, challenge_ctx)
+    }
+
+    fn sent_messages(buf: Vec<u8>) -> Vec<Message> {
+        let mut cursor = std::io::Cursor::new(buf);
+        let mut messages = Vec::new();
+        while (cursor.position() as usize) < cursor.get_ref().len() {
+            messages.push(receive_message(&mut cursor).unwrap());
+        }
+        messages
+    }
+
+    fn answers(buf: Vec<u8>) -> Vec<String> {
+        sent_messages(buf)
+            .into_iter()
+            .map(|msg| match msg {
+                Message::Action(Action::SolveChallenge { answer }) => answer,
+                other => panic!("unexpected message: {:?}", other),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_failed_move_waits_for_next_radar_view() {
+        for err in [
+            messages::ActionError::CannotPassThroughWall,
+            messages::ActionError::CannotPassThroughOpponent,
+            messages::ActionError::NoRunningChallenge,
+        ] {
+            let (mut game_ctx, log_ctx, challenge_ctx) =
+                create_test_contexts("Player1".to_string());
+            let mut sent = Vec::new();
+
+            GameClient::handle_server_message(
+                &mut sent,
+                Message::ActionError(err),
+                &mut game_ctx,
+                &log_ctx,
+                &challenge_ctx,
+            )
+            .unwrap();
+
+            assert!(sent.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_each_agent_answers_challenge_with_its_own_modulo() {
+        let (mut agent_a, log_a, challenge_ctx) = create_test_contexts("Player1".to_string());
+        let (mut agent_b, log_b, _) = create_test_contexts("Player2".to_string());
+        challenge_ctx.secrets_sum.secrets.lock().unwrap().insert(thread::current().id(), 25);
+
+        let mut sent = Vec::new();
+        let challenge = |m| Message::Challenge(Challenge::SecretSumModulo(m));
+        let invalid = Message::ActionError(messages::ActionError::InvalidChallengeSolution);
+        GameClient::handle_server_message(
+            &mut sent,
+            challenge(10),
+            &mut agent_a,
+            &log_a,
+            &challenge_ctx,
+        )
+        .unwrap();
+        GameClient::handle_server_message(
+            &mut sent,
+            challenge(7),
+            &mut agent_b,
+            &log_b,
+            &challenge_ctx,
+        )
+        .unwrap();
+        GameClient::handle_server_message(&mut sent, invalid, &mut agent_a, &log_a, &challenge_ctx)
+            .unwrap();
+
+        assert_eq!(answers(sent), ["5", "4", "5"]);
     }
 
     #[test]
