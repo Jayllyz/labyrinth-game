@@ -114,7 +114,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_algorithm_arg_maps_to_matching_solver() {
+    fn test_algorithm_arg_accepts_documented_names() {
         for (name, expected) in [
             ("Tremeaux", Algorithm::Tremeaux),
             ("WallFollower", Algorithm::WallFollower),

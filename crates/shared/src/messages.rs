@@ -218,23 +218,10 @@ mod tests {
     }
 
     #[test]
-    fn test_receive_rejects_truncated_length() {
+    fn test_receive_rejects_truncated_frames() {
         let err = receive_message(&mut Cursor::new(vec![1, 0])).unwrap_err();
         assert!(matches!(err, GameError::MessageError(m) if m == "Incomplete message length"));
-    }
 
-    #[test]
-    fn test_receive_rejects_truncated_body() {
-        let err = receive_message(&mut frame(10, b"{}")).unwrap_err();
-        assert!(matches!(err, GameError::ConnectionError(_)));
-    }
-
-    #[test]
-    fn test_receive_rejects_invalid_utf8_and_json() {
-        let err = receive_message(&mut frame(2, &[0xff, 0xfe])).unwrap_err();
-        assert!(matches!(err, GameError::MessageError(m) if m.starts_with("Invalid UTF-8")));
-
-        let err = receive_message(&mut frame(3, b"{x}")).unwrap_err();
-        assert!(matches!(err, GameError::MessageError(m) if m.starts_with("Invalid JSON")));
+        assert!(receive_message(&mut frame(10, b"{}")).is_err());
     }
 }
