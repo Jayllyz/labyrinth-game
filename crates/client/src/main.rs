@@ -1,9 +1,11 @@
 use clap::Parser;
 use client::client::{ClientConfig, GameClient, agent_name};
 use client::instructions::Algorithm;
-use client::tui::{self, AgentEvent};
-use shared::logger::Logger;
+use client::tui::{self, AgentEvent, TuiLayer};
+use std::sync::mpsc::Sender;
 use std::time::Duration;
+use tracing::{error, info};
+use tracing_subscriber::{filter::LevelFilter, prelude::*};
 
 #[derive(Parser, Debug)]
 #[command(name = "Labyrinth-client")]
@@ -62,18 +64,30 @@ struct Args {
     algorithm: Algorithm,
 }
 
+/// Prints logs, or hands them to the TUI so they don't draw over it.
+fn init_logging(debug: bool, tui: Option<Sender<AgentEvent>>) {
+    let level = if debug { LevelFilter::DEBUG } else { LevelFilter::INFO };
+    match tui {
+        Some(events) => {
+            tracing_subscriber::registry().with(TuiLayer::new(events).with_filter(level)).init();
+        }
+        None => tracing_subscriber::fmt().with_max_level(level).init(),
+    }
+}
+
 fn main() {
     let args = Args::parse();
-    Logger::init(args.debug);
-    let logger = Logger::get_instance();
+    let tui =
+        args.tui.then(|| tui::Tui::new(args.refresh_rate).expect("Failed to initialize TUI."));
+    init_logging(args.debug, tui.as_ref().map(|(_, events)| events.clone()));
 
     if args.offline {
-        logger.info("Running in offline mode.");
+        info!("Running in offline mode.");
         return;
     }
 
     let seed = args.seed.unwrap_or_else(rand::random);
-    logger.info(&format!("Seed {seed}, pass --seed {seed} to replay this run."));
+    info!("Seed {seed}, pass --seed {seed} to replay this run.");
     let config = ClientConfig {
         server_addr: format!("{}:{}", args.host, args.port),
         team_name: args.team,
@@ -82,9 +96,7 @@ fn main() {
     };
     let client = GameClient::new(config);
 
-    if args.tui {
-        let (mut tui, events) =
-            tui::Tui::new(args.refresh_rate).expect("Failed to initialize TUI.");
+    if let Some((mut tui, events)) = tui {
         for i in 0..args.players {
             tui.register_agent(agent_name(args.algorithm, i));
         }
@@ -92,14 +104,14 @@ fn main() {
         tui.enter().expect("Failed to enter TUI.");
         let tui_handle = std::thread::spawn(move || {
             if let Err(err) = tui.run() {
-                logger.error(&format!("TUI error: {err}"));
+                error!("TUI error: {err}");
                 std::process::exit(1);
             }
         });
 
         if let Err(e) = client.run(args.retries, args.players, Some(events.clone()), args.algorithm)
         {
-            e.log_error(logger);
+            error!("{e}");
             std::process::exit(1);
         }
 
@@ -108,18 +120,18 @@ fn main() {
 
         if let Err(e) = tui_handle.join() {
             if let Some(error_str) = e.downcast_ref::<String>() {
-                logger.error(&format!("TUI thread error: {error_str}"));
+                error!("TUI thread error: {error_str}");
             } else {
-                logger.error(&format!("TUI thread error: {e:?}"));
+                error!("TUI thread error: {e:?}");
             }
         }
     } else {
         if let Err(e) = client.run(args.retries, args.players, None, args.algorithm) {
-            e.log_error(logger);
+            error!("{e}");
             std::process::exit(1);
         }
 
-        logger.info("All agents have finished their tasks.");
+        info!("All agents have finished their tasks.");
     }
 }
 

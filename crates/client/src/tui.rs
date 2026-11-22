@@ -13,25 +13,31 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Gauge, Paragraph, Tabs},
 };
-use shared::{logger::LogLevel, maze::Cell, radar::CellType};
+use shared::{maze::Cell, radar::CellType};
 use std::{
     collections::HashMap,
     io,
     sync::mpsc::{Receiver, Sender, channel},
     time::{Duration, Instant},
 };
+use tracing::{
+    Level, Subscriber,
+    field::{Field, Visit},
+    span,
+};
+use tracing_subscriber::{Layer, layer::Context, registry::LookupSpan};
 
 /// What agents tell the TUI. Agents only send; the TUI thread owns the state, so agents
 /// never wait on a lock while it draws.
 pub enum AgentEvent {
-    Log { agent: String, level: LogLevel, text: String },
+    Log { agent: String, level: Level, text: String },
     Update { agent: String, graph: MazeGraph, player: Player },
     ExitFound { agent: String },
     Finished,
 }
 
 pub struct AgentState {
-    pub logs: Vec<(String, LogLevel)>,
+    pub logs: Vec<(String, Level)>,
     pub graph: MazeGraph,
     pub player: Player,
     pub found_exit: bool,
@@ -80,7 +86,7 @@ impl GameState {
         self.agents.insert(name, AgentState::new());
     }
 
-    pub fn add_log(&mut self, agent: &str, message: String, level: LogLevel) {
+    pub fn add_log(&mut self, agent: &str, message: String, level: Level) {
         if let Some(state) = self.agents.get_mut(agent) {
             state.logs.push((message, level));
         }
@@ -348,11 +354,11 @@ impl Tui {
                         .rev()
                         .take(log_height)
                         .map(|(msg, level)| {
-                            let (color, prefix) = match level {
-                                LogLevel::Info => (Color::Green, "INFO "),
-                                LogLevel::Debug => (Color::Blue, "DEBUG"),
-                                LogLevel::Warning => (Color::Yellow, "WARN "),
-                                LogLevel::Error => (Color::Red, "ERROR"),
+                            let (color, prefix) = match *level {
+                                Level::INFO => (Color::Green, "INFO "),
+                                Level::WARN => (Color::Yellow, "WARN "),
+                                Level::ERROR => (Color::Red, "ERROR"),
+                                _ => (Color::Blue, "DEBUG"),
                             };
                             Line::from(vec![
                                 Span::styled(prefix, Style::default().fg(color)),
@@ -659,10 +665,76 @@ impl Drop for Tui {
     }
 }
 
+/// Sends logs from agent threads to the TUI, in that agent's tab.
+pub struct TuiLayer {
+    events: Sender<AgentEvent>,
+}
+
+impl TuiLayer {
+    pub const fn new(events: Sender<AgentEvent>) -> Self {
+        Self { events }
+    }
+}
+
+/// The agent name kept on the `agent` span, so events inside it know their tab.
+struct AgentName(String);
+
+impl<S> Layer<S> for TuiLayer
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+{
+    fn on_new_span(&self, attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
+        let mut name = FieldText::new("name");
+        attrs.record(&mut name);
+        if let (Some(name), Some(span)) = (name.text, ctx.span(id)) {
+            span.extensions_mut().insert(AgentName(name));
+        }
+    }
+
+    fn on_event(&self, event: &tracing::Event<'_>, ctx: Context<'_, S>) {
+        let mut message = FieldText::new("message");
+        event.record(&mut message);
+        let text = message.text.unwrap_or_default();
+        let level = *event.metadata().level();
+        let agent = ctx.event_scope(event).and_then(|scope| {
+            scope
+                .from_root()
+                .find_map(|span| span.extensions().get::<AgentName>().map(|n| n.0.clone()))
+        });
+
+        match agent {
+            // The TUI stops listening once the user quits it; the game plays on anyway.
+            Some(agent) => drop(self.events.send(AgentEvent::Log { agent, level, text })),
+            // Logs outside an agent have no tab, so they go to stderr as before.
+            None => eprintln!("{level} {text}"),
+        }
+    }
+}
+
+/// Reads one field of an event or span as text.
+struct FieldText {
+    field: &'static str,
+    text: Option<String>,
+}
+
+impl FieldText {
+    const fn new(field: &'static str) -> Self {
+        Self { field, text: None }
+    }
+}
+
+impl Visit for FieldText {
+    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+        if field.name() == self.field {
+            self.text = Some(format!("{value:?}"));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::{logger::LogLevel, maze::Cell, radar::CellType};
+    use shared::{maze::Cell, radar::CellType};
 
     #[test]
     fn test_game_state_new() {
@@ -687,8 +759,8 @@ mod tests {
         let mut game_state = GameState::new();
         game_state.register_agent("agent1".to_string());
 
-        game_state.add_log("agent1", "Test log".to_string(), LogLevel::Info);
-        game_state.add_log("agent1", "Warning log".to_string(), LogLevel::Warning);
+        game_state.add_log("agent1", "Test log".to_string(), Level::INFO);
+        game_state.add_log("agent1", "Warning log".to_string(), Level::WARN);
 
         let agent_state = &game_state.agents["agent1"];
         assert_eq!(agent_state.logs.len(), 2);

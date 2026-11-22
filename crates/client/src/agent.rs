@@ -5,7 +5,6 @@ use crate::solver::{Solver, Turn};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use shared::{
     errors::{GameError, GameResult},
-    logger::LogLevel,
     maze::Cell,
     messages::{Action, ActionError, Challenge, Hint, Message, RadarView, SubscribePlayerResult},
     radar::{Radar, decode_base64, extract_data},
@@ -14,29 +13,13 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+use tracing::{debug, error, info, warn};
 
 /// Secrets of the whole team, by agent name. A challenge is answered with all of them.
 pub type TeamSecrets = Arc<Mutex<HashMap<String, u128>>>;
 
 /// Opponents move on quickly, so a held cell is only avoided for a few moves.
 pub const AVOID_OPPONENT_TURNS: u8 = 3;
-
-/// What the agent wants done after a server message.
-#[derive(Default)]
-pub struct Reply {
-    pub action: Option<Action>,
-    pub log: Option<(LogLevel, String)>,
-}
-
-impl Reply {
-    fn action(action: Action) -> Self {
-        Self { action: Some(action), log: None }
-    }
-
-    fn log(level: LogLevel, message: impl Into<String>) -> Self {
-        Self { action: None, log: Some((level, message.into())) }
-    }
-}
 
 /// One agent's game logic. It never touches the network: the transport feeds it server
 /// messages and sends back the actions it replies with.
@@ -87,27 +70,36 @@ impl Agent {
         &self.player
     }
 
-    pub fn on_message(&mut self, message: Message) -> GameResult<Reply> {
+    /// Returns the action to send back, if any.
+    pub fn on_message(&mut self, message: Message) -> GameResult<Option<Action>> {
         match message {
             Message::SubscribePlayerResult(SubscribePlayerResult::Ok) => {
-                Ok(Reply::log(LogLevel::Info, "Subscribed successfully"))
+                info!("Subscribed successfully");
+                Ok(None)
             }
             Message::SubscribePlayerResult(SubscribePlayerResult::Err(err)) => {
                 Err(GameError::AgentSubscriptionError(format!("{err:?}")))
             }
-            Message::RadarView(view) => Ok(Reply::action(self.on_radar_view(&view))),
-            Message::Hint(hint) => Ok(self.on_hint(hint)),
+            Message::RadarView(view) => Ok(Some(self.on_radar_view(&view))),
+            Message::Hint(hint) => {
+                self.on_hint(hint);
+                Ok(None)
+            }
             Message::Challenge(challenge) => {
-                let log = Some((LogLevel::Debug, format!("{challenge:?}")));
+                debug!("{challenge:?}");
                 let Challenge::SecretSumModulo(modulo) = challenge;
                 self.challenge_modulo = Some(modulo);
-                Ok(Reply { action: self.solve_challenge(modulo), log })
+                Ok(self.solve_challenge(modulo))
             }
             Message::ActionError(err) => Ok(self.on_action_error(err)),
             Message::MessageError(err) => {
-                Ok(Reply::log(LogLevel::Error, format!("Server error: {err:?}")))
+                error!("Server error: {err:?}");
+                Ok(None)
             }
-            other => Ok(Reply::log(LogLevel::Warning, format!("Unhandled message: {other:?}"))),
+            other => {
+                warn!("Unhandled message: {other:?}");
+                Ok(None)
+            }
         }
     }
 
@@ -160,7 +152,7 @@ impl Agent {
         solver.next_move(&mut Turn { player, graph, radar, avoid })
     }
 
-    fn on_hint(&mut self, hint: Hint) -> Reply {
+    fn on_hint(&mut self, hint: Hint) {
         match hint {
             Hint::RelativeCompass { angle } => {
                 // The hint describes the agent as of the last radar view, before the pending move.
@@ -168,32 +160,29 @@ impl Agent {
                 if let Some(pending) = &mut self.pending {
                     pending.player.exit_bearing = self.player.exit_bearing;
                 }
-                Reply::default()
             }
             Hint::Secret(secret) => {
                 if let Ok(mut secrets) = self.secrets.lock() {
                     secrets.insert(self.name.clone(), secret);
                 }
-                Reply::default()
             }
-            Hint::GridSize { columns, rows } => {
-                Reply::log(LogLevel::Info, format!("Maze is {columns}x{rows}"))
-            }
-            Hint::SOS => Reply::log(LogLevel::Info, "Received an SOS hint"),
+            Hint::GridSize { columns, rows } => info!("Maze is {columns}x{rows}"),
+            Hint::SOS => info!("Received an SOS hint"),
         }
     }
 
-    fn on_action_error(&mut self, err: ActionError) -> Reply {
-        let level = match err {
-            ActionError::CannotPassThroughWall | ActionError::CannotPassThroughOpponent => {
-                LogLevel::Debug
-            }
-            _ => LogLevel::Error,
-        };
-        let log = Some((level, format!("Action error: {err:?}")));
+    fn on_action_error(&mut self, err: ActionError) -> Option<Action> {
+        if matches!(
+            err,
+            ActionError::CannotPassThroughWall | ActionError::CannotPassThroughOpponent
+        ) {
+            debug!("Action error: {err:?}");
+        } else {
+            error!("Action error: {err:?}");
+        }
 
         // The server follows move errors with a fresh RadarView, which drives the next move.
-        let action = match err {
+        match err {
             // Without a pending move the error is stale, so there is no target to avoid.
             ActionError::CannotPassThroughOpponent => {
                 if let Some(rejected) = self.pending.take() {
@@ -216,8 +205,7 @@ impl Agent {
                 self.pending = None;
                 self.challenge_modulo.and_then(|modulo| self.solve_challenge(modulo))
             }
-        };
-        Reply { action, log }
+        }
     }
 
     fn solve_challenge(&self, modulo: u128) -> Option<Action> {
@@ -262,8 +250,8 @@ mod tests {
         }
     }
 
-    fn answer(reply: Reply) -> String {
-        match reply.action {
+    fn answer(action: Option<Action>) -> String {
+        match action {
             Some(Action::SolveChallenge { answer }) => answer,
             other => panic!("unexpected action: {other:?}"),
         }
@@ -280,7 +268,7 @@ mod tests {
 
             let reply = agent.on_message(Message::ActionError(err)).unwrap();
 
-            assert_eq!(reply.action, None);
+            assert_eq!(reply, None);
         }
     }
 
@@ -371,7 +359,7 @@ mod tests {
             .on_message(Message::RadarView(messages::RadarView("bKgGjsIyap8p8aa".to_string())))
             .unwrap();
 
-        assert!(matches!(reply.action, Some(Action::MoveTo(_))));
+        assert!(matches!(reply, Some(Action::MoveTo(_))));
     }
 
     #[test]

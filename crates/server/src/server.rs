@@ -1,6 +1,5 @@
 use rand::{RngExt, rng};
 use shared::errors::{GameError, GameResult};
-use shared::logger::Logger;
 use shared::messages::{
     Action, Challenge, Client, Hint, Message, MessageError, RadarView, RegisterTeamResult,
     RegistrationError, SubscribePlayerResult, Teams, receive_message, send_message,
@@ -9,6 +8,7 @@ use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::{debug, error, info, warn};
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
@@ -103,11 +103,11 @@ impl GameServer {
         }
     }
 
-    pub fn run(&self, logger: &Logger) -> GameResult<()> {
+    pub fn run(&self) -> GameResult<()> {
         let address = format!("{}:{}", self.config.host, self.config.port);
         let listener = TcpListener::bind(&address).map_err(GameError::ConnectionError)?;
 
-        logger.info(&format!("Server listening on {address}"));
+        info!("Server listening on {address}");
         self.handle_connections(listener)
     }
 
@@ -141,9 +141,8 @@ impl GameServer {
         &self,
         player: Client,
         stream: &mut TcpStream,
-        logger: &Logger,
     ) -> GameResult<SubscribePlayerResult> {
-        let result = self.register_client(player.clone(), logger);
+        let result = self.register_client(player.clone());
 
         if matches!(result, SubscribePlayerResult::Ok) {
             let mut game_state =
@@ -164,7 +163,7 @@ impl GameServer {
         Ok(result)
     }
 
-    fn register_client(&self, player: Client, logger: &Logger) -> SubscribePlayerResult {
+    fn register_client(&self, player: Client) -> SubscribePlayerResult {
         if player.player_name.is_empty() {
             return SubscribePlayerResult::Err(RegistrationError::InvalidName);
         }
@@ -197,10 +196,7 @@ impl GameServer {
             team.players.push(player.clone());
             clients.insert(player.player_name.clone(), player.clone());
 
-            logger.info(&format!(
-                "{} registered successfully on team {}",
-                player.player_name, team_name
-            ));
+            info!("{} registered successfully on team {}", player.player_name, team_name);
 
             let game_state_result =
                 self.game_state.lock().map_err(|_| RegistrationError::ServerError);
@@ -219,7 +215,7 @@ impl GameServer {
 
             SubscribePlayerResult::Ok
         } else {
-            logger.error(&format!("Team {team_name} not found"));
+            error!("Team {team_name} not found");
             SubscribePlayerResult::Err(RegistrationError::ServerError)
         }
     }
@@ -231,7 +227,7 @@ impl GameServer {
             .map(|(name, _)| name.clone())
     }
 
-    fn register_team(&self, mut team: Teams, logger: &Logger) -> ServerResult<String> {
+    fn register_team(&self, mut team: Teams) -> ServerResult<String> {
         let mut teams = self.teams.lock().map_err(|_| RegistrationError::ServerError)?;
 
         if teams.contains_key(&team.team_name) {
@@ -248,7 +244,7 @@ impl GameServer {
             game_state.teams.insert(team_name.clone(), team);
         }
 
-        logger.info(&format!("Team {team_name} registered successfully"));
+        info!("Team {team_name} registered successfully");
         Ok(token)
     }
 
@@ -265,12 +261,11 @@ impl GameServer {
     }
 
     fn handle_message(&self, mut stream: TcpStream) -> GameResult<()> {
-        let logger = Logger::get_instance();
         let peer_address = stream.peer_addr().map_err(GameError::ConnectionError)?;
 
         loop {
             let message_result = receive_message(&mut stream);
-            logger.debug(&format!("Received message from {peer_address}"));
+            debug!("Received message from {peer_address}");
 
             match message_result {
                 Ok(message) => {
@@ -284,15 +279,13 @@ impl GameServer {
                                 score: 0,
                             };
 
-                            match self.register_team(team, logger) {
+                            match self.register_team(team) {
                                 Ok(token) => Message::RegisterTeamResult(RegisterTeamResult::Ok {
                                     registration_token: token,
                                     expected_players: self.config.max_players_per_team,
                                 }),
                                 Err(err) => {
-                                    logger.error(&format!(
-                                        "Team registration failed for {peer_address}: {err:?}"
-                                    ));
+                                    error!("Team registration failed for {peer_address}: {err:?}");
                                     Message::RegisterTeamResult(RegisterTeamResult::Err(err))
                                 }
                             }
@@ -305,7 +298,7 @@ impl GameServer {
                                 registration_token: player.registration_token,
                             };
 
-                            match self.handle_player_registration(player, &mut stream, logger) {
+                            match self.handle_player_registration(player, &mut stream) {
                                 Ok(result) => Message::SubscribePlayerResult(result),
                                 Err(_) => Message::SubscribePlayerResult(
                                     SubscribePlayerResult::Err(RegistrationError::ServerError),
@@ -313,28 +306,23 @@ impl GameServer {
                             }
                         }
                         Message::Action(Action::SolveChallenge { answer }) => {
-                            logger.info(&format!(
-                                "Received SolveChallenge from {peer_address}: Answer = {answer}"
-                            ));
+                            info!("Received SolveChallenge from {peer_address}: Answer = {answer}");
 
                             let is_correct = answer == "5";
                             if is_correct {
-                                logger
-                                    .info(&format!("Challenge solved correctly by {peer_address}"));
+                                info!("Challenge solved correctly by {peer_address}");
                             } else {
-                                logger.warn(&format!("Incorrect answer from {peer_address}"));
+                                warn!("Incorrect answer from {peer_address}");
                             }
                             Message::RadarView(RadarView("bieakcGa//+F8pa".to_string()))
                         }
                         Message::Action(Action::MoveTo(_)) => {
-                            logger.info(&format!("Received MoveTo from {peer_address}"));
+                            info!("Received MoveTo from {peer_address}");
 
                             break;
                         }
                         _ => {
-                            logger.warn(&format!(
-                                "Received invalid message type from {peer_address}"
-                            ));
+                            warn!("Received invalid message type from {peer_address}");
                             Message::MessageError(MessageError {
                                 message: "Invalid message type".to_string(),
                             })
@@ -342,7 +330,7 @@ impl GameServer {
                     };
 
                     if let Err(e) = send_message(&mut stream, &response) {
-                        logger.error(&format!("Failed to send message to {peer_address}: {e}"));
+                        error!("Failed to send message to {peer_address}: {e}");
                         break;
                     }
                 }
@@ -352,7 +340,7 @@ impl GameServer {
             }
         }
 
-        logger.info(&format!("Connection closed for {peer_address}"));
+        info!("Connection closed for {peer_address}");
         Ok(())
     }
 }
@@ -374,12 +362,8 @@ mod tests {
     use std::net::SocketAddr;
     use std::str::FromStr;
 
-    fn setup_test_environment() -> (GameServer, &'static Logger) {
-        Logger::init(true);
-        let logger = Logger::get_instance();
-        let config = ServerConfig::default();
-        let server = GameServer::new(config);
-        (server, logger)
+    fn setup_test_environment() -> GameServer {
+        GameServer::new(ServerConfig::default())
     }
 
     fn create_test_client(name: &str, token: &str) -> Client {
@@ -403,9 +387,9 @@ mod tests {
 
     #[test]
     fn test_register_team_success() {
-        let (server, logger) = setup_test_environment();
+        let server = setup_test_environment();
         let team = create_test_team("Test Team");
-        let result = server.register_team(team, logger);
+        let result = server.register_team(team);
         assert!(result.is_ok());
 
         let teams = server.teams.lock().unwrap();
@@ -414,19 +398,19 @@ mod tests {
 
     #[test]
     fn test_register_team_duplicate() {
-        let (server, logger) = setup_test_environment();
+        let server = setup_test_environment();
         let team = create_test_team("Test Team");
         let team2 = create_test_team("Test Team");
 
-        let _ = server.register_team(team, logger);
-        let result = server.register_team(team2, logger);
+        let _ = server.register_team(team);
+        let result = server.register_team(team2);
 
         assert!(matches!(result, Err(RegistrationError::TeamAlreadyRegistered)));
     }
 
     #[test]
     fn test_generate_token() {
-        let (server, _) = setup_test_environment();
+        let server = setup_test_environment();
 
         let token1 = server.generate_token();
         let token2 = server.generate_token();
@@ -436,12 +420,12 @@ mod tests {
 
     #[test]
     fn test_register_client_success() {
-        let (server, logger) = setup_test_environment();
+        let server = setup_test_environment();
         let team = create_test_team("Test Team");
-        let token = server.register_team(team, logger).unwrap();
+        let token = server.register_team(team).unwrap();
         let client = create_test_client("Test Player", &token);
 
-        let res = server.register_client(client, logger);
+        let res = server.register_client(client);
         assert!(matches!(res, SubscribePlayerResult::Ok));
 
         let clients = server.clients.lock().unwrap();
@@ -450,10 +434,10 @@ mod tests {
 
     #[test]
     fn test_register_client_invalid_token() {
-        let (server, logger) = setup_test_environment();
+        let server = setup_test_environment();
         let client = create_test_client("Test Player", "invalid_token");
 
-        let result = server.register_client(client, logger);
+        let result = server.register_client(client);
         assert!(matches!(
             result,
             SubscribePlayerResult::Err(RegistrationError::InvalidRegistrationToken)
@@ -462,24 +446,24 @@ mod tests {
 
     #[test]
     fn test_register_client_empty_name() {
-        let (server, logger) = setup_test_environment();
+        let server = setup_test_environment();
         let team = create_test_team("Test Team");
-        let token = server.register_team(team, logger).unwrap();
+        let token = server.register_team(team).unwrap();
         let client = create_test_client("", &token);
 
-        let result = server.register_client(client, logger);
+        let result = server.register_client(client);
         assert!(matches!(result, SubscribePlayerResult::Err(RegistrationError::InvalidName)));
     }
 
     #[test]
     fn test_register_multiple_clients_same_team() {
-        let (server, logger) = setup_test_environment();
+        let server = setup_test_environment();
         let team = create_test_team("Test Team");
-        let token = server.register_team(team, logger).unwrap();
+        let token = server.register_team(team).unwrap();
 
         for i in 1..=3 {
             let client = create_test_client(&format!("Player{i}"), &token);
-            let res = server.register_client(client, logger);
+            let res = server.register_client(client);
             assert!(matches!(res, SubscribePlayerResult::Ok));
         }
 
@@ -493,10 +477,10 @@ mod tests {
         use std::sync::Arc;
         use std::thread;
 
-        let (server, logger) = setup_test_environment();
+        let server = setup_test_environment();
         let server = Arc::new(server);
         let team = create_test_team("Test Team");
-        let token = server.register_team(team, logger).unwrap();
+        let token = server.register_team(team).unwrap();
 
         let mut handles = vec![];
         for i in 0..3 {
@@ -505,7 +489,7 @@ mod tests {
 
             handles.push(thread::spawn(move || {
                 let client = create_test_client(&format!("Player{i}"), &token_clone);
-                server_clone.register_client(client, logger)
+                server_clone.register_client(client)
             }));
         }
 

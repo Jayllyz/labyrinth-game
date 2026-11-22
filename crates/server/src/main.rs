@@ -1,6 +1,7 @@
 use clap::Parser;
 use server::server::{GameServer, ServerConfig};
-use shared::logger::Logger;
+use tracing::{debug, error};
+use tracing_subscriber::filter::LevelFilter;
 
 #[derive(Parser, Debug)]
 #[command(name = "Labyrinth-server")]
@@ -29,13 +30,13 @@ fn main() {
     let args = Args::parse();
     let seed = args.seed.unwrap_or_else(rand::random);
     let config = ServerConfig { host: args.host, port: args.port, seed, max_players_per_team: 3 };
-    Logger::init(args.debug);
-    let logger = Logger::get_instance();
-    logger.debug(&format!("Server seed: {seed:?}"));
+    let level = if args.debug { LevelFilter::DEBUG } else { LevelFilter::INFO };
+    tracing_subscriber::fmt().with_max_level(level).init();
+    debug!("Server seed: {seed:?}");
 
     let server = GameServer::new(config);
-    if let Err(e) = server.run(logger) {
-        logger.error(&format!("{e}"));
+    if let Err(e) = server.run() {
+        error!("{e}");
     }
 }
 

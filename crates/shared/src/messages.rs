@@ -4,10 +4,7 @@ use std::{
     net::SocketAddr,
 };
 
-use crate::{
-    errors::{GameError, GameResult},
-    logger::Logger,
-};
+use crate::errors::{GameError, GameResult};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Message {
@@ -149,8 +146,7 @@ pub fn send_message(stream: &mut impl Write, msg: &Message) -> GameResult<()> {
         serde_json::to_string(msg).map_err(|e| GameError::SerializationError(e.to_string()))?;
 
     if let Message::Action(Action::SolveChallenge { answer }) = msg {
-        Logger::get_instance()
-            .debug(&format!("Sending message: Action::SolveChallenge {{ answer: {answer} }}"));
+        tracing::debug!("Sending message: Action::SolveChallenge {{ answer: {answer} }}");
     }
 
     let len = json.len();

@@ -4,7 +4,6 @@ use crate::tui::AgentEvent;
 use shared::utils::print_error;
 use shared::{
     errors::{GameError, GameResult},
-    logger::{LogLevel, Logger},
     messages::{
         Action, Message, RegisterTeam, RegisterTeamResult, SubscribePlayer, receive_message,
         send_message,
@@ -17,6 +16,7 @@ use std::{
     thread,
     time::Duration,
 };
+use tracing::{debug, error, info, info_span};
 
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
@@ -98,6 +98,8 @@ impl GameClient {
                     thread::Builder::new().name(name.clone()).spawn_scoped(
                         scope,
                         move || -> GameResult<()> {
+                            // Tags every log from this thread with the agent, for the TUI tabs.
+                            let _span = info_span!("agent", name = %agent.name()).entered();
                             let mut stream =
                                 Self::connect_to_server(&config.server_addr, max_retries)?;
                             send_message(
@@ -128,24 +130,10 @@ impl GameClient {
         tui: Option<&Sender<AgentEvent>>,
         move_delay: Duration,
     ) -> GameResult<()> {
-        let logger = Logger::get_instance();
         while let Ok(message) = receive_message(stream) {
-            if logger.is_debug_enabled() {
-                Self::log(
-                    tui,
-                    agent.name(),
-                    format!("Received message: {message:?}"),
-                    LogLevel::Debug,
-                );
-            }
-
-            let reply = agent.on_message(message).inspect_err(|err| {
-                Self::log(tui, agent.name(), err.to_string(), LogLevel::Error);
-            })?;
-            if let Some((level, text)) = reply.log {
-                Self::log(tui, agent.name(), text, level);
-            }
-            if let Some(action) = reply.action {
+            debug!("Received message: {message:?}");
+            let action = agent.on_message(message).inspect_err(|err| error!("{err}"))?;
+            if let Some(action) = action {
                 if matches!(action, Action::MoveTo(_)) {
                     thread::sleep(move_delay);
                 }
@@ -154,7 +142,7 @@ impl GameClient {
             Self::refresh_tui(tui, agent);
         }
 
-        Self::log(tui, agent.name(), "Found the exit!", LogLevel::Info);
+        info!("Found the exit!");
         Self::send(tui, AgentEvent::ExitFound { agent: agent.name().to_string() });
         Ok(())
     }
@@ -173,31 +161,6 @@ impl GameClient {
             let _ = tui.send(event);
         }
     }
-
-    fn log(
-        tui: Option<&Sender<AgentEvent>>,
-        agent_name: &str,
-        message: impl Into<String>,
-        level: LogLevel,
-    ) {
-        let logger = Logger::get_instance();
-        if matches!(level, LogLevel::Debug) && !logger.is_debug_enabled() {
-            return;
-        }
-
-        match tui {
-            Some(_) => Self::send(
-                tui,
-                AgentEvent::Log { agent: agent_name.to_string(), level, text: message.into() },
-            ),
-            None => match level {
-                LogLevel::Debug => logger.debug(&format!("{} {}", agent_name, message.into())),
-                LogLevel::Info => logger.info(&format!("{} {}", agent_name, message.into())),
-                LogLevel::Error => logger.error(&format!("{} {}", agent_name, message.into())),
-                LogLevel::Warning => logger.warn(&format!("{} {}", agent_name, message.into())),
-            },
-        }
-    }
 }
 
 #[cfg(test)]
@@ -207,7 +170,6 @@ mod tests {
     use std::net::{TcpListener, TcpStream};
 
     fn setup_mock_server() -> (TcpListener, String) {
-        Logger::init(true);
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         (listener, format!("127.0.0.1:{}", addr.port()))
@@ -215,7 +177,6 @@ mod tests {
 
     #[test]
     fn test_agent_found_the_exit_when_server_closes_connection() {
-        Logger::init(true);
         let mut agent =
             Agent::new("Player1".into(), Algorithm::Tremeaux, TeamSecrets::default(), 0);
         let (tui, events) = std::sync::mpsc::channel();

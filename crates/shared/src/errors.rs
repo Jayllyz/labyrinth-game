@@ -1,4 +1,3 @@
-use crate::logger::Logger;
 use std::io;
 
 #[derive(Debug, thiserror::Error)]
@@ -23,18 +22,11 @@ impl From<serde_json::Error> for GameError {
     }
 }
 
-impl GameError {
-    pub fn log_error(&self, logger: &Logger) {
-        logger.error(&self.to_string());
-    }
-}
-
 pub type GameResult<T> = Result<T, GameError>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logger::Logger;
     use std::io::{Error as IoError, ErrorKind};
 
     #[test]
@@ -108,24 +100,5 @@ mod tests {
         let debug_string = format!("{error:?}");
         assert!(debug_string.contains("MessageError"));
         assert!(debug_string.contains("test error"));
-    }
-
-    #[test]
-    fn test_error_logging() {
-        Logger::init(true);
-        let logger = Logger::get_instance();
-
-        let errors = vec![
-            GameError::ConnectionError(IoError::other("network error")),
-            GameError::TeamRegistrationError("duplicate team".to_string()),
-            GameError::AgentSubscriptionError("invalid agent id".to_string()),
-            GameError::MessageError("malformed message".to_string()),
-            GameError::ThreadError("thread crashed".to_string()),
-            GameError::SerializationError("invalid JSON format".to_string()),
-        ];
-
-        for error in errors {
-            error.log_error(logger);
-        }
     }
 }
