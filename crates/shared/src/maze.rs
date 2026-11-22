@@ -182,7 +182,7 @@ impl Maze {
     }
 }
 
-#[derive(Clone, PartialEq, Copy, Debug, Eq, Hash)]
+#[derive(Clone, PartialEq, Copy, Debug, Eq, Hash, PartialOrd, Ord)]
 pub struct Cell {
     pub row: i16,
     pub column: i16,

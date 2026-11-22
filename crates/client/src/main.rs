@@ -51,6 +51,9 @@ struct Args {
     #[arg(long, help = "Pause before each move in milliseconds.", default_value = "0")]
     move_delay: u64,
 
+    #[arg(long, help = "Seed for the agents' random choices. Random if not set.")]
+    seed: Option<u64>,
+
     #[arg(
         long,
         help = "Select the used algorithm by the agents.",
@@ -70,10 +73,13 @@ fn main() {
         return;
     }
 
+    let seed = args.seed.unwrap_or_else(rand::random);
+    logger.info(&format!("Seed {seed}, pass --seed {seed} to replay this run."));
     let config = ClientConfig {
         server_addr: format!("{}:{}", args.host, args.port),
         team_name: args.team,
         move_delay: Duration::from_millis(args.move_delay),
+        seed,
     };
     let client = GameClient::new(config);
 
@@ -187,6 +193,7 @@ mod tests {
             server_addr: format!("{}:{}", args.host, args.port),
             team_name: args.team,
             move_delay: Duration::from_millis(args.move_delay),
+            seed: 0,
         };
 
         assert_eq!(config.server_addr, "example.com:9000");

@@ -1,6 +1,6 @@
 use std::{
     cmp::max,
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap},
 };
 
 use shared::{maze::Cell, radar::CellType};
@@ -15,7 +15,8 @@ pub enum CellStatus {
 #[derive(Debug, Clone)]
 pub struct MazeCell {
     pub cell_type: CellType,
-    pub neighbors: HashSet<Cell>,
+    /// Ordered, so the same map always gives the same choices.
+    pub neighbors: BTreeSet<Cell>,
     pub status: CellStatus,
     pub walls: usize,
     pub parent: Cell,
@@ -26,7 +27,7 @@ impl MazeCell {
     pub fn new(cell_type: CellType) -> Self {
         Self {
             cell_type,
-            neighbors: HashSet::new(),
+            neighbors: BTreeSet::new(),
             status: CellStatus::NotVisited,
             walls: 0,
             parent: Cell { row: 0, column: 0 },
@@ -63,7 +64,7 @@ impl MazeGraph {
             cell,
             MazeCell {
                 cell_type,
-                neighbors: HashSet::new(),
+                neighbors: BTreeSet::new(),
                 status: CellStatus::NotVisited,
                 parent: cell,
                 walls: 0,
@@ -135,6 +136,7 @@ impl MazeGraph {
 mod test {
 
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn test_hash_set() {

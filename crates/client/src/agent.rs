@@ -1,6 +1,7 @@
 use crate::data_structures::maze_graph::MazeGraph;
 use crate::instructions::{self, Algorithm, WallFollowerState};
 use crate::maze_parser::{Player, maze_to_graph};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 use shared::{
     errors::{GameError, GameResult},
     logger::LogLevel,
@@ -50,6 +51,7 @@ pub struct Agent {
     wall_follower: WallFollowerState,
     /// The agent and its map as they will be once the server accepts the last move.
     pending: Option<Pending>,
+    rng: StdRng,
 }
 
 struct Pending {
@@ -59,7 +61,7 @@ struct Pending {
 }
 
 impl Agent {
-    pub fn new(name: String, algorithm: Algorithm, secrets: TeamSecrets) -> Self {
+    pub fn new(name: String, algorithm: Algorithm, secrets: TeamSecrets, seed: u64) -> Self {
         Self {
             name,
             graph: MazeGraph::new(),
@@ -70,6 +72,7 @@ impl Agent {
             avoid: None,
             wall_follower: WallFollowerState::default(),
             pending: None,
+            rng: StdRng::seed_from_u64(seed),
         }
     }
 
@@ -138,7 +141,7 @@ impl Agent {
         // retry in lockstep.
         let blocked = self
             .avoid
-            .filter(|&(_, turns)| turns == AVOID_OPPONENT_TURNS && rand::random_bool(0.5))
+            .filter(|&(_, turns)| turns == AVOID_OPPONENT_TURNS && self.rng.random_bool(0.5))
             .map(|(cell, _)| cell);
         let yielded = blocked.and_then(|cell| instructions::yield_to_opponent(player, graph, cell));
 
@@ -234,7 +237,7 @@ mod tests {
     use shared::radar::CellType;
 
     fn agent(name: &str) -> Agent {
-        Agent::new(name.to_string(), Algorithm::Tremeaux, TeamSecrets::default())
+        Agent::new(name.to_string(), Algorithm::Tremeaux, TeamSecrets::default(), 0)
     }
 
     /// Chooses a move from the current map, as a radar view would.
@@ -322,7 +325,7 @@ mod tests {
     #[test]
     fn test_rejected_move_does_not_count_as_wall_follower_loop() {
         let mut agent =
-            Agent::new("Player1".into(), Algorithm::WallFollower, TeamSecrets::default());
+            Agent::new("Player1".into(), Algorithm::WallFollower, TeamSecrets::default(), 0);
         propose_move(&mut agent);
 
         agent.on_message(Message::ActionError(ActionError::CannotPassThroughWall)).unwrap();
@@ -333,8 +336,10 @@ mod tests {
     #[test]
     fn test_each_agent_answers_challenge_with_its_own_modulo() {
         let secrets = TeamSecrets::default();
-        let mut agent_a = Agent::new("Player1".into(), Algorithm::Tremeaux, Arc::clone(&secrets));
-        let mut agent_b = Agent::new("Player2".into(), Algorithm::Tremeaux, Arc::clone(&secrets));
+        let mut agent_a =
+            Agent::new("Player1".into(), Algorithm::Tremeaux, Arc::clone(&secrets), 0);
+        let mut agent_b =
+            Agent::new("Player2".into(), Algorithm::Tremeaux, Arc::clone(&secrets), 0);
         agent_a.on_message(Message::Hint(Hint::Secret(25))).unwrap();
 
         let challenge = |m| Message::Challenge(Challenge::SecretSumModulo(m));

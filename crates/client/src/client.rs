@@ -24,6 +24,8 @@ pub struct ClientConfig {
     pub team_name: String,
     /// Pause before each move, so a game can be followed in the TUI.
     pub move_delay: Duration,
+    /// Seeds each agent's random choices, so a run can be replayed.
+    pub seed: u64,
 }
 
 pub struct GameClient {
@@ -89,7 +91,9 @@ impl GameClient {
             let handles = (0..num_agents)
                 .map(|i| {
                     let name = agent_name(algorithm, i);
-                    let mut agent = Agent::new(name.clone(), algorithm, Arc::clone(&self.secrets));
+                    let seed = config.seed.wrapping_add(u64::from(i));
+                    let mut agent =
+                        Agent::new(name.clone(), algorithm, Arc::clone(&self.secrets), seed);
                     let tui_state = tui_state.clone();
                     thread::Builder::new().name(name.clone()).spawn_scoped(
                         scope,
@@ -210,7 +214,8 @@ mod tests {
     #[test]
     fn test_agent_found_the_exit_when_server_closes_connection() {
         Logger::init(true);
-        let mut agent = Agent::new("Player1".into(), Algorithm::Tremeaux, TeamSecrets::default());
+        let mut agent =
+            Agent::new("Player1".into(), Algorithm::Tremeaux, TeamSecrets::default(), 0);
         let tui = Arc::new(Mutex::new(GameState::new()));
         tui.lock().unwrap().register_agent("Player1".to_string());
         let mut closed_stream = std::io::Cursor::new(Vec::new());
@@ -263,6 +268,7 @@ mod tests {
             server_addr: addr,
             team_name: "team".to_string(),
             move_delay: Duration::ZERO,
+            seed: 0,
         });
 
         let token = client.register_team(&mut stream).unwrap();
@@ -275,6 +281,7 @@ mod tests {
             server_addr: "addr".to_string(),
             team_name: "team".to_string(),
             move_delay: Duration::ZERO,
+            seed: 0,
         };
 
         let client = GameClient::new(config.clone());
@@ -337,6 +344,7 @@ mod tests {
             server_addr: addr,
             team_name: "team".to_string(),
             move_delay: Duration::ZERO,
+            seed: 0,
         };
         let client = GameClient::new(config);
 
