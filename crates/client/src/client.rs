@@ -1,6 +1,6 @@
 use crate::agent::{Agent, TeamSecrets};
 use crate::instructions::Algorithm;
-use crate::tui::GameState;
+use crate::tui::AgentEvent;
 use shared::utils::print_error;
 use shared::{
     errors::{GameError, GameResult},
@@ -13,7 +13,7 @@ use shared::{
 use std::{
     io::{Read, Write},
     net::TcpStream,
-    sync::{Arc, Mutex},
+    sync::{Arc, mpsc::Sender},
     thread,
     time::Duration,
 };
@@ -80,7 +80,7 @@ impl GameClient {
         &self,
         max_retries: u8,
         num_agents: u8,
-        tui_state: Option<Arc<Mutex<GameState>>>,
+        tui: Option<Sender<AgentEvent>>,
         algorithm: Algorithm,
     ) -> GameResult<()> {
         let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries)?;
@@ -94,7 +94,7 @@ impl GameClient {
                     let seed = config.seed.wrapping_add(u64::from(i));
                     let mut agent =
                         Agent::new(name.clone(), algorithm, Arc::clone(&self.secrets), seed);
-                    let tui_state = tui_state.clone();
+                    let tui = tui.clone();
                     thread::Builder::new().name(name.clone()).spawn_scoped(
                         scope,
                         move || -> GameResult<()> {
@@ -107,7 +107,7 @@ impl GameClient {
                                     registration_token: token.clone(),
                                 }),
                             )?;
-                            Self::play(&mut stream, &mut agent, &tui_state, config.move_delay)
+                            Self::play(&mut stream, &mut agent, tui.as_ref(), config.move_delay)
                         },
                     )
                 })
@@ -125,14 +125,14 @@ impl GameClient {
     fn play(
         stream: &mut (impl Read + Write),
         agent: &mut Agent,
-        tui_state: &Option<Arc<Mutex<GameState>>>,
+        tui: Option<&Sender<AgentEvent>>,
         move_delay: Duration,
     ) -> GameResult<()> {
         let logger = Logger::get_instance();
         while let Ok(message) = receive_message(stream) {
             if logger.is_debug_enabled() {
                 Self::log(
-                    tui_state,
+                    tui,
                     agent.name(),
                     format!("Received message: {message:?}"),
                     LogLevel::Debug,
@@ -140,10 +140,10 @@ impl GameClient {
             }
 
             let reply = agent.on_message(message).inspect_err(|err| {
-                Self::log(tui_state, agent.name(), err.to_string(), LogLevel::Error);
+                Self::log(tui, agent.name(), err.to_string(), LogLevel::Error);
             })?;
             if let Some((level, text)) = reply.log {
-                Self::log(tui_state, agent.name(), text, level);
+                Self::log(tui, agent.name(), text, level);
             }
             if let Some(action) = reply.action {
                 if matches!(action, Action::MoveTo(_)) {
@@ -151,28 +151,31 @@ impl GameClient {
                 }
                 send_message(stream, &Message::Action(action))?;
             }
-            Self::refresh_tui(tui_state, agent);
+            Self::refresh_tui(tui, agent);
         }
 
-        Self::log(tui_state, agent.name(), "Found the exit!", LogLevel::Info);
-        if let Some(tui) = tui_state
-            && let Ok(mut state) = tui.lock()
-        {
-            state.mark_exit_found(agent.name());
-        }
+        Self::log(tui, agent.name(), "Found the exit!", LogLevel::Info);
+        Self::send(tui, AgentEvent::ExitFound { agent: agent.name().to_string() });
         Ok(())
     }
 
-    fn refresh_tui(tui_state: &Option<Arc<Mutex<GameState>>>, agent: &Agent) {
-        if let Some(tui) = tui_state
-            && let Ok(mut state) = tui.lock()
-        {
-            state.update_state(agent.name(), agent.graph().clone(), agent.player().clone());
+    fn refresh_tui(tui: Option<&Sender<AgentEvent>>, agent: &Agent) {
+        if tui.is_none() {
+            return;
+        }
+        let (graph, player) = (agent.graph().clone(), agent.player().clone());
+        Self::send(tui, AgentEvent::Update { agent: agent.name().to_string(), graph, player });
+    }
+
+    fn send(tui: Option<&Sender<AgentEvent>>, event: AgentEvent) {
+        if let Some(tui) = tui {
+            // The TUI stops listening once the user quits it; the game plays on anyway.
+            let _ = tui.send(event);
         }
     }
 
     fn log(
-        tui_state: &Option<Arc<Mutex<GameState>>>,
+        tui: Option<&Sender<AgentEvent>>,
         agent_name: &str,
         message: impl Into<String>,
         level: LogLevel,
@@ -182,12 +185,11 @@ impl GameClient {
             return;
         }
 
-        match tui_state.as_ref() {
-            Some(tui) => {
-                if let Ok(mut state) = tui.lock() {
-                    state.add_log(agent_name, message.into(), level);
-                }
-            }
+        match tui {
+            Some(_) => Self::send(
+                tui,
+                AgentEvent::Log { agent: agent_name.to_string(), level, text: message.into() },
+            ),
             None => match level {
                 LogLevel::Debug => logger.debug(&format!("{} {}", agent_name, message.into())),
                 LogLevel::Info => logger.info(&format!("{} {}", agent_name, message.into())),
@@ -216,14 +218,16 @@ mod tests {
         Logger::init(true);
         let mut agent =
             Agent::new("Player1".into(), Algorithm::Tremeaux, TeamSecrets::default(), 0);
-        let tui = Arc::new(Mutex::new(GameState::new()));
-        tui.lock().unwrap().register_agent("Player1".to_string());
+        let (tui, events) = std::sync::mpsc::channel();
         let mut closed_stream = std::io::Cursor::new(Vec::new());
 
-        GameClient::play(&mut closed_stream, &mut agent, &Some(Arc::clone(&tui)), Duration::ZERO)
-            .unwrap();
+        GameClient::play(&mut closed_stream, &mut agent, Some(&tui), Duration::ZERO).unwrap();
 
-        assert!(tui.lock().unwrap().has_found_exit("Player1"));
+        assert!(
+            events.try_iter().any(
+                |event| matches!(event, AgentEvent::ExitFound { agent } if agent == "Player1")
+            )
+        );
     }
 
     #[test]

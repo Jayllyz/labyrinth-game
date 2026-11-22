@@ -17,9 +17,18 @@ use shared::{logger::LogLevel, maze::Cell, radar::CellType};
 use std::{
     collections::HashMap,
     io,
-    sync::{Arc, Mutex},
+    sync::mpsc::{Receiver, Sender, channel},
     time::{Duration, Instant},
 };
+
+/// What agents tell the TUI. Agents only send; the TUI thread owns the state, so agents
+/// never wait on a lock while it draws.
+pub enum AgentEvent {
+    Log { agent: String, level: LogLevel, text: String },
+    Update { agent: String, graph: MazeGraph, player: Player },
+    ExitFound { agent: String },
+    Finished,
+}
 
 pub struct AgentState {
     pub logs: Vec<(String, LogLevel)>,
@@ -67,10 +76,6 @@ impl GameState {
         }
     }
 
-    pub fn has_found_exit(&self, agent: &str) -> bool {
-        self.agents.get(agent).is_some_and(|state| state.found_exit)
-    }
-
     pub fn register_agent(&mut self, name: String) {
         self.agents.insert(name, AgentState::new());
     }
@@ -87,12 +92,22 @@ impl GameState {
             state.player = player;
         }
     }
+
+    pub fn apply(&mut self, event: AgentEvent) {
+        match event {
+            AgentEvent::Log { agent, level, text } => self.add_log(&agent, text, level),
+            AgentEvent::Update { agent, graph, player } => self.update_state(&agent, graph, player),
+            AgentEvent::ExitFound { agent } => self.mark_exit_found(&agent),
+            AgentEvent::Finished => self.mark_finished(),
+        }
+    }
 }
 
 #[cfg(not(test))]
 pub struct Tui {
     terminal: Terminal<ratatui::backend::CrosstermBackend<io::Stdout>>,
-    state: Arc<Mutex<GameState>>,
+    state: GameState,
+    events: Receiver<AgentEvent>,
     refresh_rate: u64,
 }
 
@@ -111,23 +126,25 @@ fn backend_err(
 #[cfg(test)]
 pub struct Tui {
     terminal: Terminal<ratatui::backend::TestBackend>,
-    state: Arc<Mutex<GameState>>,
+    state: GameState,
+    events: Receiver<AgentEvent>,
     refresh_rate: u64,
 }
 
 impl Tui {
     #[cfg(not(test))]
-    pub fn new(refresh_rate: u64) -> Result<Self, std::io::Error> {
+    /// Returns the TUI and the sender agents report to.
+    pub fn new(refresh_rate: u64) -> io::Result<(Self, Sender<AgentEvent>)> {
         let terminal = Terminal::new(ratatui::backend::CrosstermBackend::new(std::io::stdout()))?;
-        let state = Arc::new(Mutex::new(GameState::new()));
-        Ok(Self { terminal, state, refresh_rate })
+        let (sender, events) = channel();
+        Ok((Self { terminal, state: GameState::new(), events, refresh_rate }, sender))
     }
 
     #[cfg(test)]
-    pub fn new(refresh_rate: u64) -> Result<Self, std::io::Error> {
+    pub fn new(refresh_rate: u64) -> io::Result<(Self, Sender<AgentEvent>)> {
         let Ok(terminal) = Terminal::new(ratatui::backend::TestBackend::new(10, 10));
-        let state = Arc::new(Mutex::new(GameState::new()));
-        Ok(Self { terminal, state, refresh_rate })
+        let (sender, events) = channel();
+        Ok((Self { terminal, state: GameState::new(), events, refresh_rate }, sender))
     }
 
     pub fn enter(&self) -> Result<(), std::io::Error> {
@@ -154,8 +171,8 @@ impl Tui {
         Ok(())
     }
 
-    pub fn get_state(&self) -> Arc<Mutex<GameState>> {
-        Arc::clone(&self.state)
+    pub fn register_agent(&mut self, name: String) {
+        self.state.register_agent(name);
     }
 
     pub fn run(&mut self) -> io::Result<()> {
@@ -164,6 +181,9 @@ impl Tui {
 
         loop {
             if last_draw.elapsed() >= update_interval {
+                for event in self.events.try_iter() {
+                    self.state.apply(event);
+                }
                 self.draw()?;
                 last_draw = Instant::now();
             }
@@ -176,16 +196,13 @@ impl Tui {
                     break;
                 }
 
-                let Ok(mut state) = self.state.lock() else {
-                    continue;
-                };
-                let agent_count = state.agents.len();
+                let agent_count = self.state.agents.len();
                 match key.code {
                     KeyCode::Right => {
-                        Self::select_agent_increment(&mut state, agent_count);
+                        Self::select_agent_increment(&mut self.state, agent_count);
                     }
                     KeyCode::Left => {
-                        Self::select_agent_decrement(&mut state, agent_count);
+                        Self::select_agent_decrement(&mut self.state, agent_count);
                     }
                     _ => {}
                 }
@@ -229,7 +246,7 @@ impl Tui {
         let view_height = (maze_area.height as i16).saturating_sub(2);
         let view_width = (maze_area.width as i16).saturating_sub(4);
 
-        let state = self.state.lock().map_err(|_| io::Error::other("Failed to lock state"))?;
+        let state = &self.state;
         let mut agents: Vec<(String, bool)> =
             state.agents.iter().map(|(name, agent)| (name.clone(), agent.found_exit)).collect();
         agents.sort();
@@ -257,8 +274,6 @@ impl Tui {
         } else {
             (Vec::new(), None)
         };
-
-        drop(state);
 
         self.terminal
             .draw(|f| {
@@ -726,7 +741,7 @@ mod tests {
 
     #[test]
     fn test_maze_visualization_empty() {
-        let tui = Tui::new(100).unwrap();
+        let tui = Tui::new(100).unwrap().0;
         let graph = MazeGraph::new();
         let player = Player::new();
 
@@ -736,7 +751,7 @@ mod tests {
 
     #[test]
     fn test_maze_visualization_2x2_grid() {
-        let tui = Tui::new(100).unwrap();
+        let tui = Tui::new(100).unwrap().0;
         let mut graph = MazeGraph::new();
         let cells = [
             (0, 0, CellType::NOTHING),
@@ -898,20 +913,17 @@ mod tests {
 
     fn rendered_text(finished: bool, exits_found: &[&str]) -> String {
         let Ok(terminal) = Terminal::new(ratatui::backend::TestBackend::new(80, 24));
-        let state = Arc::new(Mutex::new(GameState::new()));
-        {
-            let mut state = state.lock().unwrap();
-            state.register_agent("Player1".to_string());
-            state.register_agent("Player2".to_string());
-            for agent in exits_found {
-                state.mark_exit_found(agent);
-            }
-            if finished {
-                state.mark_finished();
-            }
+        let mut state = GameState::new();
+        state.register_agent("Player1".to_string());
+        state.register_agent("Player2".to_string());
+        for agent in exits_found {
+            state.mark_exit_found(agent);
+        }
+        if finished {
+            state.mark_finished();
         }
 
-        let mut tui = Tui { terminal, state, refresh_rate: 0 };
+        let mut tui = Tui { terminal, state, events: channel().1, refresh_rate: 0 };
         tui.draw().unwrap();
         tui.terminal.backend().buffer().content().iter().map(|c| c.symbol()).collect()
     }
