@@ -10,7 +10,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Tabs},
+    widgets::{Block, Borders, Clear, Gauge, Paragraph, Tabs},
 };
 use shared::{logger::LogLevel, maze::Cell, radar::CellType};
 use std::{
@@ -226,7 +226,10 @@ impl Tui {
         let view_width = (maze_area.width as i16).saturating_sub(4);
 
         let state = self.state.lock().map_err(|_| io::Error::other("Failed to lock state"))?;
-        let agent_names: Vec<String> = state.agents.keys().cloned().collect();
+        let mut agents: Vec<(String, bool)> =
+            state.agents.iter().map(|(name, agent)| (name.clone(), agent.found_exit)).collect();
+        agents.sort();
+        let agent_names: Vec<String> = agents.iter().map(|(name, _)| name.clone()).collect();
         let selected_tab = state.selected_tab;
         let result = state.finished.then(|| {
             let found = state.agents.values().filter(|agent| agent.found_exit).count();
@@ -245,10 +248,10 @@ impl Tui {
                     Some((self.create_stats(agent), agent.logs.clone())),
                 )
             } else {
-                (String::new(), None)
+                (Vec::new(), None)
             }
         } else {
-            (String::new(), None)
+            (Vec::new(), None)
         };
 
         drop(state);
@@ -267,21 +270,20 @@ impl Tui {
                     .split(size);
 
                 let tabs = Tabs::new(
-                    agent_names
+                    agents
                         .iter()
                         .enumerate()
-                        .map(|(i, name)| {
-                            if i == selected_tab {
-                                Line::from(vec![Span::styled(
-                                    name.trim(),
-                                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                                )])
-                            } else {
-                                Line::from(vec![Span::styled(
-                                    name,
-                                    Style::default().fg(Color::Green),
-                                )])
-                            }
+                        .map(|(i, (name, found_exit))| {
+                            let label =
+                                if *found_exit { format!("{name} ✓") } else { name.clone() };
+                            let style = match (i == selected_tab, found_exit) {
+                                (true, _) => {
+                                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                                }
+                                (false, true) => Style::default().fg(Color::Green),
+                                (false, false) => Style::default().fg(Color::Gray),
+                            };
+                            Line::styled(label, style)
                         })
                         .collect::<Vec<_>>(),
                 )
@@ -290,10 +292,20 @@ impl Tui {
 
                 f.render_widget(tabs, chunks[0]);
 
-                if let Some((stats, logs)) = agent_data {
+                if let Some(((explored, stats), logs)) = agent_data {
+                    let stats_chunks = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([Constraint::Length(30), Constraint::Min(10)])
+                        .split(chunks[1]);
+                    let progress = Gauge::default()
+                        .block(Block::default().borders(Borders::ALL).title("Progress"))
+                        .gauge_style(Style::default().fg(Color::Blue))
+                        .ratio(explored.clamp(0.0, 1.0))
+                        .label(format!("{:.0}% explored", explored * 100.0));
+                    f.render_widget(progress, stats_chunks[0]);
                     let stats_widget = Paragraph::new(stats)
                         .block(Block::default().borders(Borders::ALL).title("Statistics"));
-                    f.render_widget(stats_widget, chunks[1]);
+                    f.render_widget(stats_widget, stats_chunks[1]);
 
                     let content_chunks = Layout::default()
                         .direction(Direction::Horizontal)
@@ -358,7 +370,7 @@ impl Tui {
         f.render_widget(popup, area);
     }
 
-    fn create_stats(&self, agent: &AgentState) -> String {
+    fn create_stats(&self, agent: &AgentState) -> (f64, String) {
         let graph = &agent.graph;
         let cells = &graph.cell_map;
 
@@ -369,22 +381,18 @@ impl Tui {
         let not_visited =
             cells.values().filter(|cell| cell.status == CellStatus::NotVisited).count();
 
-        let explored_percent = if total_cells > 0 {
-            (visited_cells as f64 / total_cells as f64 * 100.0) as u32
-        } else {
-            0
-        };
-
-        format!(
-            "Pos: [{}, {}] | Explored: {}% ({}/{}) | Dead ends: {} | Not visited: {}",
+        let explored =
+            if total_cells > 0 { visited_cells as f64 / total_cells as f64 } else { 0.0 };
+        let text = format!(
+            "Pos: [{}, {}] | Visited: {}/{} | Dead ends: {} | Not visited: {}",
             agent.player.position.row,
             agent.player.position.column,
-            explored_percent,
             visited_cells,
             total_cells,
             dead_ends,
             not_visited,
-        )
+        );
+        (explored, text)
     }
 
     fn calculate_bounds(cells: &HashMap<Cell, MazeCell>) -> (i16, i16, i16, i16) {
@@ -451,19 +459,40 @@ impl Tui {
         (row_start, row_end, col_start, col_end)
     }
 
-    fn render_cell(cell: &MazeCell) -> String {
-        match cell.cell_type {
-            CellType::OBJECTIVE => " ✅ ".to_string(),
-            CellType::ENEMY => " ⚠️ ".to_string(),
-            CellType::HELP => " 🆘 ".to_string(),
-            CellType::ALLY => " 🟢 ".to_string(),
-            CellType::NOTHING => match cell.status {
-                CellStatus::VISITED => " · ".to_string(),
-                CellStatus::DeadEnd => " 🔸".to_string(),
-                CellStatus::NotVisited => "   ".to_string(),
+    fn render_cell(cell: &MazeCell) -> Span<'static> {
+        let (symbol, style) = match cell.cell_type {
+            CellType::OBJECTIVE | CellType::ObjectiveAlly | CellType::ObjectiveMonster => {
+                (" ★ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+            }
+            CellType::ObjectiveEnemy => {
+                (" ★ ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+            }
+            CellType::HELP => {
+                (" ? ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+            }
+            CellType::ALLY => (" ● ", Style::default().fg(Color::Green)),
+            CellType::ENEMY => (" ● ", Style::default().fg(Color::Red)),
+            CellType::MONSTER => (" M ", Style::default().fg(Color::Magenta)),
+            _ => match cell.status {
+                CellStatus::VISITED => (" · ", Style::default().fg(Color::Blue)),
+                CellStatus::DeadEnd => (" × ", Style::default().fg(Color::DarkGray)),
+                CellStatus::NotVisited => ("   ", Style::default()),
             },
-            _ => " # ".to_string(),
-        }
+        };
+        Span::styled(symbol, style)
+    }
+
+    /// The agent, pointing where it heads. Screen columns follow the graph's columns and
+    /// `Front` moves toward lower columns.
+    fn player_span(direction: &shared::messages::Direction) -> Span<'static> {
+        use shared::messages::Direction as Heading;
+        let symbol = match direction {
+            Heading::Front => " ◄ ",
+            Heading::Right => " ▼ ",
+            Heading::Back => " ► ",
+            Heading::Left => " ▲ ",
+        };
+        Span::styled(symbol, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
     }
 
     fn render_horizontal_wall(
@@ -517,59 +546,53 @@ impl Tui {
         player: &Player,
         available_width: i16,
         available_height: i16,
-    ) -> String {
-        let mut visualization = String::new();
+    ) -> Vec<Line<'static>> {
+        let wall = Style::default().fg(Color::DarkGray);
         let cells = &graph.cell_map;
 
         let bounds = Self::calculate_bounds(cells);
         let (row_start, row_end, col_start, col_end) =
             Self::calculate_view_bounds(bounds, player, available_width, available_height);
 
-        visualization.push_str("    ");
-        for _col in col_start..=col_end {
-            visualization.push_str("────");
-        }
-        visualization.push('\n');
+        let mut lines = Vec::new();
+        let top = "────".repeat((col_start..=col_end).count());
+        lines.push(Line::from(vec![Span::raw("    "), Span::styled(top, wall)]));
 
         for row in row_start..=row_end {
-            if row % 5 == 0 && (row <= -100) {
-                visualization.push_str(&format!("{:3}│", row));
-            } else if row % 5 == 0 {
-                visualization.push_str(&format!("{:3} │", row));
-            } else {
-                visualization.push_str("    │");
-            }
+            let label = match row {
+                r if r % 5 == 0 && r <= -100 => format!("{:3}", row),
+                r if r % 5 == 0 => format!("{:3} ", row),
+                _ => "    ".to_string(),
+            };
+            let mut spans = vec![Span::raw(label), Span::styled("│", wall)];
 
             for col in col_start..=col_end {
                 let pos = Cell { row, column: col };
-
-                if pos == player.position {
-                    visualization.push_str(" 🔵 ");
-                } else if let Some(cell) = cells.get(&pos) {
-                    visualization.push_str(&Self::render_cell(cell));
-
-                    let right_pos = Cell { row, column: col + 1 };
-                    if !cell.neighbors.contains(&right_pos) && col < col_end {
-                        visualization.push('│');
-                    } else {
-                        visualization.push(' ');
-                    }
+                let Some(cell) = cells.get(&pos) else {
+                    spans.push(Span::raw(if col < col_end { "    " } else { "   " }));
+                    continue;
+                };
+                spans.push(if pos == player.position {
+                    Self::player_span(&player.direction)
                 } else {
-                    visualization.push_str("   ");
-                    if col < col_end {
-                        visualization.push(' ');
-                    }
-                }
+                    Self::render_cell(cell)
+                });
+                let right_pos = Cell { row, column: col + 1 };
+                spans.push(if !cell.neighbors.contains(&right_pos) && col < col_end {
+                    Span::styled("│", wall)
+                } else {
+                    Span::raw(" ")
+                });
             }
-            visualization.push('\n');
+            lines.push(Line::from(spans));
 
             if row < row_end {
-                visualization
-                    .push_str(&Self::render_horizontal_wall(cells, row, col_start, col_end));
+                let below = Self::render_horizontal_wall(cells, row, col_start, col_end);
+                lines.push(Line::styled(below.trim_end_matches('\n').to_string(), wall));
             }
         }
 
-        visualization
+        lines
     }
 }
 
@@ -672,7 +695,7 @@ mod tests {
         let player = Player::new();
 
         let viz = tui.create_maze_visualization(&graph, &player, 10, 10);
-        assert_eq!(viz, "    \n");
+        assert_eq!(lines_text(&viz), "    \n");
     }
 
     #[test]
@@ -698,8 +721,8 @@ mod tests {
         };
 
         let viz = tui.create_maze_visualization(&graph, &player, 10, 10);
-        let expected = "    ────────\n  0 │ 🔵     \n    │───┼───\n    │   │    \n";
-        assert_eq!(viz, expected);
+        let expected = "    ────────\n  0 │ ◄ │    \n    │───┼───\n    │   │    \n";
+        assert_eq!(lines_text(&viz), expected);
     }
 
     #[test]
@@ -784,13 +807,48 @@ mod tests {
         assert_eq!(wall, "    │───┼───\n");
     }
 
+    fn lines_text(lines: &[Line]) -> String {
+        lines
+            .iter()
+            .map(|line| {
+                line.spans.iter().map(|span| span.content.as_ref()).collect::<String>() + "\n"
+            })
+            .collect()
+    }
+
     #[test]
     fn test_render_cell() {
-        let cell = MazeCell::new(CellType::NOTHING);
-        assert_eq!(Tui::render_cell(&cell), "   ".to_string());
+        let symbol = |cell_type: CellType, status: CellStatus| {
+            let mut cell = MazeCell::new(cell_type);
+            cell.status = status;
+            Tui::render_cell(&cell).content.into_owned()
+        };
 
-        let cell = MazeCell::new(CellType::OBJECTIVE);
-        assert_eq!(Tui::render_cell(&cell), " ✅ ".to_string());
+        assert_eq!(symbol(CellType::NOTHING, CellStatus::NotVisited), "   ");
+        assert_eq!(symbol(CellType::NOTHING, CellStatus::DeadEnd), " × ");
+        assert_eq!(symbol(CellType::OBJECTIVE, CellStatus::NotVisited), " ★ ");
+        assert_eq!(symbol(CellType::ObjectiveEnemy, CellStatus::NotVisited), " ★ ");
+    }
+
+    #[test]
+    fn test_player_symbol_shows_heading() {
+        assert_eq!(Tui::player_span(&Direction::Front).content, " ◄ ");
+        assert_eq!(Tui::player_span(&Direction::Right).content, " ▼ ");
+        assert_eq!(Tui::player_span(&Direction::Back).content, " ► ");
+        assert_eq!(Tui::player_span(&Direction::Left).content, " ▲ ");
+    }
+
+    #[test]
+    fn test_tabs_mark_agents_that_found_the_exit() {
+        let text = rendered_text(false, &["Player2"]);
+        assert!(text.contains("Player2 ✓"));
+        assert!(!text.contains("Player1 ✓"));
+        assert!(text.find("Player1").unwrap() < text.find("Player2").unwrap());
+    }
+
+    #[test]
+    fn test_statistics_show_explored_progress() {
+        assert!(rendered_text(false, &[]).contains("0% explored"));
     }
 
     fn rendered_text(finished: bool, exits_found: &[&str]) -> String {
