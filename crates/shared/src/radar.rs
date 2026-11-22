@@ -27,16 +27,17 @@ pub enum CellType {
 }
 
 impl CellType {
-    /// Cells worth entering even when walled on three sides.
-    pub fn is_goal_or_help(&self) -> bool {
+    /// The exit, whoever stands on it.
+    pub fn is_exit(&self) -> bool {
         matches!(
             self,
-            Self::OBJECTIVE
-                | Self::HELP
-                | Self::ObjectiveAlly
-                | Self::ObjectiveEnemy
-                | Self::ObjectiveMonster
+            Self::OBJECTIVE | Self::ObjectiveAlly | Self::ObjectiveEnemy | Self::ObjectiveMonster
         )
+    }
+
+    /// Cells worth entering even when walled on three sides.
+    pub fn is_goal_or_help(&self) -> bool {
+        self.is_exit() || *self == Self::HELP
     }
 }
 

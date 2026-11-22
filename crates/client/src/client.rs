@@ -373,7 +373,9 @@ impl GameClient {
         player_ctx.avoid =
             player_ctx.avoid.and_then(|(cell, turns)| (turns > 1).then_some((cell, turns - 1)));
 
-        let action: Action = match yielded {
+        let to_exit =
+            || instructions::step_to_known_exit(&mut player_ctx.player, &player_ctx.graph, avoid);
+        let action: Action = match yielded.or_else(to_exit) {
             Some(action) => action,
             None => match player_ctx.algorithm {
                 Algorithm::Tremeaux => instructions::tremeaux_solver(
