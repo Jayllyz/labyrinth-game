@@ -268,9 +268,9 @@ pub fn yield_to_opponent(
 }
 
 /// Where a wall follower has already been, to notice when it circles a loop of walls.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct WallFollowerState {
-    seen: HashSet<(Cell, Direction)>,
+    pub(crate) seen: HashSet<(Cell, Direction)>,
     looping: bool,
 }
 
@@ -334,9 +334,9 @@ pub fn right_hand_solver(radar_view: &Radar, player: &mut Player) -> messages::A
     messages::Action::MoveTo(messages::Direction::Right)
 }
 
-pub fn solve_sum_modulo<S: ::std::hash::BuildHasher>(
+pub fn solve_sum_modulo<K, S: ::std::hash::BuildHasher>(
     secret_sum: u128,
-    secrets: &HashMap<std::thread::ThreadId, u128, S>,
+    secrets: &HashMap<K, u128, S>,
 ) -> String {
     (secrets.values().sum::<u128>() % secret_sum).to_string()
 }

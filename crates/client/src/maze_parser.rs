@@ -29,7 +29,6 @@ fn rotate_right_90(cells: &mut [Cell]) {
 pub struct Player {
     pub direction: Direction,
     pub position: Cell,
-    pub saved_state: Option<(Cell, Direction)>,
     /// Last compass hint, as clockwise degrees from the starting heading (`Front`).
     pub exit_bearing: Option<f32>,
 }
@@ -39,17 +38,13 @@ impl Player {
         Self {
             position: Cell { row: 0, column: 0 },
             direction: Direction::Front,
-            saved_state: None,
             exit_bearing: None,
         }
     }
 
     /// Records a compass hint: clockwise degrees from the heading to the exit.
-    /// The hint describes the agent as of the last radar view, before the move
-    /// already applied here.
     pub fn record_compass(&mut self, angle: f32) {
-        let heading = self.saved_state.as_ref().map_or(&self.direction, |(_, d)| d);
-        let degrees = match heading {
+        let degrees = match self.direction {
             Direction::Front => 0.0,
             Direction::Right => 90.0,
             Direction::Back => 180.0,
@@ -139,17 +134,6 @@ impl Player {
             Direction::Right => Cell { row: self.position.row + 1, column: self.position.column },
             Direction::Back => Cell { row: self.position.row, column: self.position.column + 1 },
             Direction::Left => Cell { row: self.position.row - 1, column: self.position.column },
-        }
-    }
-
-    pub fn save_state(&mut self) {
-        self.saved_state = Some((self.position, self.direction.clone()));
-    }
-
-    pub fn revert_move(&mut self) {
-        if let Some((position, direction)) = self.saved_state.take() {
-            self.position = position;
-            self.direction = direction;
         }
     }
 }
@@ -351,7 +335,6 @@ mod tests {
         let mut p = Player {
             position: Cell { row: 0, column: 0 },
             direction: Direction::Front,
-            saved_state: None,
             exit_bearing: None,
         };
         let mut m = MazeGraph::new();
@@ -542,7 +525,6 @@ mod tests {
         let mut player = Player {
             position: Cell { row: 5, column: 5 },
             direction: Direction::Front,
-            saved_state: None,
             exit_bearing: None,
         };
 
@@ -563,19 +545,5 @@ mod tests {
         assert_eq!(player.direction, Direction::Back);
         player.move_forward();
         assert_eq!(player.position, Cell { row: 6, column: 4 });
-    }
-
-    #[test]
-    fn test_revert_move_restores_position_and_direction() {
-        let mut player = Player::new();
-        player.position = Cell { row: 1, column: 1 };
-
-        player.save_state();
-        player.turn_right();
-        player.move_forward();
-        player.revert_move();
-
-        assert_eq!(player.position, Cell { row: 1, column: 1 });
-        assert_eq!(player.direction, Direction::Front);
     }
 }

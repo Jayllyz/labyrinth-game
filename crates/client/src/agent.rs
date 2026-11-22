@@ -1,0 +1,392 @@
+use crate::data_structures::maze_graph::MazeGraph;
+use crate::instructions::{self, Algorithm, WallFollowerState};
+use crate::maze_parser::{Player, maze_to_graph};
+use shared::{
+    errors::{GameError, GameResult},
+    logger::LogLevel,
+    maze::Cell,
+    messages::{Action, ActionError, Challenge, Hint, Message, RadarView, SubscribePlayerResult},
+    radar::{Radar, decode_base64, extract_data},
+};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
+/// Secrets of the whole team, by agent name. A challenge is answered with all of them.
+pub type TeamSecrets = Arc<Mutex<HashMap<String, u128>>>;
+
+/// Opponents move on quickly, so a held cell is only avoided for a few moves.
+pub const AVOID_OPPONENT_TURNS: u8 = 3;
+
+/// What the agent wants done after a server message.
+#[derive(Default)]
+pub struct Reply {
+    pub action: Option<Action>,
+    pub log: Option<(LogLevel, String)>,
+}
+
+impl Reply {
+    fn action(action: Action) -> Self {
+        Self { action: Some(action), log: None }
+    }
+
+    fn log(level: LogLevel, message: impl Into<String>) -> Self {
+        Self { action: None, log: Some((level, message.into())) }
+    }
+}
+
+/// One agent's game logic. It never touches the network: the transport feeds it server
+/// messages and sends back the actions it replies with.
+pub struct Agent {
+    name: String,
+    graph: MazeGraph,
+    player: Player,
+    algorithm: Algorithm,
+    secrets: TeamSecrets,
+    challenge_modulo: Option<u128>,
+    /// Cell an opponent recently held and turns left to route around it.
+    avoid: Option<(Cell, u8)>,
+    wall_follower: WallFollowerState,
+    /// The agent and its map as they will be once the server accepts the last move.
+    pending: Option<Pending>,
+}
+
+struct Pending {
+    player: Player,
+    graph: MazeGraph,
+    wall_follower: WallFollowerState,
+}
+
+impl Agent {
+    pub fn new(name: String, algorithm: Algorithm, secrets: TeamSecrets) -> Self {
+        Self {
+            name,
+            graph: MazeGraph::new(),
+            player: Player::new(),
+            algorithm,
+            secrets,
+            challenge_modulo: None,
+            avoid: None,
+            wall_follower: WallFollowerState::default(),
+            pending: None,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn graph(&self) -> &MazeGraph {
+        &self.graph
+    }
+
+    pub const fn player(&self) -> &Player {
+        &self.player
+    }
+
+    pub fn on_message(&mut self, message: Message) -> GameResult<Reply> {
+        match message {
+            Message::SubscribePlayerResult(SubscribePlayerResult::Ok) => {
+                Ok(Reply::log(LogLevel::Info, "Subscribed successfully"))
+            }
+            Message::SubscribePlayerResult(SubscribePlayerResult::Err(err)) => {
+                Err(GameError::AgentSubscriptionError(format!("{err:?}")))
+            }
+            Message::RadarView(view) => self.on_radar_view(&view).map(Reply::action),
+            Message::Hint(hint) => Ok(self.on_hint(hint)),
+            Message::Challenge(challenge) => {
+                let log = Some((LogLevel::Debug, format!("{challenge:?}")));
+                let Challenge::SecretSumModulo(modulo) = challenge;
+                self.challenge_modulo = Some(modulo);
+                Ok(Reply { action: self.solve_challenge(modulo), log })
+            }
+            Message::ActionError(err) => Ok(self.on_action_error(err)),
+            Message::MessageError(err) => {
+                Ok(Reply::log(LogLevel::Error, format!("Server error: {err:?}")))
+            }
+            other => Ok(Reply::log(LogLevel::Warning, format!("Unhandled message: {other:?}"))),
+        }
+    }
+
+    fn on_radar_view(&mut self, view: &RadarView) -> GameResult<Action> {
+        let radar_view = extract_data(&decode_base64(&view.0))
+            .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {e}")))?;
+
+        // A radar view after a move means the server accepted it.
+        if let Some(Pending { player, graph, wall_follower }) = self.pending.take() {
+            self.player = player;
+            self.graph = graph;
+            self.wall_follower = wall_follower;
+        }
+        maze_to_graph(&radar_view, &self.player, &mut self.graph);
+
+        let mut next = Pending {
+            player: self.player.clone(),
+            graph: self.graph.clone(),
+            wall_follower: self.wall_follower.clone(),
+        };
+        let action = self.decide(&radar_view, &mut next);
+        self.pending = Some(next);
+        Ok(action)
+    }
+
+    /// Chooses the next move, updating `next` as if the server accepts it.
+    fn decide(&mut self, radar_view: &Radar, next: &mut Pending) -> Action {
+        let Pending { player, graph, wall_follower } = next;
+        // Right after a block, yield half the time so two agents blocking each other don't
+        // retry in lockstep.
+        let blocked = self
+            .avoid
+            .filter(|&(_, turns)| turns == AVOID_OPPONENT_TURNS && rand::random_bool(0.5))
+            .map(|(cell, _)| cell);
+        let yielded = blocked.and_then(|cell| instructions::yield_to_opponent(player, graph, cell));
+
+        let avoid = self.avoid.map(|(cell, _)| cell);
+        self.avoid = self.avoid.and_then(|(cell, turns)| (turns > 1).then_some((cell, turns - 1)));
+
+        if let Some(action) =
+            yielded.or_else(|| instructions::step_to_known_exit(player, graph, avoid))
+        {
+            return action;
+        }
+
+        match self.algorithm {
+            Algorithm::Tremeaux => instructions::tremeaux_solver(player, graph, avoid),
+            Algorithm::WallFollower => {
+                instructions::wall_follower_solver(radar_view, player, graph, wall_follower, avoid)
+            }
+            Algorithm::Alian => instructions::alian_solver(player, graph, &self.name),
+        }
+    }
+
+    fn on_hint(&mut self, hint: Hint) -> Reply {
+        match hint {
+            Hint::RelativeCompass { angle } => {
+                // The hint describes the agent as of the last radar view, before the pending move.
+                self.player.record_compass(angle);
+                if let Some(pending) = &mut self.pending {
+                    pending.player.exit_bearing = self.player.exit_bearing;
+                }
+                Reply::default()
+            }
+            Hint::Secret(secret) => {
+                if let Ok(mut secrets) = self.secrets.lock() {
+                    secrets.insert(self.name.clone(), secret);
+                }
+                Reply::default()
+            }
+            Hint::GridSize { columns, rows } => {
+                Reply::log(LogLevel::Info, format!("Maze is {columns}x{rows}"))
+            }
+            Hint::SOS => Reply::log(LogLevel::Info, "Received an SOS hint"),
+        }
+    }
+
+    fn on_action_error(&mut self, err: ActionError) -> Reply {
+        let level = match err {
+            ActionError::CannotPassThroughWall | ActionError::CannotPassThroughOpponent => {
+                LogLevel::Debug
+            }
+            _ => LogLevel::Error,
+        };
+        let log = Some((level, format!("Action error: {err:?}")));
+
+        // The server follows move errors with a fresh RadarView, which drives the next move.
+        let action = match err {
+            // Without a pending move the error is stale, so there is no target to avoid.
+            ActionError::CannotPassThroughOpponent => {
+                if let Some(rejected) = self.pending.take() {
+                    self.avoid = Some((rejected.player.position, AVOID_OPPONENT_TURNS));
+                }
+                None
+            }
+            ActionError::CannotPassThroughWall
+            | ActionError::InvalidMove
+            | ActionError::OutOfMap
+            | ActionError::Blocked => {
+                self.pending = None;
+                None
+            }
+            ActionError::NoRunningChallenge => None,
+            ActionError::InvalidChallengeSolution => {
+                self.challenge_modulo.and_then(|modulo| self.solve_challenge(modulo))
+            }
+            ActionError::SolveChallengeFirst => {
+                self.pending = None;
+                self.challenge_modulo.and_then(|modulo| self.solve_challenge(modulo))
+            }
+        };
+        Reply { action, log }
+    }
+
+    fn solve_challenge(&self, modulo: u128) -> Option<Action> {
+        let secrets = self.secrets.lock().ok()?;
+        Some(Action::SolveChallenge { answer: instructions::solve_sum_modulo(modulo, &secrets) })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_structures::maze_graph::CellStatus;
+    use shared::messages;
+    use shared::radar::CellType;
+
+    fn agent(name: &str) -> Agent {
+        Agent::new(name.to_string(), Algorithm::Tremeaux, TeamSecrets::default())
+    }
+
+    /// Chooses a move from the current map, as a radar view would.
+    fn propose_move(agent: &mut Agent) {
+        let radar = Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() };
+        let mut next = Pending {
+            player: agent.player.clone(),
+            graph: agent.graph.clone(),
+            wall_follower: agent.wall_follower.clone(),
+        };
+        agent.decide(&radar, &mut next);
+        agent.pending = Some(next);
+    }
+
+    fn answer(reply: Reply) -> String {
+        match reply.action {
+            Some(Action::SolveChallenge { answer }) => answer,
+            other => panic!("unexpected action: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_failed_move_waits_for_next_radar_view() {
+        for err in [
+            ActionError::CannotPassThroughWall,
+            ActionError::CannotPassThroughOpponent,
+            ActionError::NoRunningChallenge,
+        ] {
+            let mut agent = agent("Player1");
+
+            let reply = agent.on_message(Message::ActionError(err)).unwrap();
+
+            assert_eq!(reply.action, None);
+        }
+    }
+
+    #[test]
+    fn test_opponent_block_reverts_and_remembers_blocked_cell() {
+        let mut agent = agent("Player1");
+        let mut moved = agent.player.clone();
+        moved.move_forward();
+        let blocked = moved.position;
+        agent.pending = Some(Pending {
+            player: moved,
+            graph: agent.graph.clone(),
+            wall_follower: WallFollowerState::default(),
+        });
+
+        agent.on_message(Message::ActionError(ActionError::CannotPassThroughOpponent)).unwrap();
+
+        assert_eq!(agent.player.position, Player::new().position);
+        assert_eq!(agent.avoid, Some((blocked, AVOID_OPPONENT_TURNS)));
+    }
+
+    #[test]
+    fn test_rejected_backtrack_restores_graph() {
+        let mut agent = agent("Player1");
+        let current = Cell { row: 0, column: 0 };
+        let parent = Cell { row: 0, column: 1 };
+        for cell in [current, parent] {
+            agent.graph.add(cell, CellType::NOTHING);
+            agent.graph.update_cell_status(cell, CellStatus::VISITED);
+        }
+        agent.graph.add_neighbor(&current, &parent);
+        agent.graph.add_neighbor(&parent, &current);
+        agent.graph.set_parent(current, parent);
+
+        propose_move(&mut agent);
+        agent.on_message(Message::ActionError(ActionError::CannotPassThroughOpponent)).unwrap();
+
+        assert_eq!(agent.player.position, current);
+        assert_eq!(agent.graph.get_cell_status(current), CellStatus::VISITED);
+    }
+
+    #[test]
+    fn test_move_rejected_for_open_challenge_is_dropped() {
+        let mut agent = agent("Player1");
+        propose_move(&mut agent);
+
+        agent.on_message(Message::ActionError(ActionError::SolveChallengeFirst)).unwrap();
+
+        assert!(agent.pending.is_none());
+    }
+
+    #[test]
+    fn test_rejected_move_does_not_count_as_wall_follower_loop() {
+        let mut agent =
+            Agent::new("Player1".into(), Algorithm::WallFollower, TeamSecrets::default());
+        propose_move(&mut agent);
+
+        agent.on_message(Message::ActionError(ActionError::CannotPassThroughWall)).unwrap();
+
+        assert!(agent.wall_follower.seen.is_empty());
+    }
+
+    #[test]
+    fn test_each_agent_answers_challenge_with_its_own_modulo() {
+        let secrets = TeamSecrets::default();
+        let mut agent_a = Agent::new("Player1".into(), Algorithm::Tremeaux, Arc::clone(&secrets));
+        let mut agent_b = Agent::new("Player2".into(), Algorithm::Tremeaux, Arc::clone(&secrets));
+        agent_a.on_message(Message::Hint(Hint::Secret(25))).unwrap();
+
+        let challenge = |m| Message::Challenge(Challenge::SecretSumModulo(m));
+        let invalid = Message::ActionError(ActionError::InvalidChallengeSolution);
+        let answers = [
+            answer(agent_a.on_message(challenge(10)).unwrap()),
+            answer(agent_b.on_message(challenge(7)).unwrap()),
+            answer(agent_a.on_message(invalid).unwrap()),
+        ];
+
+        assert_eq!(answers, ["5", "4", "5"]);
+    }
+
+    #[test]
+    fn test_radar_view_is_answered_with_a_move() {
+        let mut agent = agent("Player1");
+
+        let reply = agent
+            .on_message(Message::RadarView(messages::RadarView("bKgGjsIyap8p8aa".to_string())))
+            .unwrap();
+
+        assert!(matches!(reply.action, Some(Action::MoveTo(_))));
+    }
+
+    #[test]
+    fn test_move_is_applied_only_once_the_server_accepts_it() {
+        let mut agent = agent("Player1");
+        let radar = || Message::RadarView(messages::RadarView("bKgGjsIyap8p8aa".to_string()));
+
+        agent.on_message(radar()).unwrap();
+        let before_answer = agent.player.position;
+        agent.on_message(radar()).unwrap();
+
+        assert_eq!(before_answer, Player::new().position);
+        assert_ne!(agent.player.position, Player::new().position);
+    }
+
+    #[test]
+    fn test_compass_hint_is_stored_in_the_agent_frame() {
+        let mut agent = agent("Player1");
+        agent.player.direction = messages::Direction::Right;
+        let mut turned = agent.player.clone();
+        turned.turn_right();
+        agent.pending = Some(Pending {
+            player: turned,
+            graph: agent.graph.clone(),
+            wall_follower: WallFollowerState::default(),
+        });
+
+        agent.on_message(Message::Hint(Hint::RelativeCompass { angle: 90.0 })).unwrap();
+
+        assert_eq!(agent.player.exit_bearing, Some(180.0));
+        assert_eq!(agent.pending.map(|p| p.player.exit_bearing), Some(Some(180.0)));
+    }
+}

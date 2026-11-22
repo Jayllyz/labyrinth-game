@@ -691,7 +691,6 @@ mod tests {
         let player = Player {
             position: cell,
             direction: shared::messages::Direction::Front,
-            saved_state: None,
             exit_bearing: None,
         };
 
@@ -758,7 +757,6 @@ mod tests {
         let player = Player {
             position: Cell { row: 0, column: 0 },
             direction: Direction::Front,
-            saved_state: None,
             exit_bearing: None,
         };
 
@@ -787,7 +785,6 @@ mod tests {
         let player = Player {
             position: Cell { row: 0, column: 0 },
             direction: Direction::Front,
-            saved_state: None,
             exit_bearing: None,
         };
 
@@ -808,7 +805,6 @@ mod tests {
         let edge_player = Player {
             position: Cell { row: 2, column: 3 },
             direction: Direction::Front,
-            saved_state: None,
             exit_bearing: None,
         };
         let (row_start, row_end, col_start, col_end) =
