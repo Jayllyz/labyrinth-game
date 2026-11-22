@@ -64,7 +64,7 @@ pub enum SubscribePlayerResult {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RadarView(pub String);
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Direction {
     Right,
     Left,
@@ -72,7 +72,7 @@ pub enum Direction {
     Back,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     MoveTo(Direction),
     SolveChallenge { answer: String },

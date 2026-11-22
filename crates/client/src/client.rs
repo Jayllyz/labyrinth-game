@@ -1,11 +1,15 @@
-use crate::instructions::{self, Algorithm};
+use crate::instructions::{self, Algorithm, WallFollowerState};
 use crate::maze_parser::maze_to_graph;
 use crate::tui::GameState;
-use crate::{data_structures::maze_graph::MazeGraph, maze_parser::Player};
+use crate::{
+    data_structures::maze_graph::{MazeCell, MazeGraph},
+    maze_parser::Player,
+};
 use shared::utils::print_error;
 use shared::{
     errors::{GameError, GameResult},
     logger::{LogLevel, Logger},
+    maze::Cell,
     messages::{
         self, Action, Challenge, Hint, Message, RegisterTeam, RegisterTeamResult, SubscribePlayer,
         SubscribePlayerResult, receive_message, send_message,
@@ -33,11 +37,45 @@ pub struct GameClient {
 
 type TeamSecrets = Arc<Mutex<HashMap<ThreadId, u128>>>;
 
+/// Opponents move on quickly, so a held cell is only avoided for a few moves.
+const AVOID_OPPONENT_TURNS: u8 = 3;
+
 struct PlayerContext {
     graph: MazeGraph,
     player: Player,
     algorithm: Algorithm,
     challenge_modulo: Option<u128>,
+    /// Cell an opponent recently held and turns left to route around it.
+    avoid: Option<(Cell, u8)>,
+    wall_follower: WallFollowerState,
+    /// Cells the solver may change while choosing a move, restored if the server rejects it.
+    saved_cells: Vec<(Cell, MazeCell)>,
+}
+
+impl PlayerContext {
+    /// Snapshots the player and the cells around it before a move, so a rejected move
+    /// can be undone. Solvers only touch the current cell and its neighbors.
+    fn save_state(&mut self) {
+        self.player.save_state();
+        let position = self.player.position;
+        self.saved_cells.clear();
+        let Some(cell) = self.graph.cell_map.get(&position) else {
+            return;
+        };
+        self.saved_cells.extend(
+            std::iter::once(position)
+                .chain(cell.neighbors.iter().copied())
+                .filter_map(|c| self.graph.cell_map.get(&c).map(|saved| (c, saved.clone()))),
+        );
+    }
+
+    /// Undoes a move the server rejected, including the solver's bookkeeping for it.
+    fn revert_move(&mut self) {
+        self.player.revert_move();
+        for (cell, saved) in self.saved_cells.drain(..) {
+            self.graph.cell_map.insert(cell, saved);
+        }
+    }
 }
 
 struct LogContext {
@@ -110,6 +148,9 @@ impl GameClient {
                         player: Player::new(),
                         algorithm,
                         challenge_modulo: None,
+                        avoid: None,
+                        wall_follower: WallFollowerState::default(),
+                        saved_cells: Vec::new(),
                     };
 
                     let log_ctx = LogContext { thread_name: agent_name.clone(), tui_state };
@@ -217,11 +258,15 @@ impl GameClient {
                 );
                 match err {
                     // The server follows these with a fresh RadarView, which drives the next move.
+                    messages::ActionError::CannotPassThroughOpponent => {
+                        let blocked = player_ctx.player.position;
+                        player_ctx.revert_move();
+                        player_ctx.avoid = Some((blocked, AVOID_OPPONENT_TURNS));
+                    }
                     messages::ActionError::CannotPassThroughWall
-                    | messages::ActionError::CannotPassThroughOpponent
                     | messages::ActionError::InvalidMove
                     | messages::ActionError::OutOfMap
-                    | messages::ActionError::Blocked => player_ctx.player.revert_move(),
+                    | messages::ActionError::Blocked => player_ctx.revert_move(),
                     messages::ActionError::NoRunningChallenge => {}
                     messages::ActionError::InvalidChallengeSolution
                     | messages::ActionError::SolveChallengeFirst => {
@@ -301,20 +346,43 @@ impl GameClient {
             .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {}", e)))?;
 
         maze_to_graph(&radar_view, &player_ctx.player, &mut player_ctx.graph);
-        player_ctx.player.save_state();
+        player_ctx.save_state();
 
-        let action: Action = match player_ctx.algorithm {
-            Algorithm::Tremeaux => {
-                instructions::tremeaux_solver(&mut player_ctx.player, &mut player_ctx.graph)
-            }
-            Algorithm::WallFollower => {
-                instructions::right_hand_solver(&radar_view, &mut player_ctx.player)
-            }
-            Algorithm::Alian => instructions::alian_solver(
-                &mut player_ctx.player,
-                &mut player_ctx.graph,
-                &log_ctx.thread_name,
-            ),
+        // Right after a block, yield half the time so two agents blocking each other don't
+        // retry in lockstep.
+        let blocked = player_ctx
+            .avoid
+            .filter(|&(_, turns)| turns == AVOID_OPPONENT_TURNS && rand::random_bool(0.5))
+            .map(|(cell, _)| cell);
+        let yielded = blocked.and_then(|cell| {
+            instructions::yield_to_opponent(&mut player_ctx.player, &mut player_ctx.graph, cell)
+        });
+
+        let avoid = player_ctx.avoid.map(|(cell, _)| cell);
+        player_ctx.avoid =
+            player_ctx.avoid.and_then(|(cell, turns)| (turns > 1).then_some((cell, turns - 1)));
+
+        let action: Action = match yielded {
+            Some(action) => action,
+            None => match player_ctx.algorithm {
+                Algorithm::Tremeaux => instructions::tremeaux_solver(
+                    &mut player_ctx.player,
+                    &mut player_ctx.graph,
+                    avoid,
+                ),
+                Algorithm::WallFollower => instructions::wall_follower_solver(
+                    &radar_view,
+                    &mut player_ctx.player,
+                    &mut player_ctx.graph,
+                    &mut player_ctx.wall_follower,
+                    avoid,
+                ),
+                Algorithm::Alian => instructions::alian_solver(
+                    &mut player_ctx.player,
+                    &mut player_ctx.graph,
+                    &log_ctx.thread_name,
+                ),
+            },
         };
 
         send_message(stream, &Message::Action(action.clone()))?;
@@ -402,6 +470,9 @@ mod tests {
             player: Player::new(),
             algorithm: Algorithm::Tremeaux,
             challenge_modulo: None,
+            avoid: None,
+            wall_follower: WallFollowerState::default(),
+            saved_cells: Vec::new(),
         };
 
         let log_ctx = LogContext { thread_name, tui_state: None };
@@ -449,6 +520,57 @@ mod tests {
 
             assert!(sent.is_empty());
         }
+    }
+
+    #[test]
+    fn test_opponent_block_reverts_and_remembers_blocked_cell() {
+        let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
+        game_ctx.player.save_state();
+        game_ctx.player.move_forward();
+        let blocked = game_ctx.player.position;
+
+        GameClient::handle_server_message(
+            &mut Vec::new(),
+            Message::ActionError(messages::ActionError::CannotPassThroughOpponent),
+            &mut game_ctx,
+            &log_ctx,
+            &secrets,
+        )
+        .unwrap();
+
+        assert_eq!(game_ctx.player.position, Player::new().position);
+        assert_eq!(game_ctx.avoid, Some((blocked, AVOID_OPPONENT_TURNS)));
+    }
+
+    #[test]
+    fn test_rejected_backtrack_restores_graph() {
+        use crate::data_structures::maze_graph::CellStatus;
+        use shared::radar::CellType;
+
+        let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
+        let current = Cell { row: 0, column: 0 };
+        let parent = Cell { row: 0, column: 1 };
+        for cell in [current, parent] {
+            game_ctx.graph.add(cell, CellType::NOTHING);
+            game_ctx.graph.update_cell_status(cell, CellStatus::VISITED);
+        }
+        game_ctx.graph.add_neighbor(&current, &parent);
+        game_ctx.graph.add_neighbor(&parent, &current);
+        game_ctx.graph.set_parent(current, parent);
+
+        game_ctx.save_state();
+        instructions::tremeaux_solver(&mut game_ctx.player, &mut game_ctx.graph, None);
+        GameClient::handle_server_message(
+            &mut Vec::new(),
+            Message::ActionError(messages::ActionError::CannotPassThroughOpponent),
+            &mut game_ctx,
+            &log_ctx,
+            &secrets,
+        )
+        .unwrap();
+
+        assert_eq!(game_ctx.player.position, current);
+        assert_eq!(game_ctx.graph.get_cell_status(current), CellStatus::VISITED);
     }
 
     #[test]

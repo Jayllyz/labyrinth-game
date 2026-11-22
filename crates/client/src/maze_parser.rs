@@ -1,5 +1,5 @@
 use shared::maze::{Maze, PositionType};
-use shared::messages::Direction;
+use shared::messages::{Action, Direction};
 use shared::{
     maze::Cell,
     radar::{CellType, Passages, Radar},
@@ -95,6 +95,18 @@ impl Player {
             return Direction::Back;
         };
         Direction::Front
+    }
+
+    pub fn step_toward(&mut self, target: &Cell) -> Action {
+        let direction = self.get_next_direction(target);
+        match direction {
+            Direction::Left => self.turn_left(),
+            Direction::Right => self.turn_right(),
+            Direction::Back => self.turn_back(),
+            Direction::Front => {}
+        }
+        self.move_forward();
+        Action::MoveTo(direction)
     }
 
     pub fn get_back_position(&self) -> Cell {
