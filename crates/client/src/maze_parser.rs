@@ -208,7 +208,7 @@ fn is_right_cell_accessible(cell_id: usize, vertical: &[Passages]) -> bool {
 }
 
 fn is_left_cell_accessible(cell_id: usize, vertical: &[Passages]) -> bool {
-    cell_id % 3 != 0 && vertical[cell_id + cell_id / 3] == Passages::OPEN
+    !cell_id.is_multiple_of(3) && vertical[cell_id + cell_id / 3] == Passages::OPEN
 }
 
 fn is_bottom_cell_accessible(cell_id: usize, horizontal: &[Passages]) -> bool {

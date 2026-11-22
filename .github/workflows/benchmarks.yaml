@@ -18,22 +18,25 @@ env:
   RUST_BACKTRACE: 1
   RUSTFLAGS: "-Dwarnings -C debuginfo=0"
 
+permissions: {}
+
 jobs:
   bench:
+    permissions:
+      contents: read
     name: Benchmark
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
 
     - name: Install Rust toolchain
-      uses: moonrepo/setup-rust@v1
+      uses: oxc-project/setup-rust@12a52e3caf7bac9d8b9ca550a82c425ed6343aee # v1.0.18
       with:
-        cache-base: main
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        cache-key: bench
+        save-cache: ${{ github.ref_name == 'main' }}
 
     - name: Run benchmarks
       run: cargo bench --all-targets --all-features

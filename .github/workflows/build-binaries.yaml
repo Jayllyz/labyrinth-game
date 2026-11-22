@@ -16,8 +16,12 @@ env:
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
 
+permissions: {}
+
 jobs:
   build-and-upload-binary:
+    permissions:
+      contents: write
     name: Build ${{ matrix.target }}
     strategy:
       matrix:
@@ -30,17 +34,16 @@ jobs:
           os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
 
-    - uses: moonrepo/setup-rust@v1
+    - uses: oxc-project/setup-rust@12a52e3caf7bac9d8b9ca550a82c425ed6343aee # v1.0.18
       with:
-        cache-base: main
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        cache-key: build-${{ matrix.target }}
+        save-cache: ${{ github.ref_name == 'main' }}
 
-    - uses: taiki-e/upload-rust-binary-action@v1 # zizmor: ignore[ref-confusion]
+    - uses: taiki-e/upload-rust-binary-action@f0d45ae91ee7b8ee928de7a9d04d893a08bcbec6 # v1.30.2
       with:
         bin: client
         target: ${{ matrix.target }}
@@ -52,7 +55,7 @@ jobs:
         CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1
         CARGO_PROFILE_RELEASE_LTO: true
 
-    - uses: taiki-e/upload-rust-binary-action@v1 # zizmor: ignore[ref-confusion]
+    - uses: taiki-e/upload-rust-binary-action@f0d45ae91ee7b8ee928de7a9d04d893a08bcbec6 # v1.30.2
       with:
         bin: server
         target: ${{ matrix.target }}

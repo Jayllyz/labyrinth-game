@@ -118,7 +118,7 @@ pub fn alian_solver(
     }
 
     // Trie ascendant
-    visited_by_self.sort_by(|a, b| a.1.cmp(&b.1));
+    visited_by_self.sort_by_key(|a| a.1);
 
     let parent_status = graph.get_cell_status(parent);
     let next_direction = if (parent_status == CellStatus::DeadEnd || parent == player_position)
@@ -246,39 +246,39 @@ pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::
 pub fn right_hand_solver(radar_view: &Radar, player: &mut Player) -> messages::Action {
     let messages;
 
-    if let Some(vertical) = radar_view.vertical.get(6) {
-        if *vertical == Passages::OPEN {
-            messages = messages::Action::MoveTo(messages::Direction::Right);
-            player.turn_right();
-            player.move_forward();
-            return messages;
-        }
+    if let Some(vertical) = radar_view.vertical.get(6)
+        && *vertical == Passages::OPEN
+    {
+        messages = messages::Action::MoveTo(messages::Direction::Right);
+        player.turn_right();
+        player.move_forward();
+        return messages;
     }
 
-    if let Some(horizontal) = radar_view.horizontal.get(4) {
-        if *horizontal == Passages::OPEN {
-            messages = messages::Action::MoveTo(messages::Direction::Front);
-            player.move_forward();
-            return messages;
-        }
+    if let Some(horizontal) = radar_view.horizontal.get(4)
+        && *horizontal == Passages::OPEN
+    {
+        messages = messages::Action::MoveTo(messages::Direction::Front);
+        player.move_forward();
+        return messages;
     }
 
-    if let Some(vertical) = radar_view.vertical.get(5) {
-        if *vertical == Passages::OPEN {
-            messages = messages::Action::MoveTo(messages::Direction::Left);
-            player.turn_left();
-            player.move_forward();
-            return messages;
-        }
+    if let Some(vertical) = radar_view.vertical.get(5)
+        && *vertical == Passages::OPEN
+    {
+        messages = messages::Action::MoveTo(messages::Direction::Left);
+        player.turn_left();
+        player.move_forward();
+        return messages;
     }
 
-    if let Some(horizontal) = radar_view.horizontal.get(7) {
-        if *horizontal == Passages::OPEN {
-            messages = messages::Action::MoveTo(messages::Direction::Back);
-            player.turn_back();
-            player.move_forward();
-            return messages;
-        }
+    if let Some(horizontal) = radar_view.horizontal.get(7)
+        && *horizontal == Passages::OPEN
+    {
+        messages = messages::Action::MoveTo(messages::Direction::Back);
+        player.turn_back();
+        player.move_forward();
+        return messages;
     }
 
     messages::Action::MoveTo(messages::Direction::Right)
@@ -293,10 +293,10 @@ pub fn check_win_condition(cells: &[CellType], direction: messages::Action) -> b
         _ => return false,
     };
 
-    if let Some(cell) = cells.get(index) {
-        if *cell == CellType::OBJECTIVE || *cell == CellType::ObjectiveAlly {
-            return true;
-        }
+    if let Some(cell) = cells.get(index)
+        && (*cell == CellType::OBJECTIVE || *cell == CellType::ObjectiveAlly)
+    {
+        return true;
     }
 
     false
