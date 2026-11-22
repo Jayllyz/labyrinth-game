@@ -58,6 +58,15 @@ impl Game {
         &self.players[id]
     }
 
+    pub fn players(&self) -> impl Iterator<Item = &Player> {
+        self.players.iter()
+    }
+
+    /// Whether a new player may start on this cell: not the exit, and nobody there.
+    pub fn is_free(&self, position: Position) -> bool {
+        position != self.exit && self.players.iter().all(|p| p.position != position)
+    }
+
     /// Moves a player; a rejected move changes neither its cell nor its heading.
     pub fn apply_move(&mut self, id: usize, direction: Direction) -> Result<Moved, ActionError> {
         let player = &self.players[id];

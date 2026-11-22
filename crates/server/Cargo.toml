@@ -18,3 +18,6 @@ serde = { workspace = true, features = ["derive"] }
 shared = { path = "../shared" }
 clap = { workspace = true }
 rand = { workspace = true }
+
+[dev-dependencies]
+client = { path = "../client" }

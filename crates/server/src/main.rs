@@ -1,6 +1,6 @@
 use clap::Parser;
 use server::server::{GameServer, ServerConfig};
-use tracing::{debug, error};
+use tracing::{error, info};
 use tracing_subscriber::filter::LevelFilter;
 
 #[derive(Parser, Debug)]
@@ -19,20 +19,44 @@ struct Args {
     )]
     host: String,
 
-    #[arg(short, long, help = "Seed for the maze generation.")]
+    #[arg(
+        short,
+        long,
+        help = "Seed for the maze, the exit and the start cells. Random if not set."
+    )]
     seed: Option<u64>,
+
+    #[arg(long, help = "Maze size as width,height.", default_value = "50,50", value_parser = parse_size)]
+    maze: (usize, usize),
+
+    #[arg(long, help = "Players per team.", default_value = "3")]
+    team_size: u8,
 
     #[arg(long, help = "Enable debug logs.", default_value = "false")]
     debug: bool,
 }
 
+fn parse_size(text: &str) -> Result<(usize, usize), String> {
+    let (width, height) = text.split_once(',').ok_or("expected width,height")?;
+    let parse = |n: &str| n.trim().parse::<usize>().ok().filter(|&n| n > 0);
+    parse(width).zip(parse(height)).ok_or_else(|| "sizes must be positive numbers".to_string())
+}
+
 fn main() {
     let args = Args::parse();
     let seed = args.seed.unwrap_or_else(rand::random);
-    let config = ServerConfig { host: args.host, port: args.port, seed, max_players_per_team: 3 };
+    let (width, height) = args.maze;
+    let config = ServerConfig {
+        host: args.host,
+        port: args.port,
+        seed,
+        max_players_per_team: args.team_size,
+        width,
+        height,
+    };
     let level = if args.debug { LevelFilter::DEBUG } else { LevelFilter::INFO };
     tracing_subscriber::fmt().with_max_level(level).init();
-    debug!("Server seed: {seed:?}");
+    info!("Seed {seed}, pass --seed {seed} to replay this game.");
 
     let server = GameServer::new(config);
     if let Err(e) = server.run() {
@@ -49,6 +73,14 @@ mod tests {
         let args = Args::try_parse_from(["test"]).unwrap();
         assert_eq!(args.port, 8778);
         assert_eq!(args.host, "localhost");
+    }
+
+    #[test]
+    fn test_maze_size() {
+        let args = Args::try_parse_from(["test", "--maze", "12,8"]).unwrap();
+        assert_eq!(args.maze, (12, 8));
+        assert!(Args::try_parse_from(["test", "--maze", "12"]).is_err());
+        assert!(Args::try_parse_from(["test", "--maze", "0,8"]).is_err());
     }
 
     #[test]

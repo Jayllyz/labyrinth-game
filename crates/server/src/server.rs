@@ -1,12 +1,15 @@
-use rand::{RngExt, rng};
+use crate::game::{Game, Moved, Position};
+use rand::{RngExt, SeedableRng, rng, rngs::StdRng};
 use shared::errors::{GameError, GameResult};
+use shared::heading::Heading;
+use shared::maze_generator::sidewinder;
 use shared::messages::{
-    Action, Challenge, Client, Hint, Message, MessageError, RadarView, RegisterTeamResult,
+    Action, ActionError, Client, Message, MessageError, RadarView, RegisterTeamResult,
     RegistrationError, SubscribePlayerResult, Teams, receive_message, send_message,
 };
 use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, error, info, warn};
 
@@ -16,11 +19,21 @@ pub struct ServerConfig {
     pub port: u16,
     pub seed: u64,
     pub max_players_per_team: u8,
+    /// Maze size in cells.
+    pub width: usize,
+    pub height: usize,
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
-        Self { host: "localhost".to_string(), port: 8080, seed: 0, max_players_per_team: 3 }
+        Self {
+            host: "localhost".to_string(),
+            port: 8080,
+            seed: 0,
+            max_players_per_team: 3,
+            width: 50,
+            height: 50,
+        }
     }
 }
 
@@ -28,78 +41,114 @@ pub struct GameServer {
     clients: Arc<Mutex<HashMap<String, Client>>>,
     teams: Arc<Mutex<HashMap<String, Teams>>>,
     config: ServerConfig,
-    game_state: Arc<Mutex<GameState>>,
+    /// The game, and the signal that wakes players waiting for it to start.
+    game: Arc<(Mutex<Match>, Condvar)>,
 }
 
 type ServerResult<T> = Result<T, RegistrationError>;
 
-struct GameState {
-    is_started: bool,
-    teams: HashMap<String, Teams>,
-    clients: HashMap<String, Client>,
-    connections: HashMap<String, TcpStream>,
+/// One game: the board, and which player and team each name stands for.
+struct Match {
+    game: Game,
+    rng: StdRng,
+    players: HashMap<String, usize>,
+    team_names: Vec<String>,
+    /// Players who joined, with their team, until the game starts and places them.
+    waiting: Vec<(String, String)>,
+    started: bool,
 }
 
-impl GameState {
-    fn new() -> Self {
+impl Match {
+    /// Builds the maze and places the exit from the seed, so a game can be replayed.
+    fn new(config: &ServerConfig) -> Self {
+        let mut rng = StdRng::seed_from_u64(config.seed);
+        let maze = sidewinder(config.width, config.height, false, config.seed);
+        let exit = random_cell(&mut rng, config);
         Self {
-            is_started: false,
-            teams: HashMap::new(),
-            clients: HashMap::new(),
-            connections: HashMap::new(),
+            game: Game::new(maze, exit),
+            rng,
+            players: HashMap::new(),
+            team_names: Vec::new(),
+            waiting: Vec::new(),
+            started: false,
         }
     }
 
-    fn are_all_teams_full(&self, max_players_per_team: u8) -> bool {
-        if self.teams.is_empty() {
-            return false;
+    /// Places a new player on a free cell, facing North like on the reference server.
+    /// Places everyone in name order, so a seed gives each player the same cell whatever
+    /// order they connected in.
+    fn start(&mut self, config: &ServerConfig) {
+        let mut waiting = std::mem::take(&mut self.waiting);
+        waiting.sort();
+        for (name, team) in waiting {
+            self.add_player(&name, &team, config);
         }
-
-        self.teams.values().all(|team| team.players.len() == max_players_per_team as usize)
+        self.started = true;
     }
 
-    fn notify_all_players(&mut self, message: &Message) -> GameResult<()> {
-        for stream in self.connections.values_mut() {
-            send_message(stream, message)?;
-        }
-        Ok(())
-    }
-
-    fn start_game(&mut self) -> GameResult<()> {
-        if !self.is_started {
-            self.is_started = true;
-
-            self.notify_all_players(&Message::Hint(Hint::Secret(17)))?;
-
-            let player_names: Vec<String> = self.connections.keys().cloned().collect();
-            if !player_names.is_empty() {
-                let random_index = rand::rng().random_range(0..player_names.len());
-                let selected_player = player_names[random_index].clone();
-
-                if let Some(stream) = self.connections.get_mut(&selected_player) {
-                    send_message(stream, &Message::Challenge(Challenge::SecretSumModulo(23)))?;
-                }
+    fn add_player(&mut self, name: &str, team: &str, config: &ServerConfig) -> usize {
+        let team = self.team_names.iter().position(|t| t == team).unwrap_or_else(|| {
+            self.team_names.push(team.to_string());
+            self.team_names.len() - 1
+        });
+        let position = loop {
+            let cell = random_cell(&mut self.rng, config);
+            if self.game.is_free(cell) {
+                break cell;
             }
+        };
+        let id = self.game.add_player(team, position, Heading::North);
+        self.players.insert(name.to_string(), id);
+        id
+    }
 
-            for stream in self.connections.values_mut() {
-                send_message(stream, &Message::Challenge(Challenge::SecretSumModulo(23)))?;
-                send_message(
-                    stream,
-                    &Message::RadarView(RadarView("bieakcGa//+F8pa".to_string())),
-                )?;
-            }
+    fn view(&self, id: usize) -> Message {
+        Message::RadarView(RadarView(self.game.radar(id)))
+    }
+
+    /// The messages that answer a player's action, and whether it reached the exit.
+    fn act(&mut self, id: usize, action: Action) -> (Vec<Message>, bool) {
+        let Action::MoveTo(direction) = action else {
+            return (
+                vec![Message::ActionError(ActionError::NoRunningChallenge), self.view(id)],
+                false,
+            );
+        };
+        match self.game.apply_move(id, direction) {
+            Ok(Moved::Stepped) => (vec![self.view(id)], false),
+            // The reference server shows the exit under the player once more before closing.
+            Ok(Moved::Exited) => (vec![self.view(id)], true),
+            Err(err) => (vec![Message::ActionError(err), self.view(id)], false),
         }
-        Ok(())
+    }
+
+    /// Logs the team's score once its last member is out.
+    fn log_if_team_escaped(&self, id: usize) {
+        let team = self.game.player(id).team;
+        let members: Vec<_> = self.game.players().filter(|p| p.team == team).collect();
+        if members.iter().all(|p| p.exited) {
+            let moves: u32 = members.iter().map(|p| p.moves).sum();
+            let score = f64::from(moves) / members.len() as f64;
+            info!("Team {} escaped with a score of {score:.1}", self.team_names[team]);
+        }
+    }
+}
+
+fn random_cell(rng: &mut StdRng, config: &ServerConfig) -> Position {
+    Position {
+        x: rng.random_range(0..config.width) as i16,
+        y: rng.random_range(0..config.height) as i16,
     }
 }
 
 impl GameServer {
     pub fn new(config: ServerConfig) -> Self {
+        let game = Arc::new((Mutex::new(Match::new(&config)), Condvar::new()));
         Self {
             clients: Arc::new(Mutex::new(HashMap::new())),
             teams: Arc::new(Mutex::new(HashMap::new())),
             config,
-            game_state: Arc::new(Mutex::new(GameState::new())),
+            game,
         }
     }
 
@@ -108,59 +157,91 @@ impl GameServer {
         let listener = TcpListener::bind(&address).map_err(GameError::ConnectionError)?;
 
         info!("Server listening on {address}");
-        self.handle_connections(listener)
+        self.serve(listener)
     }
 
-    fn handle_connections(&self, listener: TcpListener) -> GameResult<()> {
-        let mut thread_handles: Vec<std::thread::JoinHandle<GameResult<()>>> = Vec::new();
-
+    /// Accepts connections until the listener fails, one thread each.
+    pub fn serve(&self, listener: TcpListener) -> GameResult<()> {
         for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => {
-                    let server = self.clone();
-                    let handle = std::thread::spawn(move || server.handle_message(stream));
-                    thread_handles.push(handle);
+            let stream = stream.map_err(GameError::ConnectionError)?;
+            let server = self.clone();
+            std::thread::spawn(move || {
+                if let Err(e) = server.handle_message(stream) {
+                    error!("{e}");
                 }
-                Err(e) => return Err(GameError::ConnectionError(e)),
-            }
+            });
         }
-
-        for handle in thread_handles {
-            match handle.join() {
-                Ok(result) => result?,
-                Err(e) => {
-                    return Err(GameError::ThreadError(format!("Thread panicked: {e:?}")));
-                }
-            }
-        }
-
         Ok(())
     }
 
-    fn handle_player_registration(
-        &self,
-        player: Client,
-        stream: &mut TcpStream,
-    ) -> GameResult<SubscribePlayerResult> {
-        let result = self.register_client(player.clone());
+    /// How many players have reached the exit so far.
+    pub fn players_out(&self) -> usize {
+        self.lock_match().map_or(0, |game| game.game.players().filter(|p| p.exited).count())
+    }
 
-        if matches!(result, SubscribePlayerResult::Ok) {
-            let mut game_state =
-                self.game_state.lock().map_err(|e| GameError::ThreadError(e.to_string()))?;
+    fn lock_match(&self) -> GameResult<MutexGuard<'_, Match>> {
+        self.game.0.lock().map_err(|e| GameError::ThreadError(e.to_string()))
+    }
 
-            let stream_clone =
-                stream.try_clone().map_err(|e| GameError::ThreadError(e.to_string()))?;
+    /// Puts the player on the board, and starts the game once every team is full.
+    fn join_game(&self, player: &Client) -> GameResult<()> {
+        let teams = self.teams.lock().map_err(|e| GameError::ThreadError(e.to_string()))?;
+        let team = self.find_team_by_token(&teams, &player.registration_token).unwrap_or_default();
+        let full = |team: &Teams| team.players.len() == self.config.max_players_per_team as usize;
+        let all_full = !teams.is_empty() && teams.values().all(full);
+        let registered: usize = teams.values().map(|team| team.players.len()).sum();
+        drop(teams);
 
-            game_state.connections.insert(player.player_name, stream_clone);
+        let mut game = self.lock_match()?;
+        game.waiting.push((player.player_name.clone(), team));
+        // A teammate may be registered without having joined yet; starting before it does
+        // would leave it off the board.
+        if !game.started && all_full && game.waiting.len() == registered {
+            game.start(&self.config);
+            info!("All teams are full, the game starts");
+            self.game.1.notify_all();
+        }
+        Ok(())
+    }
 
-            if !game_state.is_started
-                && game_state.are_all_teams_full(self.config.max_players_per_team)
-            {
-                game_state.start_game()?;
+    /// Runs a subscribed player's game until it reaches the exit or leaves.
+    fn play(&self, stream: &mut TcpStream, name: &str) -> GameResult<()> {
+        let id = {
+            let mut game = self.lock_match()?;
+            while !game.started {
+                game = self.game.1.wait(game).map_err(|e| GameError::ThreadError(e.to_string()))?;
+            }
+            let id = *game
+                .players
+                .get(name)
+                .ok_or_else(|| GameError::ThreadError(format!("{name} is not on the board")))?;
+            send_message(stream, &game.view(id))?;
+            id
+        };
+
+        while let Ok(message) = receive_message(stream) {
+            let Message::Action(action) = message else {
+                warn!("{name} sent {message:?} during the game");
+                continue;
+            };
+            let (replies, exited, moves) = {
+                let mut game = self.lock_match()?;
+                let (replies, exited) = game.act(id, action);
+                if exited {
+                    game.log_if_team_escaped(id);
+                }
+                (replies, exited, game.game.player(id).moves)
+            };
+            for reply in &replies {
+                send_message(stream, reply)?;
+            }
+            if exited {
+                info!("{name} found the exit in {moves} moves");
+                return Ok(());
             }
         }
-
-        Ok(result)
+        info!("{name} left the game");
+        Ok(())
     }
 
     fn register_client(&self, player: Client) -> SubscribePlayerResult {
@@ -197,22 +278,6 @@ impl GameServer {
             clients.insert(player.player_name.clone(), player.clone());
 
             info!("{} registered successfully on team {}", player.player_name, team_name);
-
-            let game_state_result =
-                self.game_state.lock().map_err(|_| RegistrationError::ServerError);
-
-            match game_state_result {
-                Ok(mut game_state) => {
-                    game_state.clients.insert(player.player_name.clone(), player.clone());
-                    if let Some(game_team) = game_state.teams.get_mut(&team_name) {
-                        game_team.players.push(player);
-                    }
-                }
-                Err(e) => {
-                    return SubscribePlayerResult::Err(e);
-                }
-            }
-
             SubscribePlayerResult::Ok
         } else {
             error!("Team {team_name} not found");
@@ -238,11 +303,7 @@ impl GameServer {
         let team_name = team.team_name.clone();
         team.registration_token.clone_from(&token);
 
-        teams.insert(team_name.clone(), team.clone());
-
-        if let Ok(mut game_state) = self.game_state.lock() {
-            game_state.teams.insert(team_name.clone(), team);
-        }
+        teams.insert(team_name.clone(), team);
 
         info!("Team {team_name} registered successfully");
         Ok(token)
@@ -298,28 +359,16 @@ impl GameServer {
                                 registration_token: player.registration_token,
                             };
 
-                            match self.handle_player_registration(player, &mut stream) {
-                                Ok(result) => Message::SubscribePlayerResult(result),
-                                Err(_) => Message::SubscribePlayerResult(
-                                    SubscribePlayerResult::Err(RegistrationError::ServerError),
-                                ),
+                            let name = player.player_name.clone();
+                            let result = self.register_client(player.clone());
+                            let joined = matches!(result, SubscribePlayerResult::Ok);
+                            send_message(&mut stream, &Message::SubscribePlayerResult(result))?;
+                            if !joined {
+                                continue;
                             }
-                        }
-                        Message::Action(Action::SolveChallenge { answer }) => {
-                            info!("Received SolveChallenge from {peer_address}: Answer = {answer}");
-
-                            let is_correct = answer == "5";
-                            if is_correct {
-                                info!("Challenge solved correctly by {peer_address}");
-                            } else {
-                                warn!("Incorrect answer from {peer_address}");
-                            }
-                            Message::RadarView(RadarView("bieakcGa//+F8pa".to_string()))
-                        }
-                        Message::Action(Action::MoveTo(_)) => {
-                            info!("Received MoveTo from {peer_address}");
-
-                            break;
+                            // From here on this connection is the player's.
+                            self.join_game(&player)?;
+                            return self.play(&mut stream, &name);
                         }
                         _ => {
                             warn!("Received invalid message type from {peer_address}");
@@ -351,7 +400,7 @@ impl Clone for GameServer {
             clients: Arc::clone(&self.clients),
             teams: Arc::clone(&self.teams),
             config: self.config.clone(),
-            game_state: Arc::clone(&self.game_state),
+            game: Arc::clone(&self.game),
         }
     }
 }
