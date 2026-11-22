@@ -251,6 +251,27 @@ pub fn tremeaux_solver(player: &mut Player, graph: &mut MazeGraph) -> messages::
     message
 }
 
+/// Steps away from a cell an opponent is holding, preferring the way we came, so the
+/// opponent can pass. The current cell is reopened so the solver comes back to it later.
+pub fn yield_to_opponent(
+    player: &mut Player,
+    graph: &mut MazeGraph,
+    blocked: Cell,
+) -> Option<messages::Action> {
+    let cell = graph.get_cell(player.position)?;
+    let is_open = |c: &Cell| *c != blocked && *c != player.position;
+    let retreat = if cell.neighbors.contains(&cell.parent) && is_open(&cell.parent) {
+        cell.parent
+    } else {
+        *cell.neighbors.iter().find(|c| is_open(c))?
+    };
+
+    if cell.status == CellStatus::VISITED {
+        cell.status = CellStatus::NotVisited;
+    }
+    Some(player.step_toward(&retreat))
+}
+
 pub fn right_hand_solver(radar_view: &Radar, player: &mut Player) -> messages::Action {
     let messages;
 
@@ -464,5 +485,55 @@ mod tests {
 
         let result = solve_sum_modulo(1524576388644652385, &secrets);
         assert_eq!(result, "90650794543052706");
+    }
+
+    const CURRENT: Cell = Cell { row: 5, column: 5 };
+    const BLOCKED: Cell = Cell { row: 5, column: 4 };
+    const BEHIND: Cell = Cell { row: 5, column: 6 };
+    const SIDE: Cell = Cell { row: 6, column: 5 };
+
+    fn graph_around_player(neighbors: &[Cell], parent: Cell) -> (Player, MazeGraph) {
+        let mut graph = MazeGraph::new();
+        graph.add(CURRENT, CellType::NOTHING);
+        for neighbor in neighbors {
+            graph.add(*neighbor, CellType::NOTHING);
+            graph.add_neighbor(&CURRENT, neighbor);
+        }
+        graph.set_parent(CURRENT, parent);
+        graph.update_cell_status(CURRENT, CellStatus::VISITED);
+
+        let mut player = Player::new();
+        player.position = CURRENT;
+        (player, graph)
+    }
+
+    #[test]
+    fn test_yield_retreats_to_parent_and_reopens_current_cell() {
+        let (mut player, mut graph) = graph_around_player(&[BLOCKED, BEHIND, SIDE], BEHIND);
+
+        let action = yield_to_opponent(&mut player, &mut graph, BLOCKED);
+
+        assert_eq!(action, Some(messages::Action::MoveTo(Direction::Back)));
+        assert_eq!(player.position, BEHIND);
+        assert_eq!(graph.get_cell_status(CURRENT), CellStatus::NotVisited);
+    }
+
+    #[test]
+    fn test_yield_uses_another_neighbor_without_parent() {
+        let (mut player, mut graph) = graph_around_player(&[BLOCKED, SIDE], CURRENT);
+
+        let action = yield_to_opponent(&mut player, &mut graph, BLOCKED);
+
+        assert_eq!(action, Some(messages::Action::MoveTo(Direction::Right)));
+        assert_eq!(player.position, SIDE);
+    }
+
+    #[test]
+    fn test_yield_without_alternative_keeps_player_in_place() {
+        let (mut player, mut graph) = graph_around_player(&[BLOCKED], CURRENT);
+
+        assert_eq!(yield_to_opponent(&mut player, &mut graph, BLOCKED), None);
+        assert_eq!(player.position, CURRENT);
+        assert_eq!(graph.get_cell_status(CURRENT), CellStatus::VISITED);
     }
 }

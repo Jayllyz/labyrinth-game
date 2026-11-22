@@ -15,5 +15,6 @@ serde_json = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 shared = { path = "../shared" }
 clap = { workspace = true }
+rand = { workspace = true }
 ratatui = "0.30.2"
 crossterm = "0.29.0"

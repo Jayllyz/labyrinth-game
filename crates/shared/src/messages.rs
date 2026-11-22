@@ -72,7 +72,7 @@ pub enum Direction {
     Back,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     MoveTo(Direction),
     SolveChallenge { answer: String },

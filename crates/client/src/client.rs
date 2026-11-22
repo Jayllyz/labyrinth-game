@@ -6,6 +6,7 @@ use shared::utils::print_error;
 use shared::{
     errors::{GameError, GameResult},
     logger::{LogLevel, Logger},
+    maze::Cell,
     messages::{
         self, Action, Challenge, Hint, Message, RegisterTeam, RegisterTeamResult, SubscribePlayer,
         SubscribePlayerResult, receive_message, send_message,
@@ -38,6 +39,7 @@ struct PlayerContext {
     player: Player,
     algorithm: Algorithm,
     challenge_modulo: Option<u128>,
+    blocked_by_opponent: Option<Cell>,
 }
 
 struct LogContext {
@@ -110,6 +112,7 @@ impl GameClient {
                         player: Player::new(),
                         algorithm,
                         challenge_modulo: None,
+                        blocked_by_opponent: None,
                     };
 
                     let log_ctx = LogContext { thread_name: agent_name.clone(), tui_state };
@@ -217,8 +220,12 @@ impl GameClient {
                 );
                 match err {
                     // The server follows these with a fresh RadarView, which drives the next move.
+                    messages::ActionError::CannotPassThroughOpponent => {
+                        let blocked = player_ctx.player.position;
+                        player_ctx.player.revert_move();
+                        player_ctx.blocked_by_opponent = Some(blocked);
+                    }
                     messages::ActionError::CannotPassThroughWall
-                    | messages::ActionError::CannotPassThroughOpponent
                     | messages::ActionError::InvalidMove
                     | messages::ActionError::OutOfMap
                     | messages::ActionError::Blocked => player_ctx.player.revert_move(),
@@ -303,18 +310,27 @@ impl GameClient {
         maze_to_graph(&radar_view, &player_ctx.player, &mut player_ctx.graph);
         player_ctx.player.save_state();
 
-        let action: Action = match player_ctx.algorithm {
-            Algorithm::Tremeaux => {
-                instructions::tremeaux_solver(&mut player_ctx.player, &mut player_ctx.graph)
-            }
-            Algorithm::WallFollower => {
-                instructions::right_hand_solver(&radar_view, &mut player_ctx.player)
-            }
-            Algorithm::Alian => instructions::alian_solver(
-                &mut player_ctx.player,
-                &mut player_ctx.graph,
-                &log_ctx.thread_name,
-            ),
+        // Yield half the time so two agents blocking each other don't retry in lockstep.
+        let blocked = player_ctx.blocked_by_opponent.take().filter(|_| rand::random_bool(0.5));
+        let yielded = blocked.and_then(|cell| {
+            instructions::yield_to_opponent(&mut player_ctx.player, &mut player_ctx.graph, cell)
+        });
+
+        let action: Action = match yielded {
+            Some(action) => action,
+            None => match player_ctx.algorithm {
+                Algorithm::Tremeaux => {
+                    instructions::tremeaux_solver(&mut player_ctx.player, &mut player_ctx.graph)
+                }
+                Algorithm::WallFollower => {
+                    instructions::right_hand_solver(&radar_view, &mut player_ctx.player)
+                }
+                Algorithm::Alian => instructions::alian_solver(
+                    &mut player_ctx.player,
+                    &mut player_ctx.graph,
+                    &log_ctx.thread_name,
+                ),
+            },
         };
 
         send_message(stream, &Message::Action(action.clone()))?;
@@ -402,6 +418,7 @@ mod tests {
             player: Player::new(),
             algorithm: Algorithm::Tremeaux,
             challenge_modulo: None,
+            blocked_by_opponent: None,
         };
 
         let log_ctx = LogContext { thread_name, tui_state: None };
@@ -449,6 +466,26 @@ mod tests {
 
             assert!(sent.is_empty());
         }
+    }
+
+    #[test]
+    fn test_opponent_block_reverts_and_remembers_blocked_cell() {
+        let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
+        game_ctx.player.save_state();
+        game_ctx.player.move_forward();
+        let blocked = game_ctx.player.position;
+
+        GameClient::handle_server_message(
+            &mut Vec::new(),
+            Message::ActionError(messages::ActionError::CannotPassThroughOpponent),
+            &mut game_ctx,
+            &log_ctx,
+            &secrets,
+        )
+        .unwrap();
+
+        assert_eq!(game_ctx.player.position, Player::new().position);
+        assert_eq!(game_ctx.blocked_by_opponent, Some(blocked));
     }
 
     #[test]
