@@ -1,27 +1,20 @@
-use crate::instructions::{self, Algorithm, WallFollowerState};
-use crate::maze_parser::maze_to_graph;
+use crate::agent::{Agent, TeamSecrets};
+use crate::instructions::Algorithm;
 use crate::tui::GameState;
-use crate::{
-    data_structures::maze_graph::{MazeCell, MazeGraph},
-    maze_parser::Player,
-};
 use shared::utils::print_error;
 use shared::{
     errors::{GameError, GameResult},
     logger::{LogLevel, Logger},
-    maze::Cell,
     messages::{
-        self, Action, Challenge, Hint, Message, RegisterTeam, RegisterTeamResult, SubscribePlayer,
-        SubscribePlayerResult, receive_message, send_message,
+        Action, Message, RegisterTeam, RegisterTeamResult, SubscribePlayer, receive_message,
+        send_message,
     },
-    radar::{decode_base64, extract_data},
 };
 use std::{
-    collections::HashMap,
     io::{Read, Write},
     net::TcpStream,
     sync::{Arc, Mutex},
-    thread::{self, ThreadId},
+    thread,
     time::Duration,
 };
 
@@ -38,63 +31,14 @@ pub struct GameClient {
     secrets: TeamSecrets,
 }
 
-type TeamSecrets = Arc<Mutex<HashMap<ThreadId, u128>>>;
-
 /// Name of the agent at `index`, shared by the server subscription and the TUI tabs.
 pub fn agent_name(algorithm: Algorithm, index: u8) -> String {
     format!("{:?}{}", algorithm, index + 1)
 }
 
-/// Opponents move on quickly, so a held cell is only avoided for a few moves.
-const AVOID_OPPONENT_TURNS: u8 = 3;
-
-struct PlayerContext {
-    graph: MazeGraph,
-    player: Player,
-    algorithm: Algorithm,
-    challenge_modulo: Option<u128>,
-    /// Cell an opponent recently held and turns left to route around it.
-    avoid: Option<(Cell, u8)>,
-    wall_follower: WallFollowerState,
-    /// Cells the solver may change while choosing a move, restored if the server rejects it.
-    saved_cells: Vec<(Cell, MazeCell)>,
-    move_delay: Duration,
-}
-
-impl PlayerContext {
-    /// Snapshots the player and the cells around it before a move, so a rejected move
-    /// can be undone. Solvers only touch the current cell and its neighbors.
-    fn save_state(&mut self) {
-        self.player.save_state();
-        let position = self.player.position;
-        self.saved_cells.clear();
-        let Some(cell) = self.graph.cell_map.get(&position) else {
-            return;
-        };
-        self.saved_cells.extend(
-            std::iter::once(position)
-                .chain(cell.neighbors.iter().copied())
-                .filter_map(|c| self.graph.cell_map.get(&c).map(|saved| (c, saved.clone()))),
-        );
-    }
-
-    /// Undoes a move the server rejected, including the solver's bookkeeping for it.
-    fn revert_move(&mut self) {
-        self.player.revert_move();
-        for (cell, saved) in self.saved_cells.drain(..) {
-            self.graph.cell_map.insert(cell, saved);
-        }
-    }
-}
-
-struct LogContext {
-    thread_name: String,
-    tui_state: Option<Arc<Mutex<GameState>>>,
-}
-
 impl GameClient {
     pub fn new(config: ClientConfig) -> Self {
-        Self { config, secrets: Arc::new(Mutex::new(HashMap::new())) }
+        Self { config, secrets: TeamSecrets::default() }
     }
 
     fn connect_to_server(address: &str, mut max_retries: u8) -> GameResult<TcpStream> {
@@ -139,41 +83,27 @@ impl GameClient {
     ) -> GameResult<()> {
         let mut stream = Self::connect_to_server(&self.config.server_addr, max_retries)?;
         let token = self.register_team(&mut stream)?;
-        let (config, secrets, token) = (&self.config, &self.secrets, &token);
+        let (config, token) = (&self.config, &token);
 
         thread::scope(|scope| {
             let handles = (0..num_agents)
                 .map(|i| {
-                    let agent_name = agent_name(algorithm, i);
+                    let name = agent_name(algorithm, i);
+                    let mut agent = Agent::new(name.clone(), algorithm, Arc::clone(&self.secrets));
                     let tui_state = tui_state.clone();
-                    thread::Builder::new().name(agent_name.clone()).spawn_scoped(
+                    thread::Builder::new().name(name.clone()).spawn_scoped(
                         scope,
                         move || -> GameResult<()> {
                             let mut stream =
                                 Self::connect_to_server(&config.server_addr, max_retries)?;
-
-                            let mut player_ctx = PlayerContext {
-                                graph: MazeGraph::new(),
-                                player: Player::new(),
-                                algorithm,
-                                challenge_modulo: None,
-                                avoid: None,
-                                wall_follower: WallFollowerState::default(),
-                                saved_cells: Vec::new(),
-                                move_delay: config.move_delay,
-                            };
-
-                            let log_ctx = LogContext { thread_name: agent_name.clone(), tui_state };
-
                             send_message(
                                 &mut stream,
                                 &Message::SubscribePlayer(SubscribePlayer {
-                                    name: agent_name,
+                                    name,
                                     registration_token: token.clone(),
                                 }),
                             )?;
-
-                            Self::play(&mut stream, &mut player_ctx, &log_ctx, secrets)
+                            Self::play(&mut stream, &mut agent, &tui_state, config.move_delay)
                         },
                     )
                 })
@@ -185,285 +115,67 @@ impl GameClient {
         })
     }
 
-    /// Plays until the server closes the connection, which it does once the agent reaches
-    /// the exit. Guessing the win from the radar misses exits other players stand on.
+    /// Feeds server messages to the agent and sends its actions back, until the server
+    /// closes the connection, which it does once the agent reaches the exit. Guessing the
+    /// win from the radar misses exits other players stand on.
     fn play(
         stream: &mut (impl Read + Write),
-        player_ctx: &mut PlayerContext,
-        log_ctx: &LogContext,
-        secrets: &TeamSecrets,
-    ) -> GameResult<()> {
-        while let Ok(msg) = receive_message(stream) {
-            Self::handle_server_message(stream, msg, player_ctx, log_ctx, secrets)?;
-        }
-
-        Self::log_handler(
-            &log_ctx.tui_state,
-            &log_ctx.thread_name,
-            Logger::get_instance(),
-            "Found the exit!",
-            LogLevel::Info,
-        );
-        if let Some(tui) = &log_ctx.tui_state
-            && let Ok(mut state) = tui.lock()
-        {
-            state.mark_exit_found(&log_ctx.thread_name);
-        }
-        Ok(())
-    }
-
-    fn handle_server_message(
-        stream: &mut impl Write,
-        message: Message,
-        player_ctx: &mut PlayerContext,
-        log_ctx: &LogContext,
-        secrets: &TeamSecrets,
+        agent: &mut Agent,
+        tui_state: &Option<Arc<Mutex<GameState>>>,
+        move_delay: Duration,
     ) -> GameResult<()> {
         let logger = Logger::get_instance();
-
-        if logger.is_debug_enabled() {
-            Self::log_handler(
-                &log_ctx.tui_state,
-                &log_ctx.thread_name,
-                logger,
-                format!("Received message: {message:?}"),
-                LogLevel::Debug,
-            );
-        }
-
-        match message {
-            Message::SubscribePlayerResult(result) => {
-                Self::handle_subscription_result(result, log_ctx)?;
-            }
-            Message::RadarView(view) => {
-                Self::handle_radar_view(stream, view, player_ctx, log_ctx)?;
-            }
-            Message::Hint(hint) => {
-                Self::handle_hint(hint, player_ctx, log_ctx, secrets);
-            }
-            Message::Challenge(value) => {
-                Self::log_handler(
-                    &log_ctx.tui_state,
-                    &log_ctx.thread_name,
-                    logger,
-                    format!("{value:?}"),
+        while let Ok(message) = receive_message(stream) {
+            if logger.is_debug_enabled() {
+                Self::log(
+                    tui_state,
+                    agent.name(),
+                    format!("Received message: {message:?}"),
                     LogLevel::Debug,
                 );
-
-                let Challenge::SecretSumModulo(modulo) = value;
-                player_ctx.challenge_modulo = Some(modulo);
-                Self::solve_challenge(stream, secrets, modulo)?;
-            }
-            Message::ActionError(err) => {
-                let level = match err {
-                    messages::ActionError::CannotPassThroughWall
-                    | messages::ActionError::CannotPassThroughOpponent => LogLevel::Debug,
-                    _ => LogLevel::Error,
-                };
-                Self::log_handler(
-                    &log_ctx.tui_state,
-                    &log_ctx.thread_name,
-                    logger,
-                    format!("Action error: {err:?}"),
-                    level,
-                );
-                match err {
-                    // The server follows these with a fresh RadarView, which drives the next move.
-                    messages::ActionError::CannotPassThroughOpponent => {
-                        let blocked = player_ctx.player.position;
-                        player_ctx.revert_move();
-                        player_ctx.avoid = Some((blocked, AVOID_OPPONENT_TURNS));
-                    }
-                    messages::ActionError::CannotPassThroughWall
-                    | messages::ActionError::InvalidMove
-                    | messages::ActionError::OutOfMap
-                    | messages::ActionError::Blocked => player_ctx.revert_move(),
-                    messages::ActionError::NoRunningChallenge => {}
-                    messages::ActionError::InvalidChallengeSolution
-                    | messages::ActionError::SolveChallengeFirst => {
-                        if let Some(modulo) = player_ctx.challenge_modulo {
-                            Self::solve_challenge(stream, secrets, modulo)?;
-                        }
-                    }
-                }
             }
 
-            Message::MessageError(err) => {
-                Self::log_handler(
-                    &log_ctx.tui_state,
-                    &log_ctx.thread_name,
-                    logger,
-                    format!("Server error: {err:?}"),
-                    LogLevel::Error,
-                );
+            let reply = agent.on_message(message).inspect_err(|err| {
+                Self::log(tui_state, agent.name(), err.to_string(), LogLevel::Error);
+            })?;
+            if let Some((level, text)) = reply.log {
+                Self::log(tui_state, agent.name(), text, level);
             }
-            _ => {
-                Self::log_handler(
-                    &log_ctx.tui_state,
-                    &log_ctx.thread_name,
-                    logger,
-                    format!("Unhandled message: {message:?}"),
-                    LogLevel::Warning,
-                );
+            Self::refresh_tui(tui_state, agent);
+
+            let Some(action) = reply.action else {
+                continue;
+            };
+            if matches!(action, Action::MoveTo(_)) {
+                thread::sleep(move_delay);
             }
+            send_message(stream, &Message::Action(action))?;
         }
 
-        Self::refresh_tui(
-            &log_ctx.tui_state,
-            &log_ctx.thread_name,
-            &player_ctx.graph,
-            &player_ctx.player,
-        );
-
-        Ok(())
-    }
-
-    fn handle_subscription_result(
-        result: SubscribePlayerResult,
-        log_ctx: &LogContext,
-    ) -> GameResult<()> {
-        let logger = Logger::get_instance();
-        match result {
-            SubscribePlayerResult::Ok => {
-                Self::log_handler(
-                    &log_ctx.tui_state,
-                    &log_ctx.thread_name,
-                    logger,
-                    "Subscribed successfully",
-                    LogLevel::Info,
-                );
-                Ok(())
-            }
-            SubscribePlayerResult::Err(err) => {
-                Self::log_handler(
-                    &log_ctx.tui_state,
-                    &log_ctx.thread_name,
-                    logger,
-                    format!("Failed to subscribe: {err:?}"),
-                    LogLevel::Error,
-                );
-                Err(GameError::AgentSubscriptionError(format!("{err:?}")))
-            }
-        }
-    }
-
-    fn handle_radar_view(
-        stream: &mut impl Write,
-        view: messages::RadarView,
-        player_ctx: &mut PlayerContext,
-        log_ctx: &LogContext,
-    ) -> GameResult<()> {
-        let radar_view = extract_data(&decode_base64(&view.0))
-            .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {e}")))?;
-
-        maze_to_graph(&radar_view, &player_ctx.player, &mut player_ctx.graph);
-        player_ctx.save_state();
-
-        // Right after a block, yield half the time so two agents blocking each other don't
-        // retry in lockstep.
-        let blocked = player_ctx
-            .avoid
-            .filter(|&(_, turns)| turns == AVOID_OPPONENT_TURNS && rand::random_bool(0.5))
-            .map(|(cell, _)| cell);
-        let yielded = blocked.and_then(|cell| {
-            instructions::yield_to_opponent(&mut player_ctx.player, &mut player_ctx.graph, cell)
-        });
-
-        let avoid = player_ctx.avoid.map(|(cell, _)| cell);
-        player_ctx.avoid =
-            player_ctx.avoid.and_then(|(cell, turns)| (turns > 1).then_some((cell, turns - 1)));
-
-        let action: Action = match yielded.or_else(|| {
-            instructions::step_to_known_exit(&mut player_ctx.player, &player_ctx.graph, avoid)
-        }) {
-            Some(action) => action,
-            None => match player_ctx.algorithm {
-                Algorithm::Tremeaux => instructions::tremeaux_solver(
-                    &mut player_ctx.player,
-                    &mut player_ctx.graph,
-                    avoid,
-                ),
-                Algorithm::WallFollower => instructions::wall_follower_solver(
-                    &radar_view,
-                    &mut player_ctx.player,
-                    &mut player_ctx.graph,
-                    &mut player_ctx.wall_follower,
-                    avoid,
-                ),
-                Algorithm::Alian => instructions::alian_solver(
-                    &mut player_ctx.player,
-                    &mut player_ctx.graph,
-                    &log_ctx.thread_name,
-                ),
-            },
-        };
-
-        thread::sleep(player_ctx.move_delay);
-        send_message(stream, &Message::Action(action))
-    }
-
-    fn handle_hint(
-        hint: Hint,
-        player_ctx: &mut PlayerContext,
-        log_ctx: &LogContext,
-        secrets: &TeamSecrets,
-    ) {
-        match hint {
-            Hint::RelativeCompass { angle } => player_ctx.player.record_compass(angle),
-            Hint::Secret(secret) => {
-                if let Ok(mut secrets) = secrets.lock() {
-                    secrets.insert(thread::current().id(), secret);
-                }
-            }
-            Hint::GridSize { columns, rows } => Self::log_handler(
-                &log_ctx.tui_state,
-                &log_ctx.thread_name,
-                Logger::get_instance(),
-                format!("Maze is {columns}x{rows}"),
-                LogLevel::Info,
-            ),
-            Hint::SOS => Self::log_handler(
-                &log_ctx.tui_state,
-                &log_ctx.thread_name,
-                Logger::get_instance(),
-                "Received an SOS hint",
-                LogLevel::Info,
-            ),
-        }
-    }
-
-    fn solve_challenge(
-        stream: &mut impl Write,
-        secrets: &TeamSecrets,
-        modulo: u128,
-    ) -> GameResult<()> {
-        let answer = match secrets.lock() {
-            Ok(secrets) => instructions::solve_sum_modulo(modulo, &secrets),
-            Err(_) => return Ok(()),
-        };
-        send_message(stream, &Message::Action(Action::SolveChallenge { answer }))
-    }
-
-    fn refresh_tui(
-        tui_state: &Option<Arc<Mutex<GameState>>>,
-        thread_name: &str,
-        graph: &MazeGraph,
-        player: &Player,
-    ) {
+        Self::log(tui_state, agent.name(), "Found the exit!", LogLevel::Info);
         if let Some(tui) = tui_state
             && let Ok(mut state) = tui.lock()
         {
-            state.update_state(thread_name, graph.clone(), player.clone());
+            state.mark_exit_found(agent.name());
+        }
+        Ok(())
+    }
+
+    fn refresh_tui(tui_state: &Option<Arc<Mutex<GameState>>>, agent: &Agent) {
+        if let Some(tui) = tui_state
+            && let Ok(mut state) = tui.lock()
+        {
+            state.update_state(agent.name(), agent.graph().clone(), agent.player().clone());
         }
     }
 
-    fn log_handler(
+    fn log(
         tui_state: &Option<Arc<Mutex<GameState>>>,
-        thread_name: &str,
-        logger: &Logger,
+        agent_name: &str,
         message: impl Into<String>,
         level: LogLevel,
     ) {
+        let logger = Logger::get_instance();
         if matches!(level, LogLevel::Debug) && !logger.is_debug_enabled() {
             return;
         }
@@ -471,14 +183,14 @@ impl GameClient {
         match tui_state.as_ref() {
             Some(tui) => {
                 if let Ok(mut state) = tui.lock() {
-                    state.add_log(thread_name, message.into(), level);
+                    state.add_log(agent_name, message.into(), level);
                 }
             }
             None => match level {
-                LogLevel::Debug => logger.debug(&format!("{} {}", thread_name, message.into())),
-                LogLevel::Info => logger.info(&format!("{} {}", thread_name, message.into())),
-                LogLevel::Error => logger.error(&format!("{} {}", thread_name, message.into())),
-                LogLevel::Warning => logger.warn(&format!("{} {}", thread_name, message.into())),
+                LogLevel::Debug => logger.debug(&format!("{} {}", agent_name, message.into())),
+                LogLevel::Info => logger.info(&format!("{} {}", agent_name, message.into())),
+                LogLevel::Error => logger.error(&format!("{} {}", agent_name, message.into())),
+                LogLevel::Warning => logger.warn(&format!("{} {}", agent_name, message.into())),
             },
         }
     }
@@ -487,8 +199,8 @@ impl GameClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use shared::messages::{Challenge, Hint, RadarView, SubscribePlayerResult};
     use std::net::{TcpListener, TcpStream};
-    use std::thread;
 
     fn setup_mock_server() -> (TcpListener, String) {
         Logger::init(true);
@@ -497,126 +209,16 @@ mod tests {
         (listener, format!("127.0.0.1:{}", addr.port()))
     }
 
-    fn create_test_contexts(thread_name: String) -> (PlayerContext, LogContext, TeamSecrets) {
-        Logger::init(true);
-        let game_ctx = PlayerContext {
-            graph: MazeGraph::new(),
-            player: Player::new(),
-            algorithm: Algorithm::Tremeaux,
-            challenge_modulo: None,
-            avoid: None,
-            wall_follower: WallFollowerState::default(),
-            saved_cells: Vec::new(),
-            move_delay: Duration::ZERO,
-        };
-
-        let log_ctx = LogContext { thread_name, tui_state: None };
-
-        (game_ctx, log_ctx, Arc::new(Mutex::new(HashMap::new())))
-    }
-
-    fn sent_messages(buf: Vec<u8>) -> Vec<Message> {
-        let mut cursor = std::io::Cursor::new(buf);
-        let mut messages = Vec::new();
-        while (cursor.position() as usize) < cursor.get_ref().len() {
-            messages.push(receive_message(&mut cursor).unwrap());
-        }
-        messages
-    }
-
-    fn answers(buf: Vec<u8>) -> Vec<String> {
-        sent_messages(buf)
-            .into_iter()
-            .map(|msg| match msg {
-                Message::Action(Action::SolveChallenge { answer }) => answer,
-                other => panic!("unexpected message: {other:?}"),
-            })
-            .collect()
-    }
-
-    #[test]
-    fn test_failed_move_waits_for_next_radar_view() {
-        for err in [
-            messages::ActionError::CannotPassThroughWall,
-            messages::ActionError::CannotPassThroughOpponent,
-            messages::ActionError::NoRunningChallenge,
-        ] {
-            let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
-            let mut sent = Vec::new();
-
-            GameClient::handle_server_message(
-                &mut sent,
-                Message::ActionError(err),
-                &mut game_ctx,
-                &log_ctx,
-                &secrets,
-            )
-            .unwrap();
-
-            assert!(sent.is_empty());
-        }
-    }
-
-    #[test]
-    fn test_opponent_block_reverts_and_remembers_blocked_cell() {
-        let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
-        game_ctx.player.save_state();
-        game_ctx.player.move_forward();
-        let blocked = game_ctx.player.position;
-
-        GameClient::handle_server_message(
-            &mut Vec::new(),
-            Message::ActionError(messages::ActionError::CannotPassThroughOpponent),
-            &mut game_ctx,
-            &log_ctx,
-            &secrets,
-        )
-        .unwrap();
-
-        assert_eq!(game_ctx.player.position, Player::new().position);
-        assert_eq!(game_ctx.avoid, Some((blocked, AVOID_OPPONENT_TURNS)));
-    }
-
-    #[test]
-    fn test_rejected_backtrack_restores_graph() {
-        use crate::data_structures::maze_graph::CellStatus;
-        use shared::radar::CellType;
-
-        let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
-        let current = Cell { row: 0, column: 0 };
-        let parent = Cell { row: 0, column: 1 };
-        for cell in [current, parent] {
-            game_ctx.graph.add(cell, CellType::NOTHING);
-            game_ctx.graph.update_cell_status(cell, CellStatus::VISITED);
-        }
-        game_ctx.graph.add_neighbor(&current, &parent);
-        game_ctx.graph.add_neighbor(&parent, &current);
-        game_ctx.graph.set_parent(current, parent);
-
-        game_ctx.save_state();
-        instructions::tremeaux_solver(&mut game_ctx.player, &mut game_ctx.graph, None);
-        GameClient::handle_server_message(
-            &mut Vec::new(),
-            Message::ActionError(messages::ActionError::CannotPassThroughOpponent),
-            &mut game_ctx,
-            &log_ctx,
-            &secrets,
-        )
-        .unwrap();
-
-        assert_eq!(game_ctx.player.position, current);
-        assert_eq!(game_ctx.graph.get_cell_status(current), CellStatus::VISITED);
-    }
-
     #[test]
     fn test_agent_found_the_exit_when_server_closes_connection() {
-        let (mut game_ctx, mut log_ctx, secrets) = create_test_contexts("Player1".to_string());
+        Logger::init(true);
+        let mut agent = Agent::new("Player1".into(), Algorithm::Tremeaux, TeamSecrets::default());
         let tui = Arc::new(Mutex::new(GameState::new()));
         tui.lock().unwrap().register_agent("Player1".to_string());
-        log_ctx.tui_state = Some(Arc::clone(&tui));
         let mut closed_stream = std::io::Cursor::new(Vec::new());
 
-        GameClient::play(&mut closed_stream, &mut game_ctx, &log_ctx, &secrets).unwrap();
+        GameClient::play(&mut closed_stream, &mut agent, &Some(Arc::clone(&tui)), Duration::ZERO)
+            .unwrap();
 
         assert!(tui.lock().unwrap().has_found_exit("Player1"));
     }
@@ -625,25 +227,6 @@ mod tests {
     fn test_agents_are_named_after_their_algorithm() {
         assert_eq!(agent_name(Algorithm::Alian, 0), "Alian1");
         assert_eq!(agent_name(Algorithm::WallFollower, 2), "WallFollower3");
-    }
-
-    #[test]
-    fn test_each_agent_answers_challenge_with_its_own_modulo() {
-        let (mut agent_a, log_a, secrets) = create_test_contexts("Player1".to_string());
-        let (mut agent_b, log_b, _) = create_test_contexts("Player2".to_string());
-        secrets.lock().unwrap().insert(thread::current().id(), 25);
-
-        let mut sent = Vec::new();
-        let challenge = |m| Message::Challenge(Challenge::SecretSumModulo(m));
-        let invalid = Message::ActionError(messages::ActionError::InvalidChallengeSolution);
-        GameClient::handle_server_message(&mut sent, challenge(10), &mut agent_a, &log_a, &secrets)
-            .unwrap();
-        GameClient::handle_server_message(&mut sent, challenge(7), &mut agent_b, &log_b, &secrets)
-            .unwrap();
-        GameClient::handle_server_message(&mut sent, invalid, &mut agent_a, &log_a, &secrets)
-            .unwrap();
-
-        assert_eq!(answers(sent), ["5", "4", "5"]);
     }
 
     #[test]
@@ -689,29 +272,6 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_server_message_subscribe_success() {
-        let (listener, addr) = setup_mock_server();
-
-        thread::spawn(move || {
-            listener.accept().unwrap();
-        });
-
-        let mut stream = TcpStream::connect(addr).unwrap();
-        let message = Message::SubscribePlayerResult(SubscribePlayerResult::Ok);
-        let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
-
-        let result = GameClient::handle_server_message(
-            &mut stream,
-            message,
-            &mut game_ctx,
-            &log_ctx,
-            &secrets,
-        );
-
-        assert!(result.is_ok());
-    }
-
-    #[test]
     fn test_new_client() {
         let config = ClientConfig {
             server_addr: "addr".to_string(),
@@ -722,72 +282,6 @@ mod tests {
         let client = GameClient::new(config.clone());
         assert_eq!(client.config.server_addr, config.server_addr);
         assert_eq!(client.config.team_name, config.team_name);
-    }
-
-    #[test]
-    fn test_handle_radar_view() {
-        let (listener, addr) = setup_mock_server();
-
-        thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let msg = receive_message(&mut stream).unwrap();
-            assert!(matches!(msg, Message::Action(_)));
-        });
-
-        let mut stream = TcpStream::connect(addr).unwrap();
-        let message = Message::RadarView(messages::RadarView("bKgGjsIyap8p8aa".to_string()));
-        let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
-
-        let result = GameClient::handle_server_message(
-            &mut stream,
-            message,
-            &mut game_ctx,
-            &log_ctx,
-            &secrets,
-        );
-
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_handle_hint() {
-        let (listener, addr) = setup_mock_server();
-        thread::spawn(move || if let Ok((_stream, _)) = listener.accept() {});
-
-        let mut stream = TcpStream::connect(addr).unwrap();
-        let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
-
-        let message = Message::Hint(Hint::Secret(10));
-
-        let result = GameClient::handle_server_message(
-            &mut stream,
-            message,
-            &mut game_ctx,
-            &log_ctx,
-            &secrets,
-        );
-
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_compass_hint_is_stored_in_the_agent_frame() {
-        let (mut game_ctx, log_ctx, secrets) = create_test_contexts("Player1".to_string());
-        game_ctx.player.direction = messages::Direction::Right;
-        game_ctx.player.save_state();
-        game_ctx.player.turn_right();
-        let exit_on_its_right = Message::Hint(Hint::RelativeCompass { angle: 90.0 });
-
-        GameClient::handle_server_message(
-            &mut Vec::new(),
-            exit_on_its_right,
-            &mut game_ctx,
-            &log_ctx,
-            &secrets,
-        )
-        .unwrap();
-
-        assert_eq!(game_ctx.player.exit_bearing, Some(180.0));
     }
 
     #[test]
@@ -831,7 +325,7 @@ mod tests {
 
                     send_message(
                         &mut player_stream,
-                        &Message::RadarView(messages::RadarView("bKgGjsIyap8p8aa".to_string())),
+                        &Message::RadarView(RadarView("bKgGjsIyap8p8aa".to_string())),
                     )
                     .unwrap();
 
