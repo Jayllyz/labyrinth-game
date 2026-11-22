@@ -18,8 +18,12 @@ env:
   RUST_BACKTRACE: 1
   RUSTFLAGS: "-Dwarnings -C debuginfo=0"
 
+permissions: {}
+
 jobs:
   code-quality:
+    permissions:
+      contents: read
     name: Code Quality
     runs-on: ubuntu-latest
     steps:
@@ -43,6 +47,8 @@ jobs:
         run: cargo clippy --all-targets --all-features
 
   test:
+    permissions:
+      contents: read
     name: Test
     runs-on: ubuntu-latest
     steps:

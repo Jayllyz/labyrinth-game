@@ -15,8 +15,12 @@ env:
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
 
+permissions: {}
+
 jobs:
   create-release:
+    permissions:
+      contents: write
     name: Create release
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
@@ -63,10 +67,12 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   upload-binary:
+    permissions:
+      contents: write
     name: Run the build-binaries workflow
     needs:
     - create-release
     if: github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/build-binaries.yaml
+    uses: $/.github/workflows/build-binaries.yaml
     with:
       publish-tag: ${{ inputs.publish-tag }}

@@ -18,8 +18,12 @@ env:
   RUST_BACKTRACE: 1
   RUSTFLAGS: "-Dwarnings -C debuginfo=0"
 
+permissions: {}
+
 jobs:
   bench:
+    permissions:
+      contents: read
     name: Benchmark
     runs-on: ubuntu-latest
     steps:

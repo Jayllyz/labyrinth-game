@@ -16,8 +16,12 @@ env:
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
 
+permissions: {}
+
 jobs:
   build-and-upload-binary:
+    permissions:
+      contents: write
     name: Build ${{ matrix.target }}
     strategy:
       matrix:

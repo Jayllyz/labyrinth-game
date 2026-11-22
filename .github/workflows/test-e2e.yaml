@@ -9,8 +9,12 @@ env:
   CI: true
   FORCE_COLOR: 1
 
+permissions: {}
+
 jobs:
   e2e-tests:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
     - name: Checkout repository
