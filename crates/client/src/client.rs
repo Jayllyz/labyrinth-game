@@ -22,12 +22,15 @@ use std::{
     net::TcpStream,
     sync::{Arc, Mutex},
     thread::{self, ThreadId},
+    time::Duration,
 };
 
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
     pub server_addr: String,
     pub team_name: String,
+    /// Pause before each move, so a game can be followed in the TUI.
+    pub move_delay: Duration,
 }
 
 pub struct GameClient {
@@ -50,6 +53,7 @@ struct PlayerContext {
     wall_follower: WallFollowerState,
     /// Cells the solver may change while choosing a move, restored if the server rejects it.
     saved_cells: Vec<(Cell, MazeCell)>,
+    move_delay: Duration,
 }
 
 impl PlayerContext {
@@ -135,7 +139,7 @@ impl GameClient {
         for i in 0..num_agents {
             let config = self.config.clone();
             let agent_token = token.clone();
-            let agent_name = format!("Player{}", i + 1);
+            let agent_name = format!("{:?}{}", algorithm, i + 1);
             let secrets = Arc::clone(&self.secrets);
             let tui_state = tui_state.clone();
 
@@ -151,6 +155,7 @@ impl GameClient {
                         avoid: None,
                         wall_follower: WallFollowerState::default(),
                         saved_cells: Vec::new(),
+                        move_delay: config.move_delay,
                     };
 
                     let log_ctx = LogContext { thread_name: agent_name.clone(), tui_state };
@@ -385,6 +390,7 @@ impl GameClient {
             },
         };
 
+        thread::sleep(player_ctx.move_delay);
         send_message(stream, &Message::Action(action.clone()))?;
 
         Ok(instructions::check_win_condition(&radar_view.cells, action))
@@ -473,6 +479,7 @@ mod tests {
             avoid: None,
             wall_follower: WallFollowerState::default(),
             saved_cells: Vec::new(),
+            move_delay: Duration::ZERO,
         };
 
         let log_ctx = LogContext { thread_name, tui_state: None };
@@ -624,8 +631,11 @@ mod tests {
         });
 
         let mut stream = TcpStream::connect(addr.clone()).unwrap();
-        let client =
-            GameClient::new(ClientConfig { server_addr: addr, team_name: "team".to_string() });
+        let client = GameClient::new(ClientConfig {
+            server_addr: addr,
+            team_name: "team".to_string(),
+            move_delay: Duration::ZERO,
+        });
 
         let token = client.register_team(&mut stream).unwrap();
         assert_eq!(token, "test_token");
@@ -656,8 +666,11 @@ mod tests {
 
     #[test]
     fn test_new_client() {
-        let config =
-            ClientConfig { server_addr: "addr".to_string(), team_name: "team".to_string() };
+        let config = ClientConfig {
+            server_addr: "addr".to_string(),
+            team_name: "team".to_string(),
+            move_delay: Duration::ZERO,
+        };
 
         let client = GameClient::new(config.clone());
         assert_eq!(client.config.server_addr, config.server_addr);
@@ -761,7 +774,11 @@ mod tests {
             }
         });
 
-        let config = ClientConfig { server_addr: addr, team_name: "team".to_string() };
+        let config = ClientConfig {
+            server_addr: addr,
+            team_name: "team".to_string(),
+            move_delay: Duration::ZERO,
+        };
         let client = GameClient::new(config);
 
         let result = client.run(1, 1, None, Algorithm::Tremeaux);
