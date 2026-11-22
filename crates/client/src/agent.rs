@@ -55,6 +55,7 @@ pub struct Agent {
 struct Pending {
     player: Player,
     graph: MazeGraph,
+    wall_follower: WallFollowerState,
 }
 
 impl Agent {
@@ -113,20 +114,26 @@ impl Agent {
             .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {e}")))?;
 
         // A radar view after a move means the server accepted it.
-        if let Some(Pending { player, graph }) = self.pending.take() {
+        if let Some(Pending { player, graph, wall_follower }) = self.pending.take() {
             self.player = player;
             self.graph = graph;
+            self.wall_follower = wall_follower;
         }
         maze_to_graph(&radar_view, &self.player, &mut self.graph);
 
-        let (mut player, mut graph) = (self.player.clone(), self.graph.clone());
-        let action = self.decide(&radar_view, &mut player, &mut graph);
-        self.pending = Some(Pending { player, graph });
+        let mut next = Pending {
+            player: self.player.clone(),
+            graph: self.graph.clone(),
+            wall_follower: self.wall_follower.clone(),
+        };
+        let action = self.decide(&radar_view, &mut next);
+        self.pending = Some(next);
         Ok(action)
     }
 
-    /// Chooses the next move, updating `player` and `graph` as if the server accepts it.
-    fn decide(&mut self, radar_view: &Radar, player: &mut Player, graph: &mut MazeGraph) -> Action {
+    /// Chooses the next move, updating `next` as if the server accepts it.
+    fn decide(&mut self, radar_view: &Radar, next: &mut Pending) -> Action {
+        let Pending { player, graph, wall_follower } = next;
         // Right after a block, yield half the time so two agents blocking each other don't
         // retry in lockstep.
         let blocked = self
@@ -146,13 +153,9 @@ impl Agent {
 
         match self.algorithm {
             Algorithm::Tremeaux => instructions::tremeaux_solver(player, graph, avoid),
-            Algorithm::WallFollower => instructions::wall_follower_solver(
-                radar_view,
-                player,
-                graph,
-                &mut self.wall_follower,
-                avoid,
-            ),
+            Algorithm::WallFollower => {
+                instructions::wall_follower_solver(radar_view, player, graph, wall_follower, avoid)
+            }
             Algorithm::Alian => instructions::alian_solver(player, graph, &self.name),
         }
     }
@@ -191,6 +194,7 @@ impl Agent {
 
         // The server follows move errors with a fresh RadarView, which drives the next move.
         let action = match err {
+            // Without a pending move the error is stale, so there is no target to avoid.
             ActionError::CannotPassThroughOpponent => {
                 if let Some(rejected) = self.pending.take() {
                     self.avoid = Some((rejected.player.position, AVOID_OPPONENT_TURNS));
@@ -205,7 +209,11 @@ impl Agent {
                 None
             }
             ActionError::NoRunningChallenge => None,
-            ActionError::InvalidChallengeSolution | ActionError::SolveChallengeFirst => {
+            ActionError::InvalidChallengeSolution => {
+                self.challenge_modulo.and_then(|modulo| self.solve_challenge(modulo))
+            }
+            ActionError::SolveChallengeFirst => {
+                self.pending = None;
                 self.challenge_modulo.and_then(|modulo| self.solve_challenge(modulo))
             }
         };
@@ -232,9 +240,13 @@ mod tests {
     /// Chooses a move from the current map, as a radar view would.
     fn propose_move(agent: &mut Agent) {
         let radar = Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() };
-        let (mut player, mut graph) = (agent.player.clone(), agent.graph.clone());
-        agent.decide(&radar, &mut player, &mut graph);
-        agent.pending = Some(Pending { player, graph });
+        let mut next = Pending {
+            player: agent.player.clone(),
+            graph: agent.graph.clone(),
+            wall_follower: agent.wall_follower.clone(),
+        };
+        agent.decide(&radar, &mut next);
+        agent.pending = Some(next);
     }
 
     fn answer(reply: Reply) -> String {
@@ -265,7 +277,11 @@ mod tests {
         let mut moved = agent.player.clone();
         moved.move_forward();
         let blocked = moved.position;
-        agent.pending = Some(Pending { player: moved, graph: agent.graph.clone() });
+        agent.pending = Some(Pending {
+            player: moved,
+            graph: agent.graph.clone(),
+            wall_follower: WallFollowerState::default(),
+        });
 
         agent.on_message(Message::ActionError(ActionError::CannotPassThroughOpponent)).unwrap();
 
@@ -291,6 +307,27 @@ mod tests {
 
         assert_eq!(agent.player.position, current);
         assert_eq!(agent.graph.get_cell_status(current), CellStatus::VISITED);
+    }
+
+    #[test]
+    fn test_move_rejected_for_open_challenge_is_dropped() {
+        let mut agent = agent("Player1");
+        propose_move(&mut agent);
+
+        agent.on_message(Message::ActionError(ActionError::SolveChallengeFirst)).unwrap();
+
+        assert!(agent.pending.is_none());
+    }
+
+    #[test]
+    fn test_rejected_move_does_not_count_as_wall_follower_loop() {
+        let mut agent =
+            Agent::new("Player1".into(), Algorithm::WallFollower, TeamSecrets::default());
+        propose_move(&mut agent);
+
+        agent.on_message(Message::ActionError(ActionError::CannotPassThroughWall)).unwrap();
+
+        assert!(agent.wall_follower.seen.is_empty());
     }
 
     #[test]
@@ -341,7 +378,11 @@ mod tests {
         agent.player.direction = messages::Direction::Right;
         let mut turned = agent.player.clone();
         turned.turn_right();
-        agent.pending = Some(Pending { player: turned, graph: agent.graph.clone() });
+        agent.pending = Some(Pending {
+            player: turned,
+            graph: agent.graph.clone(),
+            wall_follower: WallFollowerState::default(),
+        });
 
         agent.on_message(Message::Hint(Hint::RelativeCompass { angle: 90.0 })).unwrap();
 
