@@ -6,135 +6,52 @@ use shared::{
 };
 
 use crate::data_structures::maze_graph::MazeGraph;
-
-fn rotate_left_90(cells: &mut [Cell]) {
-    for cell in cells.iter_mut() {
-        let new_row = -cell.column;
-        let new_column = cell.row;
-        cell.row = new_row;
-        cell.column = new_column;
-    }
-}
-
-fn rotate_right_90(cells: &mut [Cell]) {
-    for cell in cells.iter_mut() {
-        let new_row = cell.column;
-        let new_column = -cell.row;
-        cell.row = new_row;
-        cell.column = new_column;
-    }
-}
+use crate::heading::Heading;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Player {
-    pub direction: Direction,
+    pub heading: Heading,
     pub position: Cell,
-    /// Last compass hint, as clockwise degrees from the starting heading (`Front`).
+    /// Last compass hint, as clockwise degrees from North.
     pub exit_bearing: Option<f32>,
 }
 
 impl Player {
     pub fn new() -> Self {
-        Self {
-            position: Cell { row: 0, column: 0 },
-            direction: Direction::Front,
-            exit_bearing: None,
-        }
+        Self { position: Cell { row: 0, column: 0 }, heading: Heading::North, exit_bearing: None }
     }
 
     /// Records a compass hint: clockwise degrees from the heading to the exit.
     pub fn record_compass(&mut self, angle: f32) {
-        let degrees = match self.direction {
-            Direction::Front => 0.0,
-            Direction::Right => 90.0,
-            Direction::Back => 180.0,
-            Direction::Left => 270.0,
-        };
-        self.exit_bearing = Some((degrees + angle).rem_euclid(360.0));
+        self.exit_bearing = Some((self.heading.degrees() + angle).rem_euclid(360.0));
     }
 
     pub fn move_forward(&mut self) {
-        self.position = match self.direction {
-            Direction::Front => Cell { row: self.position.row, column: self.position.column - 1 },
-            Direction::Right => Cell { row: self.position.row + 1, column: self.position.column },
-            Direction::Back => Cell { row: self.position.row, column: self.position.column + 1 },
-            Direction::Left => Cell { row: self.position.row - 1, column: self.position.column },
-        }
+        self.position = self.position + self.heading.delta();
     }
 
-    pub fn turn_right(&mut self) {
-        self.direction = match self.direction {
-            Direction::Front => Direction::Right,
-            Direction::Right => Direction::Back,
-            Direction::Back => Direction::Left,
-            Direction::Left => Direction::Front,
-        };
+    pub fn turn(&mut self, direction: Direction) {
+        self.heading = self.heading.turn(direction);
     }
 
-    pub fn turn_left(&mut self) {
-        self.direction = match self.direction {
-            Direction::Front => Direction::Left,
-            Direction::Right => Direction::Front,
-            Direction::Back => Direction::Right,
-            Direction::Left => Direction::Back,
-        };
-    }
-
-    pub fn turn_back(&mut self) {
-        self.direction = match self.direction {
-            Direction::Front => Direction::Back,
-            Direction::Right => Direction::Left,
-            Direction::Back => Direction::Front,
-            Direction::Left => Direction::Right,
-        };
-    }
-
-    pub fn get_next_direction(&mut self, target: &Cell) -> Direction {
-        let diff = Cell {
+    /// The move toward a neighboring cell, or `Front` if `target` is not one.
+    pub fn get_next_direction(&self, target: &Cell) -> Direction {
+        let delta = Cell {
             row: target.row - self.position.row,
             column: target.column - self.position.column,
         };
-
-        let cell_mask: Vec<Cell> = get_direction_mask(self);
-
-        if cell_mask[3] == diff {
-            return Direction::Left;
-        };
-        if cell_mask[5] == diff {
-            return Direction::Right;
-        };
-        if cell_mask[7] == diff {
-            return Direction::Back;
-        };
-        Direction::Front
+        Heading::from_delta(delta).map_or(Direction::Front, |to| self.heading.direction_to(to))
     }
 
     pub fn step_toward(&mut self, target: &Cell) -> Action {
         let direction = self.get_next_direction(target);
-        match direction {
-            Direction::Left => self.turn_left(),
-            Direction::Right => self.turn_right(),
-            Direction::Back => self.turn_back(),
-            Direction::Front => {}
-        }
+        self.turn(direction);
         self.move_forward();
         Action::MoveTo(direction)
     }
 
     pub fn get_back_position(&self) -> Cell {
-        let d = match self.direction {
-            Direction::Front => Direction::Back,
-            Direction::Right => Direction::Left,
-            Direction::Back => Direction::Front,
-            Direction::Left => Direction::Right,
-        };
-
-        match d {
-            Direction::Front => Cell { row: self.position.row, column: self.position.column - 1 },
-            Direction::Right => Cell { row: self.position.row + 1, column: self.position.column },
-            Direction::Back => Cell { row: self.position.row, column: self.position.column + 1 },
-            Direction::Left => Cell { row: self.position.row - 1, column: self.position.column },
-        }
+        self.position + self.heading.turn(Direction::Back).delta()
     }
 }
 
@@ -256,30 +173,12 @@ fn get_cell_walls(cell_id: usize, horizontal: &[Passages], vertical: &[Passages]
     walls
 }
 
+/// Map offsets of the radar's 3x3 cells, row by row, as seen by the player.
 fn get_direction_mask(player: &Player) -> Vec<Cell> {
-    let mut cell_mask = vec![
-        Cell { row: -1, column: -1 },
-        Cell { row: 0, column: -1 },
-        Cell { row: 1, column: -1 },
-        Cell { row: -1, column: 0 },
-        Cell { row: 0, column: 0 },
-        Cell { row: 1, column: 0 },
-        Cell { row: -1, column: 1 },
-        Cell { row: 0, column: 1 },
-        Cell { row: 1, column: 1 },
-    ];
-
-    if player.direction == Direction::Right {
-        rotate_left_90(&mut cell_mask);
-    }
-    if player.direction == Direction::Left {
-        rotate_right_90(&mut cell_mask);
-    }
-    if player.direction == Direction::Back {
-        rotate_right_90(&mut cell_mask);
-        rotate_right_90(&mut cell_mask);
-    }
-    cell_mask
+    (-1..=1)
+        .flat_map(|column| (-1..=1).map(move |row| Cell { row, column }))
+        .map(|offset| player.heading.rotate(offset))
+        .collect()
 }
 
 pub fn maze_parser(input: &str) -> Maze {
@@ -334,13 +233,13 @@ mod tests {
 
         let mut p = Player {
             position: Cell { row: 0, column: 0 },
-            direction: Direction::Front,
+            heading: Heading::North,
             exit_bearing: None,
         };
         let mut m = MazeGraph::new();
         maze_to_graph(&data, &p, &mut m);
 
-        p.direction = Direction::Right;
+        p.heading = Heading::East;
         p.position = p.position + Cell { row: 1, column: 0 };
 
         let decoded = radar::decode_base64("kOuczzGa//apaaa");
@@ -394,7 +293,7 @@ mod tests {
 
     #[test]
     fn test_player_get_next_direction() {
-        let mut player = Player::new();
+        let player = Player::new();
 
         let target = Cell { row: -1, column: 0 }; // Left
         assert_eq!(player.get_next_direction(&target), Direction::Left);
@@ -415,13 +314,13 @@ mod tests {
 
         assert_eq!(player.get_back_position(), Cell { row: 0, column: 1 });
 
-        player.turn_right();
+        player.turn(Direction::Right);
         assert_eq!(player.get_back_position(), Cell { row: -1, column: 0 });
 
-        player.turn_right();
+        player.turn(Direction::Right);
         assert_eq!(player.get_back_position(), Cell { row: 0, column: -1 });
 
-        player.turn_right();
+        player.turn(Direction::Right);
         assert_eq!(player.get_back_position(), Cell { row: 1, column: 0 });
     }
 
@@ -433,45 +332,20 @@ mod tests {
         assert_eq!(mask[4], Cell { row: 0, column: 0 });
 
         let mut player_right = Player::new();
-        player_right.direction = Direction::Right;
+        player_right.heading = Heading::East;
         let mask_right = get_direction_mask(&player_right);
         assert_ne!(mask, mask_right);
 
         let mut player_back = Player::new();
-        player_back.direction = Direction::Back;
+        player_back.heading = Heading::South;
         let mask_back = get_direction_mask(&player_back);
         assert_ne!(mask, mask_back);
     }
 
     #[test]
-    fn test_double_rotation() {
-        let cells = vec![Cell { row: -1, column: -1 }, Cell { row: 0, column: -1 }];
-
-        let mut cells_left = cells.clone();
-        rotate_left_90(&mut cells_left);
-        rotate_left_90(&mut cells_left);
-
-        let mut cells_right = cells;
-        rotate_right_90(&mut cells_right);
-        rotate_right_90(&mut cells_right);
-
-        assert_eq!(cells_left, cells_right);
-    }
-
-    #[test]
-    fn test_rotate_left() {
-        let mut cell_mask = vec![
-            Cell { row: -1, column: -1 },
-            Cell { row: 0, column: -1 },
-            Cell { row: 1, column: -1 },
-            Cell { row: -1, column: 0 },
-            Cell { row: 0, column: 0 },
-            Cell { row: 1, column: 0 },
-            Cell { row: -1, column: 1 },
-            Cell { row: 0, column: 1 },
-            Cell { row: 1, column: 1 },
-        ];
-
+    fn test_mask_facing_east() {
+        let mut player = Player::new();
+        player.heading = Heading::East;
         let expected_rotation = vec![
             Cell { row: 1, column: -1 },
             Cell { row: 1, column: 0 },
@@ -484,25 +358,13 @@ mod tests {
             Cell { row: -1, column: 1 },
         ];
 
-        rotate_left_90(&mut cell_mask);
-
-        assert_eq!(cell_mask, expected_rotation);
+        assert_eq!(get_direction_mask(&player), expected_rotation);
     }
 
     #[test]
-    fn test_rotate_right() {
-        let mut cell_mask = vec![
-            Cell { row: -1, column: -1 },
-            Cell { row: 0, column: -1 },
-            Cell { row: 1, column: -1 },
-            Cell { row: -1, column: 0 },
-            Cell { row: 0, column: 0 },
-            Cell { row: 1, column: 0 },
-            Cell { row: -1, column: 1 },
-            Cell { row: 0, column: 1 },
-            Cell { row: 1, column: 1 },
-        ];
-
+    fn test_mask_facing_west() {
+        let mut player = Player::new();
+        player.heading = Heading::West;
         let expected_rotation = vec![
             Cell { row: -1, column: 1 },
             Cell { row: -1, column: 0 },
@@ -515,34 +377,32 @@ mod tests {
             Cell { row: 1, column: -1 },
         ];
 
-        rotate_right_90(&mut cell_mask);
-
-        assert_eq!(cell_mask, expected_rotation);
+        assert_eq!(get_direction_mask(&player), expected_rotation);
     }
 
     #[test]
     fn test_player_movement() {
         let mut player = Player {
             position: Cell { row: 5, column: 5 },
-            direction: Direction::Front,
+            heading: Heading::North,
             exit_bearing: None,
         };
 
         player.move_forward();
         assert_eq!(player.position, Cell { row: 5, column: 4 });
 
-        player.turn_right();
-        assert_eq!(player.direction, Direction::Right);
+        player.turn(Direction::Right);
+        assert_eq!(player.heading, Heading::East);
         player.move_forward();
         assert_eq!(player.position, Cell { row: 6, column: 4 });
 
-        player.turn_left();
-        assert_eq!(player.direction, Direction::Front);
+        player.turn(Direction::Left);
+        assert_eq!(player.heading, Heading::North);
         player.move_forward();
         assert_eq!(player.position, Cell { row: 6, column: 3 });
 
-        player.turn_back();
-        assert_eq!(player.direction, Direction::Back);
+        player.turn(Direction::Back);
+        assert_eq!(player.heading, Heading::South);
         player.move_forward();
         assert_eq!(player.position, Cell { row: 6, column: 4 });
     }

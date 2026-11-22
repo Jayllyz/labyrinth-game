@@ -1,4 +1,5 @@
 use crate::data_structures::maze_graph::{CellStatus, MazeCell, MazeGraph};
+use crate::heading::Heading;
 use crate::maze_parser::Player;
 use ratatui::crossterm::{
     cursor,
@@ -505,7 +506,7 @@ impl Tui {
             Self::render_cell(&cell)
         };
         let entries = [
-            (Self::player_span(&shared::messages::Direction::Back), "Agent, arrow = heading"),
+            (Self::player_span(Heading::South), "Agent, arrow = heading"),
             (cell(CellType::OBJECTIVE, CellStatus::NotVisited), "Exit"),
             (cell(CellType::ObjectiveEnemy, CellStatus::NotVisited), "Exit + opponent"),
             (cell(CellType::HELP, CellStatus::NotVisited), "Hint"),
@@ -524,13 +525,12 @@ impl Tui {
 
     /// The agent, pointing where it heads. Screen columns follow the graph's columns and
     /// `Front` moves toward lower columns.
-    fn player_span(direction: &shared::messages::Direction) -> Span<'static> {
-        use shared::messages::Direction as Heading;
-        let symbol = match direction {
-            Heading::Front => " ◄ ",
-            Heading::Right => " ▼ ",
-            Heading::Back => " ► ",
-            Heading::Left => " ▲ ",
+    fn player_span(heading: Heading) -> Span<'static> {
+        let symbol = match heading {
+            Heading::North => " ◄ ",
+            Heading::East => " ▼ ",
+            Heading::South => " ► ",
+            Heading::West => " ▲ ",
         };
         Span::styled(symbol, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
     }
@@ -613,7 +613,7 @@ impl Tui {
                     continue;
                 };
                 spans.push(if pos == player.position {
-                    Self::player_span(&player.direction)
+                    Self::player_span(player.heading)
                 } else {
                     Self::render_cell(cell)
                 });
@@ -647,7 +647,7 @@ impl Drop for Tui {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::{logger::LogLevel, maze::Cell, messages::Direction, radar::CellType};
+    use shared::{logger::LogLevel, maze::Cell, radar::CellType};
 
     #[test]
     fn test_game_state_new() {
@@ -688,11 +688,7 @@ mod tests {
         let cell = Cell { row: 1, column: 1 };
         graph.add(cell, CellType::NOTHING);
 
-        let player = Player {
-            position: cell,
-            direction: shared::messages::Direction::Front,
-            exit_bearing: None,
-        };
+        let player = Player { position: cell, heading: Heading::North, exit_bearing: None };
 
         game_state.update_state("agent1", graph.clone(), player);
 
@@ -756,7 +752,7 @@ mod tests {
 
         let player = Player {
             position: Cell { row: 0, column: 0 },
-            direction: Direction::Front,
+            heading: Heading::North,
             exit_bearing: None,
         };
 
@@ -784,7 +780,7 @@ mod tests {
         let bounds = (-2, 2, -3, 3); // 5x7 maze
         let player = Player {
             position: Cell { row: 0, column: 0 },
-            direction: Direction::Front,
+            heading: Heading::North,
             exit_bearing: None,
         };
 
@@ -804,7 +800,7 @@ mod tests {
 
         let edge_player = Player {
             position: Cell { row: 2, column: 3 },
-            direction: Direction::Front,
+            heading: Heading::North,
             exit_bearing: None,
         };
         let (row_start, row_end, col_start, col_end) =
@@ -872,10 +868,10 @@ mod tests {
 
     #[test]
     fn test_player_symbol_shows_heading() {
-        assert_eq!(Tui::player_span(&Direction::Front).content, " ◄ ");
-        assert_eq!(Tui::player_span(&Direction::Right).content, " ▼ ");
-        assert_eq!(Tui::player_span(&Direction::Back).content, " ► ");
-        assert_eq!(Tui::player_span(&Direction::Left).content, " ▲ ");
+        assert_eq!(Tui::player_span(Heading::North).content, " ◄ ");
+        assert_eq!(Tui::player_span(Heading::East).content, " ▼ ");
+        assert_eq!(Tui::player_span(Heading::South).content, " ► ");
+        assert_eq!(Tui::player_span(Heading::West).content, " ▲ ");
     }
 
     #[test]

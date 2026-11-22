@@ -230,6 +230,7 @@ impl Agent {
 mod tests {
     use super::*;
     use crate::data_structures::maze_graph::CellStatus;
+    use crate::heading::Heading;
     use shared::messages::{self, Direction};
     use shared::radar::CellType;
 
@@ -389,9 +390,9 @@ mod tests {
     #[test]
     fn test_compass_hint_is_stored_in_the_agent_frame() {
         let mut agent = agent("Player1");
-        agent.player.direction = messages::Direction::Right;
+        agent.player.heading = Heading::East;
         let mut turned = agent.player.clone();
-        turned.turn_right();
+        turned.turn(Direction::Right);
         agent.pending = Some(Pending {
             player: turned,
             graph: agent.graph.clone(),
