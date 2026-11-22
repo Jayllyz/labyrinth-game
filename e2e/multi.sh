@@ -55,8 +55,23 @@ if [[ -n "$TUI" ]]; then
 fi
 wait "${CLIENT_PIDS[@]}" || true
 
-TEAM_SIZE=3
-for algorithm in "${ALGORITHMS[@]}"; do
-  exits=$(grep -c "$algorithm/$algorithm[0-9]* found the exit" "$LOG" || true)
-  echo "$algorithm: $exits/$TEAM_SIZE agents found the exit"
-done
+# Winner: most agents out, then the team whose last agent got out first.
+sed 's/\x1b\[[0-9;]*m//g' "$LOG" | awk -v team_size=3 -v teams="${ALGORITHMS[*]}" '
+  function seconds(ts,  t) { split(substr(ts, 12, 12), t, ":"); return t[1] * 3600 + t[2] * 60 + t[3] }
+  NR == 1 { start = seconds($1) }
+  / found the exit in / {
+    split($3, who, "/"); team = who[1]
+    exits[team]++; moves[team] += $(NF - 1); last[team] = seconds($1) - start
+  }
+  END {
+    n = split(teams, order, " ")
+    for (i = 1; i <= n; i++) {
+      t = order[i]
+      done = exits[t] ? sprintf(", last out at %.1fs, %d moves", last[t], moves[t]) : ""
+      printf "%s: %d/%d agents found the exit%s\n", t, exits[t], team_size, done
+      if (exits[t] > best || (exits[t] == best && exits[t] && last[t] < best_time)) {
+        best = exits[t]; best_time = last[t]; winner = t
+      }
+    }
+    if (winner) printf "Winner: %s\n", winner; else print "No team found the exit"
+  }'
