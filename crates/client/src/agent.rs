@@ -1,6 +1,7 @@
 use crate::data_structures::maze_graph::MazeGraph;
-use crate::instructions::{self, Algorithm, WallFollowerState};
+use crate::instructions::{self, Algorithm};
 use crate::maze_parser::{Player, maze_to_graph};
+use crate::solver::{Solver, Turn};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use shared::{
     errors::{GameError, GameResult},
@@ -43,12 +44,11 @@ pub struct Agent {
     name: String,
     graph: MazeGraph,
     player: Player,
-    algorithm: Algorithm,
+    solver: Box<dyn Solver>,
     secrets: TeamSecrets,
     challenge_modulo: Option<u128>,
     /// Cell an opponent recently held and turns left to route around it.
     avoid: Option<(Cell, u8)>,
-    wall_follower: WallFollowerState,
     /// The agent and its map as they will be once the server accepts the last move.
     pending: Option<Pending>,
     rng: StdRng,
@@ -57,22 +57,21 @@ pub struct Agent {
 struct Pending {
     player: Player,
     graph: MazeGraph,
-    wall_follower: WallFollowerState,
+    solver: Box<dyn Solver>,
 }
 
 impl Agent {
     pub fn new(name: String, algorithm: Algorithm, secrets: TeamSecrets, seed: u64) -> Self {
         Self {
-            name,
             graph: MazeGraph::new(),
             player: Player::new(),
-            algorithm,
+            solver: algorithm.solver(&name),
             secrets,
             challenge_modulo: None,
             avoid: None,
-            wall_follower: WallFollowerState::default(),
             pending: None,
             rng: StdRng::seed_from_u64(seed),
+            name,
         }
     }
 
@@ -116,26 +115,31 @@ impl Agent {
         let radar_view = extract_data(&decode_base64(&view.0));
 
         // A radar view after a move means the server accepted it.
-        if let Some(Pending { player, graph, wall_follower }) = self.pending.take() {
+        if let Some(Pending { player, graph, solver }) = self.pending.take() {
             self.player = player;
             self.graph = graph;
-            self.wall_follower = wall_follower;
+            self.solver = solver;
         }
         maze_to_graph(&radar_view, &self.player, &mut self.graph);
 
-        let mut next = Pending {
-            player: self.player.clone(),
-            graph: self.graph.clone(),
-            wall_follower: self.wall_follower.clone(),
-        };
+        let mut next = self.copy_state();
         let action = self.decide(&radar_view, &mut next);
         self.pending = Some(next);
         action
     }
 
-    /// Chooses the next move, updating `next` as if the server accepts it.
-    fn decide(&mut self, radar_view: &Radar, next: &mut Pending) -> Action {
-        let Pending { player, graph, wall_follower } = next;
+    fn copy_state(&self) -> Pending {
+        Pending {
+            player: self.player.clone(),
+            graph: self.graph.clone(),
+            solver: self.solver.clone(),
+        }
+    }
+
+    /// Chooses the next move, updating `next` as if the server accepts it. Steps every
+    /// solver needs (stepping aside, heading for a seen exit) come before the solver.
+    fn decide(&mut self, radar: &Radar, next: &mut Pending) -> Action {
+        let Pending { player, graph, solver } = next;
         // Right after a block, yield half the time so two agents blocking each other don't
         // retry in lockstep.
         let blocked = self
@@ -153,13 +157,7 @@ impl Agent {
             return action;
         }
 
-        match self.algorithm {
-            Algorithm::Tremeaux => instructions::tremeaux_solver(player, graph, avoid),
-            Algorithm::WallFollower => {
-                instructions::wall_follower_solver(radar_view, player, graph, wall_follower, avoid)
-            }
-            Algorithm::Alian => instructions::alian_solver(player, graph, &self.name),
-        }
+        solver.next_move(&mut Turn { player, graph, radar, avoid })
     }
 
     fn on_hint(&mut self, hint: Hint) -> Reply {
@@ -232,7 +230,7 @@ impl Agent {
 mod tests {
     use super::*;
     use crate::data_structures::maze_graph::CellStatus;
-    use shared::messages;
+    use shared::messages::{self, Direction};
     use shared::radar::CellType;
 
     fn agent(name: &str) -> Agent {
@@ -240,15 +238,27 @@ mod tests {
     }
 
     /// Chooses a move from the current map, as a radar view would.
-    fn propose_move(agent: &mut Agent) {
+    fn propose_move(agent: &mut Agent) -> Action {
         let radar = Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() };
-        let mut next = Pending {
-            player: agent.player.clone(),
-            graph: agent.graph.clone(),
-            wall_follower: agent.wall_follower.clone(),
-        };
-        agent.decide(&radar, &mut next);
+        let mut next = agent.copy_state();
+        let action = agent.decide(&radar, &mut next);
         agent.pending = Some(next);
+        action
+    }
+
+    /// Moves forward on its first turn and back after that, to show whether its state
+    /// survived.
+    #[derive(Clone, Default)]
+    struct CountingSolver {
+        turns: u32,
+    }
+
+    impl Solver for CountingSolver {
+        fn next_move(&mut self, _: &mut Turn) -> Action {
+            self.turns += 1;
+            let direction = if self.turns == 1 { Direction::Front } else { Direction::Back };
+            Action::MoveTo(direction)
+        }
     }
 
     fn answer(reply: Reply) -> String {
@@ -282,7 +292,7 @@ mod tests {
         agent.pending = Some(Pending {
             player: moved,
             graph: agent.graph.clone(),
-            wall_follower: WallFollowerState::default(),
+            solver: agent.solver.clone(),
         });
 
         agent.on_message(Message::ActionError(ActionError::CannotPassThroughOpponent)).unwrap();
@@ -322,14 +332,14 @@ mod tests {
     }
 
     #[test]
-    fn test_rejected_move_does_not_count_as_wall_follower_loop() {
-        let mut agent =
-            Agent::new("Player1".into(), Algorithm::WallFollower, TeamSecrets::default(), 0);
+    fn test_rejected_move_rolls_back_the_solver_state() {
+        let mut agent = agent("Player1");
+        agent.solver = Box::new(CountingSolver::default());
         propose_move(&mut agent);
 
         agent.on_message(Message::ActionError(ActionError::CannotPassThroughWall)).unwrap();
 
-        assert!(agent.wall_follower.seen.is_empty());
+        assert_eq!(propose_move(&mut agent), Action::MoveTo(Direction::Front));
     }
 
     #[test]
@@ -385,7 +395,7 @@ mod tests {
         agent.pending = Some(Pending {
             player: turned,
             graph: agent.graph.clone(),
-            wall_follower: WallFollowerState::default(),
+            solver: agent.solver.clone(),
         });
 
         agent.on_message(Message::Hint(Hint::RelativeCompass { angle: 90.0 })).unwrap();

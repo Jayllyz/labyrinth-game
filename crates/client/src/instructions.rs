@@ -270,7 +270,7 @@ pub fn yield_to_opponent(
 /// Where a wall follower has already been, to notice when it circles a loop of walls.
 #[derive(Default, Clone)]
 pub struct WallFollowerState {
-    pub(crate) seen: HashSet<(Cell, Direction)>,
+    seen: HashSet<(Cell, Direction)>,
     looping: bool,
 }
 
