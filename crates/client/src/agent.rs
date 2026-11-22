@@ -96,7 +96,7 @@ impl Agent {
             Message::SubscribePlayerResult(SubscribePlayerResult::Err(err)) => {
                 Err(GameError::AgentSubscriptionError(format!("{err:?}")))
             }
-            Message::RadarView(view) => self.on_radar_view(&view).map(Reply::action),
+            Message::RadarView(view) => Ok(Reply::action(self.on_radar_view(&view))),
             Message::Hint(hint) => Ok(self.on_hint(hint)),
             Message::Challenge(challenge) => {
                 let log = Some((LogLevel::Debug, format!("{challenge:?}")));
@@ -112,9 +112,8 @@ impl Agent {
         }
     }
 
-    fn on_radar_view(&mut self, view: &RadarView) -> GameResult<Action> {
-        let radar_view = extract_data(&decode_base64(&view.0))
-            .map_err(|e| GameError::MessageError(format!("Failed to decode radar view: {e}")))?;
+    fn on_radar_view(&mut self, view: &RadarView) -> Action {
+        let radar_view = extract_data(&decode_base64(&view.0));
 
         // A radar view after a move means the server accepted it.
         if let Some(Pending { player, graph, wall_follower }) = self.pending.take() {
@@ -131,7 +130,7 @@ impl Agent {
         };
         let action = self.decide(&radar_view, &mut next);
         self.pending = Some(next);
-        Ok(action)
+        action
     }
 
     /// Chooses the next move, updating `next` as if the server accepts it.

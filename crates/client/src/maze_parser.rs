@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn test_maze_to_graph() {
         let decoded = radar::decode_base64("Hjeikcyc/W8a8pa");
-        let data = radar::extract_data(&decoded).unwrap();
+        let data = radar::extract_data(&decoded);
 
         let mut p = Player {
             position: Cell { row: 0, column: 0 },
@@ -344,7 +344,7 @@ mod tests {
         p.position = p.position + Cell { row: 1, column: 0 };
 
         let decoded = radar::decode_base64("kOuczzGa//apaaa");
-        let data = radar::extract_data(&decoded).unwrap();
+        let data = radar::extract_data(&decoded);
         maze_to_graph(&data, &p, &mut m);
     }
 
