@@ -320,7 +320,14 @@ impl Tui {
                         .block(Block::default().borders(Borders::ALL).title("Maze"));
                     f.render_widget(maze_widget, content_chunks[0]);
 
-                    let log_height = content_chunks[1].height.saturating_sub(2) as usize;
+                    let side_chunks = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([
+                            Constraint::Min(3),
+                            Constraint::Length(Self::legend_lines().len() as u16 + 2),
+                        ])
+                        .split(content_chunks[1]);
+                    let log_height = side_chunks[0].height.saturating_sub(2) as usize;
                     let log_lines: Vec<Line> = logs
                         .iter()
                         .rev()
@@ -342,7 +349,12 @@ impl Tui {
 
                     let logs_widget = Paragraph::new(log_lines)
                         .block(Block::default().borders(Borders::ALL).title("Logs"));
-                    f.render_widget(logs_widget, content_chunks[1]);
+                    f.render_widget(logs_widget, side_chunks[0]);
+
+                    let legend = Self::legend_lines();
+                    let legend_widget = Paragraph::new(legend)
+                        .block(Block::default().borders(Borders::ALL).title("Legend"));
+                    f.render_widget(legend_widget, side_chunks[1]);
                 }
 
                 if let Some((found, total)) = result {
@@ -484,6 +496,31 @@ impl Tui {
             },
         };
         Span::styled(symbol, style)
+    }
+
+    /// One line per maze symbol, drawn with the same functions as the maze.
+    fn legend_lines() -> Vec<Line<'static>> {
+        let cell = |cell_type: CellType, status: CellStatus| {
+            let mut cell = MazeCell::new(cell_type);
+            cell.status = status;
+            Self::render_cell(&cell)
+        };
+        let entries = [
+            (Self::player_span(&shared::messages::Direction::Back), "Agent, arrow = heading"),
+            (cell(CellType::OBJECTIVE, CellStatus::NotVisited), "Exit"),
+            (cell(CellType::ObjectiveEnemy, CellStatus::NotVisited), "Exit + opponent"),
+            (cell(CellType::HELP, CellStatus::NotVisited), "Hint"),
+            (cell(CellType::ALLY, CellStatus::NotVisited), "Teammate"),
+            (cell(CellType::ENEMY, CellStatus::NotVisited), "Opponent"),
+            (cell(CellType::MONSTER, CellStatus::NotVisited), "Monster"),
+            (cell(CellType::NOTHING, CellStatus::VISITED), "Visited"),
+            (cell(CellType::NOTHING, CellStatus::DeadEnd), "Dead end"),
+            (Span::styled(" │ ", Style::default().fg(Color::DarkGray)), "Wall"),
+        ];
+        entries
+            .into_iter()
+            .map(|(symbol, label)| Line::from(vec![symbol, Span::raw(" "), Span::raw(label)]))
+            .collect()
     }
 
     /// The agent, pointing where it heads. Screen columns follow the graph's columns and
@@ -848,6 +885,15 @@ mod tests {
         assert!(text.contains("Player2 ✓"));
         assert!(!text.contains("Player1 ✓"));
         assert!(text.find("Player1").unwrap() < text.find("Player2").unwrap());
+    }
+
+    #[test]
+    fn test_legend_explains_maze_symbols() {
+        let text = rendered_text(false, &[]);
+        assert!(text.contains("Legend"));
+        for label in ["Agent", "Exit", "Exit + opponent", "Visited", "Dead end", "Hint"] {
+            assert!(text.contains(label), "missing {label}");
+        }
     }
 
     #[test]
