@@ -1,7 +1,8 @@
 use crate::data_structures::maze_graph::{CellStatus, MazeGraph};
+use crate::heading::Heading;
 use crate::maze_parser::Player;
 use shared::maze::Cell;
-use shared::messages::{self, Direction};
+use shared::messages;
 use shared::radar::{CellType, Passages, Radar};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
@@ -170,8 +171,11 @@ fn toward_exit(from: Cell, neighbors: &BTreeSet<Cell>, exit_bearing: Option<f32>
         return cells;
     };
     cells.sort_by_cached_key(|cell| {
-        let (rows, columns) = ((cell.row - from.row) as f32, (cell.column - from.column) as f32);
-        let diff = (rows.atan2(-columns).to_degrees() - bearing).rem_euclid(360.0);
+        let delta = Cell { row: cell.row - from.row, column: cell.column - from.column };
+        let Some(heading) = Heading::from_delta(delta) else {
+            return u32::MAX;
+        };
+        let diff = (heading.degrees() - bearing).rem_euclid(360.0);
         diff.min(360.0 - diff) as u32
     });
     cells
@@ -270,7 +274,7 @@ pub fn yield_to_opponent(
 /// Where a wall follower has already been, to notice when it circles a loop of walls.
 #[derive(Default, Clone)]
 pub struct WallFollowerState {
-    seen: HashSet<(Cell, Direction)>,
+    seen: HashSet<(Cell, Heading)>,
     looping: bool,
 }
 
@@ -284,7 +288,7 @@ pub fn wall_follower_solver(
     state: &mut WallFollowerState,
     avoid: Option<Cell>,
 ) -> messages::Action {
-    if !state.looping && !state.seen.insert((player.position, player.direction.clone())) {
+    if !state.looping && !state.seen.insert((player.position, player.heading)) {
         state.looping = true;
     }
     if state.looping {
@@ -300,7 +304,7 @@ pub fn right_hand_solver(radar_view: &Radar, player: &mut Player) -> messages::A
         && *vertical == Passages::OPEN
     {
         messages = messages::Action::MoveTo(messages::Direction::Right);
-        player.turn_right();
+        player.turn(messages::Direction::Right);
         player.move_forward();
         return messages;
     }
@@ -317,7 +321,7 @@ pub fn right_hand_solver(radar_view: &Radar, player: &mut Player) -> messages::A
         && *vertical == Passages::OPEN
     {
         messages = messages::Action::MoveTo(messages::Direction::Left);
-        player.turn_left();
+        player.turn(messages::Direction::Left);
         player.move_forward();
         return messages;
     }
@@ -326,7 +330,7 @@ pub fn right_hand_solver(radar_view: &Radar, player: &mut Player) -> messages::A
         && *horizontal == Passages::OPEN
     {
         messages = messages::Action::MoveTo(messages::Direction::Back);
-        player.turn_back();
+        player.turn(messages::Direction::Back);
         player.move_forward();
         return messages;
     }
@@ -502,7 +506,7 @@ mod tests {
     fn test_wall_follower_switches_to_tremeaux_when_back_where_it_was() {
         let (mut player, mut graph) = graph_around_player(&[SIDE], BEHIND);
         let mut state = WallFollowerState::default();
-        state.seen.insert((CURRENT, player.direction.clone()));
+        state.seen.insert((CURRENT, player.heading));
         let no_walls_known =
             Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() };
 
@@ -583,7 +587,7 @@ mod tests {
 
         let action = yield_to_opponent(&mut player, &mut graph, BLOCKED);
 
-        assert_eq!(action, Some(messages::Action::MoveTo(Direction::Back)));
+        assert_eq!(action, Some(messages::Action::MoveTo(messages::Direction::Back)));
         assert_eq!(player.position, BEHIND);
         assert_eq!(graph.get_cell_status(CURRENT), CellStatus::NotVisited);
     }
@@ -594,7 +598,7 @@ mod tests {
 
         let action = yield_to_opponent(&mut player, &mut graph, BLOCKED);
 
-        assert_eq!(action, Some(messages::Action::MoveTo(Direction::Right)));
+        assert_eq!(action, Some(messages::Action::MoveTo(messages::Direction::Right)));
         assert_eq!(player.position, SIDE);
         // Backtracking from the side cell must lead back here, without rewriting our parent.
         assert_eq!(graph.get_cell(SIDE).map(|c| c.parent), Some(CURRENT));
