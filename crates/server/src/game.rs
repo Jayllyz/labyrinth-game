@@ -31,6 +31,11 @@ pub struct Player {
     pub exited: bool,
     /// Disconnected before reaching the exit.
     pub left: bool,
+    /// The last secret hint received, counted in the team's challenge answers.
+    pub secret: Option<u128>,
+    /// The modulo of the challenge to solve before moving again.
+    pub challenge: Option<u128>,
+    pub got_grid_size: bool,
 }
 
 impl Player {
@@ -58,12 +63,37 @@ impl Game {
     }
 
     pub fn add_player(&mut self, team: usize, position: Position, heading: Heading) -> usize {
-        self.players.push(Player { team, position, heading, moves: 0, exited: false, left: false });
+        self.players.push(Player {
+            team,
+            position,
+            heading,
+            moves: 0,
+            exited: false,
+            left: false,
+            secret: None,
+            challenge: None,
+            got_grid_size: false,
+        });
         self.players.len() - 1
     }
 
     pub fn player(&self, id: usize) -> &Player {
         &self.players[id]
+    }
+
+    pub fn player_mut(&mut self, id: usize) -> &mut Player {
+        &mut self.players[id]
+    }
+
+    /// The sum of the team's secrets modulo `modulo`; a member without a secret adds nothing.
+    pub fn team_secret_sum(&self, team: usize, modulo: u128) -> u128 {
+        self.players
+            .iter()
+            .filter(|p| p.team == team)
+            .filter_map(|p| p.secret)
+            .map(|secret| secret % modulo)
+            .sum::<u128>()
+            % modulo
     }
 
     /// Counts an action that is not a move, such as a challenge answer, in the score.
@@ -78,7 +108,8 @@ impl Game {
 
     /// Cells where a new player may start.
     pub fn free_cells(&self) -> Vec<Position> {
-        let (width, height) = ((self.maze.col_len / 2) as i16, (self.maze.row_len / 2) as i16);
+        let (width, height) = self.size();
+        let (width, height) = (width as i16, height as i16);
         (0..height)
             .flat_map(|y| (0..width).map(move |x| Position { x, y }))
             .filter(|&cell| self.is_free(cell))
@@ -219,9 +250,8 @@ impl Game {
     }
 
     fn contains(&self, position: Position) -> bool {
-        let width = (self.maze.col_len / 2) as i16;
-        let height = (self.maze.row_len / 2) as i16;
-        (0..width).contains(&position.x) && (0..height).contains(&position.y)
+        let (width, height) = self.size();
+        (0..width as i16).contains(&position.x) && (0..height as i16).contains(&position.y)
     }
 
     /// Whether two neighboring cells are joined; leaving the maze never is.

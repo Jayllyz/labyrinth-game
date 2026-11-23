@@ -56,15 +56,6 @@ const SECRET_ODDS: f64 = 0.012;
 const COMPASS_ODDS: f64 = 0.012;
 const CHALLENGE_ODDS: f64 = 0.001;
 
-/// What the server remembers about a player beyond the board.
-#[derive(Default)]
-struct Extras {
-    secret: Option<u128>,
-    /// The modulo of the challenge the player must solve before moving again.
-    challenge: Option<u128>,
-    got_grid_size: bool,
-}
-
 type ServerResult<T> = Result<T, RegistrationError>;
 
 /// One game: the board, and which player and team each name stands for.
@@ -73,8 +64,6 @@ struct Match {
     rng: StdRng,
     players: HashMap<String, usize>,
     team_names: Vec<String>,
-    /// Indexed by player id.
-    extras: Vec<Extras>,
     /// Players who joined, with their team, until the game starts and places them.
     waiting: Vec<(String, String)>,
     first_join: Option<Instant>,
@@ -93,7 +82,6 @@ impl Match {
             rng,
             players: HashMap::new(),
             team_names: Vec::new(),
-            extras: Vec::new(),
             waiting: Vec::new(),
             first_join: None,
             started: false,
@@ -121,7 +109,6 @@ impl Match {
         let free = self.game.free_cells();
         let position = free[self.rng.random_range(0..free.len())];
         let id = self.game.add_player(team, position, Heading::North);
-        self.extras.push(Extras::default());
         self.players.insert(name.to_string(), id);
         id
     }
@@ -139,7 +126,7 @@ impl Match {
     }
 
     fn move_player(&mut self, id: usize, direction: Direction) -> (Vec<Message>, bool) {
-        if self.extras[id].challenge.is_some() {
+        if self.game.player(id).challenge.is_some() {
             return (vec![Message::ActionError(ActionError::SolveChallengeFirst)], false);
         }
         match self.game.apply_move(id, direction) {
@@ -158,7 +145,7 @@ impl Match {
         }
         if self.rng.random_bool(CHALLENGE_ODDS) {
             let modulo = self.rng.random_range(2..=1000);
-            self.extras[id].challenge = Some(modulo);
+            self.game.player_mut(id).challenge = Some(modulo);
             replies.push(Message::Challenge(Challenge::SecretSumModulo(modulo)));
         } else {
             replies.push(self.view(id));
@@ -167,14 +154,14 @@ impl Match {
     }
 
     fn hint(&mut self, id: usize) -> Option<Hint> {
-        if !self.extras[id].got_grid_size {
-            self.extras[id].got_grid_size = true;
+        if !self.game.player(id).got_grid_size {
+            self.game.player_mut(id).got_grid_size = true;
             let (columns, rows) = self.game.size();
             return Some(Hint::GridSize { columns, rows });
         }
         if self.rng.random_bool(SECRET_ODDS) {
             let secret = self.rng.random::<u64>().into();
-            self.extras[id].secret = Some(secret);
+            self.game.player_mut(id).secret = Some(secret);
             return Some(Hint::Secret(secret));
         }
         self.rng
@@ -182,25 +169,16 @@ impl Match {
             .then(|| Hint::RelativeCompass { angle: self.game.exit_bearing(id) })
     }
 
-    /// Checks the answer against the sum of the team's secrets; a teammate without a
-    /// secret adds nothing.
     fn solve(&mut self, id: usize, answer: &str) -> Vec<Message> {
-        let Some(modulo) = self.extras[id].challenge else {
+        let Some(modulo) = self.game.player(id).challenge else {
             return vec![Message::ActionError(ActionError::NoRunningChallenge), self.view(id)];
         };
         self.game.count_action(id);
-        let team = self.game.player(id).team;
-        let expected = self
-            .game
-            .players()
-            .zip(&self.extras)
-            .filter(|(player, _)| player.team == team)
-            .filter_map(|(_, extras)| extras.secret)
-            .fold(0, |sum, secret| (sum + secret % modulo) % modulo);
+        let expected = self.game.team_secret_sum(self.game.player(id).team, modulo);
         if answer.trim().parse::<u128>().ok() != Some(expected) {
             return vec![Message::ActionError(ActionError::InvalidChallengeSolution)];
         }
-        self.extras[id].challenge = None;
+        self.game.player_mut(id).challenge = None;
         vec![self.view(id)]
     }
 
@@ -637,15 +615,15 @@ mod tests {
         let mut game = Match::new(&ServerConfig { width: 8, height: 8, ..ServerConfig::default() });
         game.waiting = vec![("a".into(), "A".into()), ("b".into(), "A".into())];
         game.start();
-        game.extras[0].challenge = Some(modulo);
+        game.game.player_mut(0).challenge = Some(modulo);
         game
     }
 
     #[test]
     fn test_challenge_must_be_solved_before_moving() {
         let mut game = game_in_challenge(10);
-        game.extras[0].secret = Some(11);
-        game.extras[1].secret = Some(32);
+        game.game.player_mut(0).secret = Some(11);
+        game.game.player_mut(1).secret = Some(32);
 
         let (replies, _) = game.act(0, Action::MoveTo(Direction::Front));
         assert!(matches!(replies[..], [Message::ActionError(ActionError::SolveChallengeFirst)]));
@@ -658,13 +636,13 @@ mod tests {
 
         let (replies, _) = game.act(0, Action::SolveChallenge { answer: "3".into() });
         assert!(matches!(replies.last(), Some(Message::RadarView(_))));
-        assert_eq!(game.extras[0].challenge, None);
+        assert_eq!(game.game.player_mut(0).challenge, None);
     }
 
     #[test]
     fn test_teammate_without_secret_counts_as_zero() {
         let mut game = game_in_challenge(7);
-        game.extras[0].secret = Some(9);
+        game.game.player_mut(0).secret = Some(9);
 
         let (replies, _) = game.act(0, Action::SolveChallenge { answer: "2".into() });
 
