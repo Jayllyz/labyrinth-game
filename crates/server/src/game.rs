@@ -31,6 +31,10 @@ pub struct Player {
     pub exited: bool,
     /// Disconnected before reaching the exit.
     pub left: bool,
+    /// The last secret hint received, counted in the team's challenge answers.
+    pub secret: Option<u128>,
+    /// The modulo of the challenge to solve before moving again.
+    pub challenge: Option<u128>,
 }
 
 impl Player {
@@ -58,12 +62,41 @@ impl Game {
     }
 
     pub fn add_player(&mut self, team: usize, position: Position, heading: Heading) -> usize {
-        self.players.push(Player { team, position, heading, moves: 0, exited: false, left: false });
+        self.players.push(Player {
+            team,
+            position,
+            heading,
+            moves: 0,
+            exited: false,
+            left: false,
+            secret: None,
+            challenge: None,
+        });
         self.players.len() - 1
     }
 
     pub fn player(&self, id: usize) -> &Player {
         &self.players[id]
+    }
+
+    pub fn player_mut(&mut self, id: usize) -> &mut Player {
+        &mut self.players[id]
+    }
+
+    /// The sum of the team's secrets modulo `modulo`; a member without a secret adds nothing.
+    pub fn team_secret_sum(&self, team: usize, modulo: u128) -> u128 {
+        self.players
+            .iter()
+            .filter(|p| p.team == team)
+            .filter_map(|p| p.secret)
+            .map(|secret| secret % modulo)
+            .sum::<u128>()
+            % modulo
+    }
+
+    /// Counts an action that is not a move, such as a challenge answer, in the score.
+    pub fn count_action(&mut self, id: usize) {
+        self.players[id].moves += 1;
     }
 
     /// Takes a disconnected player off the board, so it blocks nobody.
@@ -73,7 +106,8 @@ impl Game {
 
     /// Cells where a new player may start.
     pub fn free_cells(&self) -> Vec<Position> {
-        let (width, height) = ((self.maze.col_len / 2) as i16, (self.maze.row_len / 2) as i16);
+        let (width, height) = self.size();
+        let (width, height) = (width as i16, height as i16);
         (0..height)
             .flat_map(|y| (0..width).map(move |x| Position { x, y }))
             .filter(|&cell| self.is_free(cell))
@@ -109,6 +143,19 @@ impl Game {
         player.moves += 1;
         player.exited = target == self.exit;
         Ok(if player.exited { Moved::Exited } else { Moved::Stepped })
+    }
+
+    /// The angle to the exit in degrees, clockwise from the player's heading.
+    pub fn exit_bearing(&self, id: usize) -> f32 {
+        let me = &self.players[id];
+        let (dx, dy) =
+            (f32::from(self.exit.x - me.position.x), f32::from(self.exit.y - me.position.y));
+        (dx.atan2(-dy).to_degrees() - me.heading.degrees()).rem_euclid(360.0)
+    }
+
+    /// The maze size in cells.
+    pub fn size(&self) -> (u32, u32) {
+        ((self.maze.col_len / 2) as u32, (self.maze.row_len / 2) as u32)
     }
 
     /// The encoded 3x3 view around a player, its heading at the top.
@@ -201,9 +248,8 @@ impl Game {
     }
 
     fn contains(&self, position: Position) -> bool {
-        let width = (self.maze.col_len / 2) as i16;
-        let height = (self.maze.row_len / 2) as i16;
-        (0..width).contains(&position.x) && (0..height).contains(&position.y)
+        let (width, height) = self.size();
+        (0..width as i16).contains(&position.x) && (0..height as i16).contains(&position.y)
     }
 
     /// Whether two neighboring cells are joined; leaving the maze never is.
@@ -283,6 +329,18 @@ mod tests {
         game.leave(gone);
 
         assert_eq!(game.apply_move(id, Direction::Front), Ok(Moved::Stepped));
+    }
+
+    #[test]
+    fn test_exit_bearing_is_clockwise_from_the_heading() {
+        let mut game = corridor();
+        let north = game.add_player(0, Position { x: 0, y: 0 }, Heading::North);
+        let east = game.add_player(0, Position { x: 0, y: 0 }, Heading::East);
+        let west = game.add_player(0, Position { x: 0, y: 0 }, Heading::West);
+
+        assert_eq!(game.exit_bearing(north), 90.0);
+        assert_eq!(game.exit_bearing(east), 0.0);
+        assert_eq!(game.exit_bearing(west), 180.0);
     }
 
     #[test]

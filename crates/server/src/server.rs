@@ -4,8 +4,9 @@ use shared::errors::{GameError, GameResult};
 use shared::heading::Heading;
 use shared::maze::{GeneratorAlgorithm, Maze};
 use shared::messages::{
-    Action, ActionError, Client, Message, MessageError, RadarView, RegisterTeamResult,
-    RegistrationError, SubscribePlayerResult, Teams, receive_message, send_message,
+    Action, ActionError, Challenge, Client, Direction, Hint, Message, MessageError, RadarView,
+    RegisterTeamResult, RegistrationError, SubscribePlayerResult, Teams, receive_message,
+    send_message,
 };
 use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
@@ -49,6 +50,12 @@ pub struct GameServer {
     /// The game, and the signal that wakes players waiting for it to start.
     game: Arc<(Mutex<Match>, Condvar)>,
 }
+
+/// Odds per move of each random message, close to what the reference server sends.
+const SECRET_ODDS: f64 = 0.012;
+const COMPASS_ODDS: f64 = 0.012;
+const GRID_SIZE_ODDS: f64 = 0.001;
+const CHALLENGE_ODDS: f64 = 0.001;
 
 type ServerResult<T> = Result<T, RegistrationError>;
 
@@ -113,18 +120,66 @@ impl Match {
 
     /// The messages that answer a player's action, and whether it reached the exit.
     fn act(&mut self, id: usize, action: Action) -> (Vec<Message>, bool) {
-        let Action::MoveTo(direction) = action else {
-            return (
-                vec![Message::ActionError(ActionError::NoRunningChallenge), self.view(id)],
-                false,
-            );
-        };
+        match action {
+            Action::MoveTo(direction) => self.move_player(id, direction),
+            Action::SolveChallenge { answer } => (self.solve(id, &answer), false),
+        }
+    }
+
+    fn move_player(&mut self, id: usize, direction: Direction) -> (Vec<Message>, bool) {
+        if self.game.player(id).challenge.is_some() {
+            return (vec![Message::ActionError(ActionError::SolveChallengeFirst)], false);
+        }
         match self.game.apply_move(id, direction) {
-            Ok(Moved::Stepped) => (vec![self.view(id)], false),
+            Ok(Moved::Stepped) => (self.after_move(id), false),
             // The reference server shows the exit under the player once more before closing.
             Ok(Moved::Exited) => (vec![self.view(id)], true),
             Err(err) => (vec![Message::ActionError(err), self.view(id)], false),
         }
+    }
+
+    /// The optional hint, then the view or a new challenge that replaces it.
+    fn after_move(&mut self, id: usize) -> Vec<Message> {
+        let mut replies = Vec::new();
+        if let Some(hint) = self.hint(id) {
+            replies.push(Message::Hint(hint));
+        }
+        if self.rng.random_bool(CHALLENGE_ODDS) {
+            let modulo = self.rng.random_range(2..=1000);
+            self.game.player_mut(id).challenge = Some(modulo);
+            replies.push(Message::Challenge(Challenge::SecretSumModulo(modulo)));
+        } else {
+            replies.push(self.view(id));
+        }
+        replies
+    }
+
+    fn hint(&mut self, id: usize) -> Option<Hint> {
+        if self.rng.random_bool(GRID_SIZE_ODDS) {
+            let (columns, rows) = self.game.size();
+            return Some(Hint::GridSize { columns, rows });
+        }
+        if self.rng.random_bool(SECRET_ODDS) {
+            let secret = self.rng.random::<u64>().into();
+            self.game.player_mut(id).secret = Some(secret);
+            return Some(Hint::Secret(secret));
+        }
+        self.rng
+            .random_bool(COMPASS_ODDS)
+            .then(|| Hint::RelativeCompass { angle: self.game.exit_bearing(id) })
+    }
+
+    fn solve(&mut self, id: usize, answer: &str) -> Vec<Message> {
+        let Some(modulo) = self.game.player(id).challenge else {
+            return vec![Message::ActionError(ActionError::NoRunningChallenge), self.view(id)];
+        };
+        self.game.count_action(id);
+        let expected = self.game.team_secret_sum(self.game.player(id).team, modulo);
+        if answer.trim().parse::<u128>().ok() != Some(expected) {
+            return vec![Message::ActionError(ActionError::InvalidChallengeSolution)];
+        }
+        self.game.player_mut(id).challenge = None;
+        vec![self.view(id)]
     }
 
     /// Logs the team's score once its last member is out.
@@ -553,6 +608,45 @@ mod tests {
             server.register_client(create_test_client("a2", &token)),
             SubscribePlayerResult::Err(_)
         ));
+    }
+
+    /// A started game with two teammates, the first one in a challenge.
+    fn game_in_challenge(modulo: u128) -> Match {
+        let mut game = Match::new(&ServerConfig { width: 8, height: 8, ..ServerConfig::default() });
+        game.waiting = vec![("a".into(), "A".into()), ("b".into(), "A".into())];
+        game.start();
+        game.game.player_mut(0).challenge = Some(modulo);
+        game
+    }
+
+    #[test]
+    fn test_challenge_must_be_solved_before_moving() {
+        let mut game = game_in_challenge(10);
+        game.game.player_mut(0).secret = Some(11);
+        game.game.player_mut(1).secret = Some(32);
+
+        let (replies, _) = game.act(0, Action::MoveTo(Direction::Front));
+        assert!(matches!(replies[..], [Message::ActionError(ActionError::SolveChallengeFirst)]));
+
+        let (replies, _) = game.act(0, Action::SolveChallenge { answer: "4".into() });
+        assert!(matches!(
+            replies[..],
+            [Message::ActionError(ActionError::InvalidChallengeSolution)]
+        ));
+
+        let (replies, _) = game.act(0, Action::SolveChallenge { answer: "3".into() });
+        assert!(matches!(replies.last(), Some(Message::RadarView(_))));
+        assert_eq!(game.game.player_mut(0).challenge, None);
+    }
+
+    #[test]
+    fn test_teammate_without_secret_counts_as_zero() {
+        let mut game = game_in_challenge(7);
+        game.game.player_mut(0).secret = Some(9);
+
+        let (replies, _) = game.act(0, Action::SolveChallenge { answer: "2".into() });
+
+        assert!(matches!(replies.last(), Some(Message::RadarView(_))));
     }
 
     #[test]
