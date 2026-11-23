@@ -66,6 +66,11 @@ impl Game {
         &self.players[id]
     }
 
+    /// Counts an action that is not a move, such as a challenge answer, in the score.
+    pub fn count_action(&mut self, id: usize) {
+        self.players[id].moves += 1;
+    }
+
     /// Takes a disconnected player off the board, so it blocks nobody.
     pub fn leave(&mut self, id: usize) {
         self.players[id].left = true;
@@ -109,6 +114,19 @@ impl Game {
         player.moves += 1;
         player.exited = target == self.exit;
         Ok(if player.exited { Moved::Exited } else { Moved::Stepped })
+    }
+
+    /// The angle to the exit in degrees, clockwise from the player's heading.
+    pub fn exit_bearing(&self, id: usize) -> f32 {
+        let me = &self.players[id];
+        let (dx, dy) =
+            (f32::from(self.exit.x - me.position.x), f32::from(self.exit.y - me.position.y));
+        (dx.atan2(-dy).to_degrees() - me.heading.degrees()).rem_euclid(360.0)
+    }
+
+    /// The maze size in cells.
+    pub fn size(&self) -> (u32, u32) {
+        ((self.maze.col_len / 2) as u32, (self.maze.row_len / 2) as u32)
     }
 
     /// The encoded 3x3 view around a player, its heading at the top.
@@ -283,6 +301,18 @@ mod tests {
         game.leave(gone);
 
         assert_eq!(game.apply_move(id, Direction::Front), Ok(Moved::Stepped));
+    }
+
+    #[test]
+    fn test_exit_bearing_is_clockwise_from_the_heading() {
+        let mut game = corridor();
+        let north = game.add_player(0, Position { x: 0, y: 0 }, Heading::North);
+        let east = game.add_player(0, Position { x: 0, y: 0 }, Heading::East);
+        let west = game.add_player(0, Position { x: 0, y: 0 }, Heading::West);
+
+        assert_eq!(game.exit_bearing(north), 90.0);
+        assert_eq!(game.exit_bearing(east), 0.0);
+        assert_eq!(game.exit_bearing(west), 180.0);
     }
 
     #[test]
