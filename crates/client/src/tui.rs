@@ -413,7 +413,7 @@ impl Tui {
 
         let total_cells = cells.len();
         let visited_cells =
-            cells.values().filter(|cell| cell.status == CellStatus::VISITED).count();
+            cells.values().filter(|cell| cell.status == CellStatus::Visited).count();
         let dead_ends = cells.values().filter(|cell| cell.status == CellStatus::DeadEnd).count();
         let not_visited =
             cells.values().filter(|cell| cell.status == CellStatus::NotVisited).count();
@@ -511,7 +511,7 @@ impl Tui {
             CellType::ENEMY => (" ● ", Style::default().fg(Color::Red)),
             CellType::MONSTER => (" M ", Style::default().fg(Color::Magenta)),
             _ => match cell.status {
-                CellStatus::VISITED => (" · ", Style::default().fg(Color::Blue)),
+                CellStatus::Visited => (" · ", Style::default().fg(Color::Blue)),
                 CellStatus::DeadEnd => (" × ", Style::default().fg(Color::DarkGray)),
                 CellStatus::NotVisited => ("   ", Style::default()),
             },
@@ -534,7 +534,7 @@ impl Tui {
             (cell(CellType::ALLY, CellStatus::NotVisited), "Teammate"),
             (cell(CellType::ENEMY, CellStatus::NotVisited), "Opponent"),
             (cell(CellType::MONSTER, CellStatus::NotVisited), "Monster"),
-            (cell(CellType::NOTHING, CellStatus::VISITED), "Visited"),
+            (cell(CellType::NOTHING, CellStatus::Visited), "Visited"),
             (cell(CellType::NOTHING, CellStatus::DeadEnd), "Dead end"),
             (Span::styled(" │ ", Style::default().fg(Color::DarkGray)), "Wall"),
         ];

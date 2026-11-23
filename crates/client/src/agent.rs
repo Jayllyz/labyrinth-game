@@ -325,7 +325,7 @@ mod tests {
         let parent = Cell { row: 0, column: 1 };
         for cell in [current, parent] {
             agent.graph.add(cell, CellType::NOTHING);
-            agent.graph.update_cell_status(cell, CellStatus::VISITED);
+            agent.graph.update_cell_status(cell, CellStatus::Visited);
         }
         agent.graph.add_neighbor(&current, &parent);
         agent.graph.add_neighbor(&parent, &current);
@@ -335,7 +335,7 @@ mod tests {
         agent.on_message(Message::ActionError(ActionError::CannotPassThroughOpponent)).unwrap();
 
         assert_eq!(agent.player.position, current);
-        assert_eq!(agent.graph.get_cell_status(current), CellStatus::VISITED);
+        assert_eq!(agent.graph.get_cell_status(current), Some(CellStatus::Visited));
     }
 
     #[test]
