@@ -119,15 +119,10 @@ impl MazeGraph {
         }
     }
 
-    pub fn set_visited(&self, position: Cell, thread_name: &str) {
-        if let Some(cell) = self.cell_map.get(&position) {
-            let mut visited = cell.visited_by.clone();
-
-            if let Some(count) = visited.get_mut(thread_name) {
-                *count += 1;
-            } else {
-                visited.insert(thread_name.to_string(), 1);
-            }
+    pub fn set_visited(&mut self, position: Cell, thread_name: &str) {
+        if let Some(cell) = self.cell_map.get_mut(&position) {
+            let count = cell.visited_by.entry(thread_name.to_string()).or_insert(0);
+            *count = count.saturating_add(1);
         }
     }
 }
@@ -145,6 +140,18 @@ mod test {
         let d: Cell = Cell { row: -1, column: 1 };
         f.insert(c);
         assert!(f.contains(&d));
+    }
+
+    #[test]
+    fn test_set_visited_counts_each_agent_visit() {
+        let mut maze_graph = MazeGraph::new();
+        let cell = Cell { row: 0, column: 0 };
+        maze_graph.add(cell, CellType::NOTHING);
+
+        maze_graph.set_visited(cell, "a");
+        maze_graph.set_visited(cell, "a");
+
+        assert_eq!(maze_graph.cell_map[&cell].visited_by.get("a"), Some(&2));
     }
 
     #[test]
