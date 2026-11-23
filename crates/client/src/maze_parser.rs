@@ -5,7 +5,7 @@ use shared::{
     radar::{CellType, Passages, Radar},
 };
 
-use crate::data_structures::maze_graph::MazeGraph;
+use crate::data_structures::maze_graph::{MazeGraph, Side};
 use shared::heading::Heading;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -75,8 +75,17 @@ pub fn maze_to_graph(radar_view: &Radar, player: &Player, maze_graph: &mut MazeG
             maze_graph.add(cell_pos, radar_view.cells[cell_id].clone());
         }
 
-        let walls = get_cell_walls(cell_id, &radar_view.horizontal, &radar_view.vertical);
-        maze_graph.update_walls(cell_pos, walls as usize);
+        for side in Heading::CLOCKWISE {
+            let known = match passage(cell_id, side, &radar_view.horizontal, &radar_view.vertical) {
+                Passages::OPEN => Side::Open,
+                Passages::WALL => Side::Wall,
+                Passages::UNDEFINED => continue,
+            };
+            let heading = Heading::from_delta(player.heading.rotate(side.delta()));
+            if let Some(heading) = heading {
+                maze_graph.set_side(cell_pos, heading, known);
+            }
+        }
 
         let mut neigbors_to_add: Vec<Cell> = Vec::new();
         for (side, neighbor_id) in radar_neighbors(cell_id) {
@@ -98,8 +107,6 @@ pub fn maze_to_graph(radar_view: &Radar, player: &Player, maze_graph: &mut MazeG
         }
     }
 }
-
-const SIDES: [Heading; 4] = [Heading::North, Heading::East, Heading::South, Heading::West];
 
 /// The radar cells next to `cell_id`, with the side they are on, the radar's top being North.
 fn radar_neighbors(cell_id: usize) -> impl Iterator<Item = (Heading, usize)> {
@@ -128,13 +135,6 @@ fn passage(
         Heading::East => &vertical[cell_id + cell_id / 3 + 1],
     };
     passage.clone()
-}
-
-fn get_cell_walls(cell_id: usize, horizontal: &[Passages], vertical: &[Passages]) -> u8 {
-    SIDES
-        .iter()
-        .filter(|&&side| passage(cell_id, side, horizontal, vertical) == Passages::WALL)
-        .count() as u8
 }
 
 /// Map offsets of the radar's 3x3 cells, row by row, as seen by the player.
@@ -227,7 +227,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_cell_walls() {
+    fn test_passage_reads_each_side() {
         let horizontal = vec![
             Passages::WALL,
             Passages::OPEN,
@@ -248,11 +248,34 @@ mod tests {
             Passages::OPEN,
         ];
 
-        let walls = get_cell_walls(0, &horizontal, &vertical);
-        assert_eq!(walls, 2);
+        let walls = |cell_id| {
+            Heading::CLOCKWISE
+                .iter()
+                .filter(|&&side| passage(cell_id, side, &horizontal, &vertical) == Passages::WALL)
+                .count()
+        };
+        assert_eq!(walls(0), 2);
+        assert_eq!(walls(1), 2);
+    }
 
-        let walls = get_cell_walls(1, &horizontal, &vertical);
-        assert_eq!(walls, 2);
+    #[test]
+    fn test_radar_sides_are_stored_in_map_headings() {
+        let mut horizontal = vec![Passages::UNDEFINED; 12];
+        horizontal[4] = Passages::WALL;
+        let radar = Radar {
+            horizontal,
+            vertical: vec![Passages::UNDEFINED; 12],
+            cells: vec![CellType::NOTHING; 9],
+        };
+        let mut player = Player::new();
+        player.heading = Heading::East;
+        let mut graph = MazeGraph::new();
+
+        maze_to_graph(&radar, &player, &mut graph);
+
+        let center = &graph.cell_map[&player.position];
+        assert_eq!(center.side(Heading::East), Side::Wall);
+        assert_eq!(center.side(Heading::North), Side::Unknown);
     }
 
     #[test]

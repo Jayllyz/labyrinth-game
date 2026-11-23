@@ -14,7 +14,7 @@ pub enum Heading {
 }
 
 impl Heading {
-    const CLOCKWISE: [Self; 4] = [Self::North, Self::East, Self::South, Self::West];
+    pub const CLOCKWISE: [Self; 4] = [Self::North, Self::East, Self::South, Self::West];
 
     /// The cell offset of one step this way.
     pub fn delta(self) -> Cell {
@@ -60,6 +60,11 @@ impl Heading {
     /// Turns an offset seen facing North into the same offset seen facing this way.
     pub fn rotate(self, offset: Cell) -> Cell {
         (0..self.quarters()).fold(offset, |cell, _| Cell { row: -cell.column, column: cell.row })
+    }
+
+    /// Position in `CLOCKWISE`, for arrays indexed by heading.
+    pub fn index(self) -> usize {
+        usize::from(self.quarters())
     }
 
     fn quarters(self) -> u8 {

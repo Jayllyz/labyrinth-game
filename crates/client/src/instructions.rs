@@ -61,7 +61,7 @@ pub fn alian_solver(
         }
     }
 
-    let player_walls = graph.get_cell(player_position).map_or(0, |cell| cell.walls);
+    let player_walls = graph.get_cell(player_position).map_or(0, |cell| cell.walls());
     if player_walls + dead_ends_cell == 3 {
         graph.update_cell_status(player_position, CellStatus::DeadEnd);
     }
@@ -72,7 +72,7 @@ pub fn alian_solver(
                 continue;
             };
             (
-                neighbor_cell.walls,
+                neighbor_cell.walls(),
                 neighbor_cell.status.clone(),
                 neighbor_cell.cell_type.clone(),
                 neighbor_cell.visited_by.clone(),
@@ -211,7 +211,7 @@ pub fn tremeaux_solver(
             let Some(neighbor_cell) = graph.get_cell(neighbor_position) else {
                 continue;
             };
-            (neighbor_cell.walls, neighbor_cell.status.clone(), neighbor_cell.cell_type.clone())
+            (neighbor_cell.walls(), neighbor_cell.status.clone(), neighbor_cell.cell_type.clone())
         };
 
         if walls == 3 && !cell_type.is_goal_or_help() {
@@ -529,7 +529,7 @@ mod tests {
         let (mut player, mut graph) = graph_around_player(&[BEHIND], BEHIND);
         graph.update_cell_status(BEHIND, CellStatus::Visited);
         graph.add(BLOCKED, CellType::ObjectiveEnemy);
-        graph.update_walls(BLOCKED, 3);
+        graph.wall_in(BLOCKED, &[Heading::North]);
         graph.add_neighbor(&CURRENT, &BLOCKED);
 
         tremeaux_solver(&mut player, &mut graph, None);

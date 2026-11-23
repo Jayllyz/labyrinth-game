@@ -1,9 +1,6 @@
-use std::{
-    cmp::max,
-    collections::{BTreeSet, HashMap},
-};
+use std::collections::{BTreeSet, HashMap};
 
-use shared::{maze::Cell, radar::CellType};
+use shared::{heading::Heading, maze::Cell, radar::CellType};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum CellStatus {
@@ -12,24 +9,42 @@ pub enum CellStatus {
     DeadEnd,
 }
 
+/// What is known of one side of a cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Side {
+    #[default]
+    Unknown,
+    Open,
+    Wall,
+}
+
 #[derive(Debug, Clone)]
 pub struct MazeCell {
     pub cell_type: CellType,
     /// Ordered, so the same map always gives the same choices.
     pub neighbors: BTreeSet<Cell>,
     pub status: CellStatus,
-    pub walls: usize,
+    /// Indexed by heading, clockwise from North.
+    pub sides: [Side; 4],
     pub parent: Cell,
     pub visited_by: HashMap<String, u8>,
 }
 
 impl MazeCell {
+    pub fn walls(&self) -> usize {
+        self.sides.iter().filter(|&&side| side == Side::Wall).count()
+    }
+
+    pub fn side(&self, heading: Heading) -> Side {
+        self.sides[heading.index()]
+    }
+
     pub fn new(cell_type: CellType) -> Self {
         Self {
             cell_type,
             neighbors: BTreeSet::new(),
             status: CellStatus::NotVisited,
-            walls: 0,
+            sides: [Side::Unknown; 4],
             parent: Cell { row: 0, column: 0 },
             visited_by: HashMap::new(),
         }
@@ -67,7 +82,7 @@ impl MazeGraph {
                 neighbors: BTreeSet::new(),
                 status: CellStatus::NotVisited,
                 parent: cell,
-                walls: 0,
+                sides: [Side::Unknown; 4],
                 visited_by: HashMap::new(),
             },
         );
@@ -95,9 +110,17 @@ impl MazeGraph {
         }
     }
 
-    pub fn update_walls(&mut self, position: Cell, walls: usize) {
+    pub fn set_side(&mut self, position: Cell, heading: Heading, side: Side) {
         if let Some(cell) = self.cell_map.get_mut(&position) {
-            cell.walls = max(cell.walls, walls);
+            cell.sides[heading.index()] = side;
+        }
+    }
+
+    /// Marks every side of a cell but `open` as a wall.
+    pub fn wall_in(&mut self, position: Cell, open: &[Heading]) {
+        for heading in Heading::CLOCKWISE {
+            let side = if open.contains(&heading) { Side::Open } else { Side::Wall };
+            self.set_side(position, heading, side);
         }
     }
 
@@ -182,13 +205,13 @@ mod test {
     }
 
     #[test]
-    fn test_maze_graph_update_walls() {
+    fn test_walls_counts_wall_sides() {
         let mut maze_graph = MazeGraph::new();
         let cell = Cell { row: 0, column: 0 };
         maze_graph.add(cell, CellType::NOTHING);
-        maze_graph.update_walls(cell, 3);
+        maze_graph.wall_in(cell, &[Heading::South]);
         let maze_cell = maze_graph.get_cell(cell).unwrap();
-        assert_eq!(maze_cell.walls, 3);
+        assert_eq!(maze_cell.walls(), 3);
     }
 
     #[test]
