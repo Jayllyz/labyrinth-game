@@ -1,27 +1,35 @@
 use crate::maze::{Cell, Maze, PositionType};
 use rand::{RngExt, SeedableRng, rngs::StdRng, seq::IndexedMutRandom};
 
-/// Generates a maze using the Sidewinder algorithm.
-///
-/// # Arguments
-///
-/// * `width` - The width of the maze.
-/// * `height` - The height of the maze.
-/// * `print` - A boolean indicating whether to print the maze generation process.
-/// * `seed` - A seed for the random number generator.
-///
-/// # Returns
-///
-/// A `Maze` object representing the generated maze.
-///
-/// # Example
+/// How to carve a maze.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GeneratorAlgorithm {
+    Sidewinder,
+    RecursiveBacktracker,
+}
+
+/// Generates a `width` by `height` maze; the same seed always gives the same maze.
 ///
 /// ```
-/// use shared::maze_generator::sidewinder;
+/// use shared::maze_generator::{GeneratorAlgorithm, generate};
 ///
-/// let maze = sidewinder(10, 10, false, 42);
+/// let maze = generate(GeneratorAlgorithm::Sidewinder, 10, 10, false, 42);
 /// ```
-pub fn sidewinder(width: usize, height: usize, print: bool, seed: u64) -> Maze {
+pub fn generate(
+    algorithm: GeneratorAlgorithm,
+    width: usize,
+    height: usize,
+    print: bool,
+    seed: u64,
+) -> Maze {
+    match algorithm {
+        GeneratorAlgorithm::Sidewinder => sidewinder(width, height, print, seed),
+        GeneratorAlgorithm::RecursiveBacktracker => recursive_backtracker(width, height, seed),
+    }
+}
+
+/// Sidewinder: an open top row that every cell can reach going up.
+fn sidewinder(width: usize, height: usize, print: bool, seed: u64) -> Maze {
     let mut rng = StdRng::seed_from_u64(seed);
     let mut maze = Maze::new(
         vec![vec![PositionType::WALL; width * 2 + 1]; height * 2 + 1],
@@ -81,7 +89,7 @@ fn generate_random_entry_exit(width: usize, height: usize, seed: u64) -> (Cell, 
 ///
 /// The result is a grid of `(2 * height + 1) x (2 * width + 1)`, cells at odd indices,
 /// with exactly one path between any two cells.
-pub fn recursive_backtracker(width: usize, height: usize, seed: u64) -> Maze {
+fn recursive_backtracker(width: usize, height: usize, seed: u64) -> Maze {
     let mut rng = StdRng::seed_from_u64(seed);
     let mut map = vec![vec![PositionType::WALL; width * 2 + 1]; height * 2 + 1];
     let mut stack: Vec<(usize, usize)> = vec![(0, 0)];
@@ -111,6 +119,16 @@ pub fn recursive_backtracker(width: usize, height: usize, seed: u64) -> Maze {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_generate_sizes_the_maze() {
+        let maze = generate(GeneratorAlgorithm::Sidewinder, 5, 10, false, 0);
+
+        assert_eq!(maze.row_len, 10 * 2 + 1);
+        assert_eq!(maze.col_len, 5 * 2 + 1);
+        assert!(!maze.is_cell_out_of_bound(&maze.entry));
+        assert!(!maze.is_cell_out_of_bound(&maze.exit));
+    }
 
     #[test]
     fn test_sidewinder() {

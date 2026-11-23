@@ -3,7 +3,7 @@ mod registration;
 
 use game_match::Match;
 use shared::errors::{GameError, GameResult};
-use shared::maze::GeneratorAlgorithm;
+use shared::maze_generator::GeneratorAlgorithm;
 use shared::messages::{
     Client, Message, MessageError, RegisterTeamResult, RegistrationError, SubscribePlayerResult,
     Teams, receive_message, send_message,
@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 #[derive(Debug, Clone)]
@@ -101,12 +101,12 @@ impl GameServer {
     }
 
     fn has_started(&self) -> bool {
-        self.lock_match().map_or(true, |game| game.started)
+        self.lock_match().map_or(true, |game| game.has_started())
     }
 
     /// How many players have reached the exit so far.
     pub fn players_out(&self) -> usize {
-        self.lock_match().map_or(0, |game| game.game.players().filter(|p| p.exited).count())
+        self.lock_match().map_or(0, |game| game.players_out())
     }
 
     fn lock_match(&self) -> GameResult<MutexGuard<'_, Match>> {
@@ -121,19 +121,10 @@ impl GameServer {
         let all_full = !teams.is_empty() && teams.values().all(full);
         let registered: usize = teams.values().map(|team| team.players.len()).sum();
 
-        let mut game = self.lock_match()?;
-        // Only reachable when the start timeout fired while this player was joining.
-        if game.started {
-            game.add_player(player.clone());
-            return Ok(());
-        }
-        game.first_join.get_or_insert_with(Instant::now);
-        game.waiting.push(player.clone());
         // A teammate may be registered without having joined yet; starting before it does
         // would leave it off the board.
-        if !game.started && all_full && game.waiting.len() == registered {
-            game.start();
-            info!("All teams are full, the game starts");
+        let expected = all_full.then_some(registered);
+        if self.lock_match()?.join(player.clone(), expected) {
             self.game.1.notify_all();
         }
         Ok(())
@@ -141,18 +132,9 @@ impl GameServer {
 
     /// Waits until the game starts: once every team is full, or once the start timeout
     /// has passed since the first player joined, with whoever joined by then.
-    fn wait_for_start(&self, name: &PlayerId) -> GameResult<usize> {
+    fn wait_for_start(&self) -> GameResult<()> {
         let mut game = self.lock_match()?;
-        while !game.started {
-            let deadline =
-                game.first_join.map_or_else(Instant::now, |at| at + self.config.start_timeout);
-            let left = deadline.saturating_duration_since(Instant::now());
-            if left.is_zero() {
-                game.start();
-                info!("Start timeout reached, the game starts with the players who joined");
-                self.game.1.notify_all();
-                break;
-            }
+        while let Some(left) = game.start_or_wait(self.config.start_timeout) {
             game = self
                 .game
                 .1
@@ -160,20 +142,15 @@ impl GameServer {
                 .map_err(|e| GameError::ThreadError(e.to_string()))?
                 .0;
         }
-        game.players
-            .get(name)
-            .copied()
-            .ok_or_else(|| GameError::ThreadError(format!("{name} is not on the board")))
+        self.game.1.notify_all();
+        Ok(())
     }
 
     /// Runs a subscribed player's game until it reaches the exit or leaves.
     fn play(&self, stream: &mut TcpStream, name: &PlayerId) -> GameResult<()> {
         let outcome = self.play_turns(stream, name);
         if !matches!(outcome, Ok(true)) {
-            let mut game = self.lock_match()?;
-            if let Some(&id) = game.players.get(name) {
-                game.game.leave(id);
-            }
+            self.lock_match()?.leave(name);
             info!("{name} left the game");
         }
         outcome.map(|_| ())
@@ -181,8 +158,10 @@ impl GameServer {
 
     /// Plays turns; true once the player reaches the exit.
     fn play_turns(&self, stream: &mut TcpStream, name: &PlayerId) -> GameResult<bool> {
-        let id = self.wait_for_start(name)?;
-        send_message(stream, &self.lock_match()?.view(id))?;
+        self.wait_for_start()?;
+        let not_on_board = || GameError::ThreadError(format!("{name} is not on the board"));
+        let view = |server: &Self| server.lock_match()?.view(name).ok_or_else(not_on_board);
+        send_message(stream, &view(self)?)?;
 
         while let Ok(message) = receive_message(stream) {
             let Message::Action(action) = message else {
@@ -190,22 +169,15 @@ impl GameServer {
                 let error =
                     MessageError { message: "Only actions are accepted during the game".into() };
                 send_message(stream, &Message::MessageError(error))?;
-                send_message(stream, &self.lock_match()?.view(id))?;
+                send_message(stream, &view(self)?)?;
                 continue;
             };
-            let (replies, exited, moves) = {
-                let mut game = self.lock_match()?;
-                let (replies, exited) = game.act(id, action);
-                if exited {
-                    game.log_if_team_escaped(id);
-                }
-                (replies, exited, game.game.player(id).moves)
-            };
+            let (replies, exited) =
+                self.lock_match()?.act(name, action).ok_or_else(not_on_board)?;
             for reply in &replies {
                 send_message(stream, reply)?;
             }
             if exited {
-                info!("{name} found the exit in {moves} moves");
                 return Ok(true);
             }
         }
@@ -365,7 +337,7 @@ mod tests {
         server.join_game(&name).unwrap();
 
         let (done, started) = std::sync::mpsc::channel();
-        std::thread::spawn(move || done.send(server.wait_for_start(&name).is_ok()));
+        std::thread::spawn(move || done.send(server.wait_for_start().is_ok()));
 
         assert_eq!(started.recv_timeout(Duration::from_secs(5)), Ok(true));
     }

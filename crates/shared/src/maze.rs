@@ -1,4 +1,3 @@
-use crate::maze_generator::{recursive_backtracker, sidewinder};
 use crate::utils::ColorsAnsi;
 use std::ops::Add;
 
@@ -11,46 +10,11 @@ pub struct Maze {
     pub exit: Cell,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GeneratorAlgorithm {
-    Sidewinder,
-    RecursiveBacktracker,
-}
-
 impl Maze {
     pub fn new(map: Vec<Vec<u16>>, entry: Cell, exit: Cell) -> Self {
         let row_len = map.len();
         let col_len = if map.is_empty() { 0 } else { map[0].len() };
         Self { map, row_len, col_len, entry, exit }
-    }
-
-    pub fn generate(
-        algorithm: GeneratorAlgorithm,
-        width: usize,
-        height: usize,
-        print: bool,
-        seed: u64,
-    ) -> Self {
-        match algorithm {
-            GeneratorAlgorithm::Sidewinder => sidewinder(width, height, print, seed),
-            GeneratorAlgorithm::RecursiveBacktracker => recursive_backtracker(width, height, seed),
-        }
-    }
-
-    pub fn print_maze(maze: &Self) {
-        for row in &maze.map {
-            for cell in row {
-                print!(
-                    "{} ",
-                    match *cell {
-                        PositionType::WALL => '#',
-                        PositionType::SPACE => ' ',
-                        _ => '?',
-                    }
-                );
-            }
-            println!();
-        }
     }
 
     pub fn print_visited(&self, visited_points: &[Vec<i32>]) {
@@ -139,33 +103,6 @@ impl Maze {
                         PositionType::SPACE => print!("     "),
                         _ => print!("?  "),
                     }
-                }
-            }
-            println!();
-        }
-        println!();
-    }
-
-    pub fn print_path(&self, path: &[Cell]) {
-        for (row_idx, row) in self.map.iter().enumerate() {
-            for (col_idx, &cell) in row.iter().enumerate() {
-                let point = Cell { row: row_idx as i16, column: col_idx as i16 };
-
-                if point == self.entry {
-                    print!("3 ");
-                } else if point == self.exit {
-                    print!("2 ");
-                } else if path.contains(&point) {
-                    print!("{}X{} ", ColorsAnsi::RED, ColorsAnsi::RESET);
-                } else {
-                    print!(
-                        "{} ",
-                        match cell {
-                            PositionType::WALL => '#',
-                            PositionType::SPACE => ' ',
-                            _ => '?',
-                        }
-                    );
                 }
             }
             println!();
@@ -298,17 +235,5 @@ mod tests {
         assert!(!maze.is_cell_walkable(&Cell { row: 0, column: 0 }, &visited_points));
         // Test visited cell
         assert!(!maze.is_cell_walkable(&Cell { row: 0, column: 1 }, &visited_points));
-    }
-
-    #[test]
-    fn test_maze_generate() {
-        let width = 5;
-        let height = 10;
-        let maze = Maze::generate(GeneratorAlgorithm::Sidewinder, width, height, false, 0);
-
-        assert_eq!(maze.row_len, height * 2 + 1);
-        assert_eq!(maze.col_len, width * 2 + 1);
-        assert!(!maze.is_cell_out_of_bound(&maze.entry));
-        assert!(!maze.is_cell_out_of_bound(&maze.exit));
     }
 }
