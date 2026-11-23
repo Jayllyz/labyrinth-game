@@ -100,10 +100,14 @@ pub enum Challenge {
     SecretSumModulo(u128),
 }
 
+/// The answer to `SecretSumModulo(modulo)`: the team's secrets summed modulo `modulo`.
+pub fn secret_sum_modulo(secrets: impl IntoIterator<Item = u128>, modulo: u128) -> u128 {
+    secrets.into_iter().map(|secret| secret % modulo).sum::<u128>() % modulo
+}
+
 #[derive(Debug, Clone)]
 pub struct Client {
     pub player_name: String,
-    pub team_name: String,
     pub address: SocketAddr,
     pub registration_token: String,
 }
@@ -160,6 +164,14 @@ pub fn send_message(stream: &mut impl Write, msg: &Message) -> GameResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_secret_sum_modulo() {
+        let secrets =
+            [2_667_360_881_372_235_285, 7_064_968_778_338_382_540, 8_653_237_798_568_263_501];
+
+        assert_eq!(secret_sum_modulo(secrets, 1_524_576_388_644_652_385), 90_650_794_543_052_706);
+    }
     use serde_json;
     use std::io::Cursor;
 

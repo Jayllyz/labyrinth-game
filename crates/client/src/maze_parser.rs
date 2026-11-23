@@ -79,49 +79,17 @@ pub fn maze_to_graph(radar_view: &Radar, player: &Player, maze_graph: &mut MazeG
         maze_graph.update_walls(cell_pos, walls as usize);
 
         let mut neigbors_to_add: Vec<Cell> = Vec::new();
-
-        if is_top_cell_accessible(cell_id, &radar_view.horizontal) {
-            let top_cell_id = cell_id - 3;
-            let top_cell = player.position + directions_mask[top_cell_id];
-
-            if !maze_graph.contains(&top_cell) {
-                maze_graph.add(top_cell, radar_view.cells[top_cell_id].clone());
+        for (side, neighbor_id) in radar_neighbors(cell_id) {
+            if passage(cell_id, side, &radar_view.horizontal, &radar_view.vertical)
+                != Passages::OPEN
+            {
+                continue;
             }
-
-            neigbors_to_add.push(top_cell);
-        }
-
-        if is_bottom_cell_accessible(cell_id, &radar_view.horizontal) {
-            let bottom_cell_id = cell_id + 3;
-            let bottom_cell = player.position + directions_mask[bottom_cell_id];
-
-            if !maze_graph.contains(&bottom_cell) && bottom_cell_id < radar_view.cells.len() {
-                maze_graph.add(bottom_cell, radar_view.cells[bottom_cell_id].clone());
+            let neighbor = player.position + directions_mask[neighbor_id];
+            if !maze_graph.contains(&neighbor) {
+                maze_graph.add(neighbor, radar_view.cells[neighbor_id].clone());
             }
-
-            neigbors_to_add.push(bottom_cell);
-        }
-
-        if is_left_cell_accessible(cell_id, &radar_view.vertical) {
-            let left_cell_id = cell_id - 1;
-            let left_cell = player.position + directions_mask[left_cell_id];
-
-            if !maze_graph.contains(&left_cell) {
-                maze_graph.add(left_cell, radar_view.cells[left_cell_id].clone());
-            }
-
-            neigbors_to_add.push(left_cell);
-        }
-
-        if is_right_cell_accessible(cell_id, &radar_view.vertical) {
-            let right_cell_id = cell_id + 1;
-            let right_cell = player.position + directions_mask[right_cell_id];
-
-            if !maze_graph.contains(&right_cell) && right_cell_id < radar_view.cells.len() {
-                maze_graph.add(right_cell, radar_view.cells[right_cell_id].clone());
-            }
-
-            neigbors_to_add.push(right_cell);
+            neigbors_to_add.push(neighbor);
         }
 
         for neighbor in neigbors_to_add {
@@ -131,46 +99,42 @@ pub fn maze_to_graph(radar_view: &Radar, player: &Player, maze_graph: &mut MazeG
     }
 }
 
-fn is_right_cell_accessible(cell_id: usize, vertical: &[Passages]) -> bool {
-    cell_id % 3 != 2 && vertical[cell_id + cell_id / 3 + 1] == Passages::OPEN
+const SIDES: [Heading; 4] = [Heading::North, Heading::East, Heading::South, Heading::West];
+
+/// The radar cells next to `cell_id`, with the side they are on, the radar's top being North.
+fn radar_neighbors(cell_id: usize) -> impl Iterator<Item = (Heading, usize)> {
+    let (row, column) = (cell_id / 3, cell_id % 3);
+    [
+        (Heading::North, (row > 0).then(|| cell_id - 3)),
+        (Heading::East, (column < 2).then(|| cell_id + 1)),
+        (Heading::South, (row < 2).then(|| cell_id + 3)),
+        (Heading::West, (column > 0).then(|| cell_id - 1)),
+    ]
+    .into_iter()
+    .filter_map(|(side, neighbor)| neighbor.map(|id| (side, id)))
 }
 
-fn is_left_cell_accessible(cell_id: usize, vertical: &[Passages]) -> bool {
-    !cell_id.is_multiple_of(3) && vertical[cell_id + cell_id / 3] == Passages::OPEN
-}
-
-fn is_bottom_cell_accessible(cell_id: usize, horizontal: &[Passages]) -> bool {
-    cell_id < 6 && horizontal[cell_id + 3] == Passages::OPEN
-}
-
-fn is_top_cell_accessible(cell_id: usize, horizontal: &[Passages]) -> bool {
-    cell_id > 2 && horizontal[cell_id] == Passages::OPEN
+/// The passage on one side of a radar cell, the radar's top being North.
+fn passage(
+    cell_id: usize,
+    side: Heading,
+    horizontal: &[Passages],
+    vertical: &[Passages],
+) -> Passages {
+    let passage = match side {
+        Heading::North => &horizontal[cell_id],
+        Heading::South => &horizontal[cell_id + 3],
+        Heading::West => &vertical[cell_id + cell_id / 3],
+        Heading::East => &vertical[cell_id + cell_id / 3 + 1],
+    };
+    passage.clone()
 }
 
 fn get_cell_walls(cell_id: usize, horizontal: &[Passages], vertical: &[Passages]) -> u8 {
-    let mut walls = 0;
-
-    // Top wall
-    if horizontal[cell_id] == Passages::WALL {
-        walls += 1;
-    }
-
-    // Right wall
-    if vertical[cell_id + cell_id / 3 + 1] == Passages::WALL {
-        walls += 1;
-    }
-
-    // Left wall
-    if vertical[cell_id + cell_id / 3] == Passages::WALL {
-        walls += 1;
-    }
-
-    // Bottom wall
-    if horizontal[cell_id + 3] == Passages::WALL {
-        walls += 1;
-    }
-
-    walls
+    SIDES
+        .iter()
+        .filter(|&&side| passage(cell_id, side, horizontal, vertical) == Passages::WALL)
+        .count() as u8
 }
 
 /// Map offsets of the radar's 3x3 cells, row by row, as seen by the player.

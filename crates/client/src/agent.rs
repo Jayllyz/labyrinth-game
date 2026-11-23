@@ -7,7 +7,9 @@ use rand::{RngExt, SeedableRng, rngs::StdRng};
 use shared::{
     errors::{GameError, GameResult},
     maze::Cell,
-    messages::{Action, ActionError, Challenge, Hint, Message, RadarView, SubscribePlayerResult},
+    messages::{
+        self, Action, ActionError, Challenge, Hint, Message, RadarView, SubscribePlayerResult,
+    },
     radar::{Radar, decode_base64, extract_data},
 };
 use std::collections::HashMap;
@@ -238,7 +240,8 @@ impl Agent {
 
     fn solve_challenge(&self, modulo: u128) -> Option<Action> {
         let secrets = self.team.secrets.lock().ok()?;
-        Some(Action::SolveChallenge { answer: instructions::solve_sum_modulo(modulo, &secrets) })
+        let answer = messages::secret_sum_modulo(secrets.values().copied(), modulo);
+        Some(Action::SolveChallenge { answer: answer.to_string() })
     }
 }
 
@@ -247,7 +250,7 @@ mod tests {
     use super::*;
     use crate::data_structures::maze_graph::CellStatus;
     use shared::heading::Heading;
-    use shared::messages::{self, Direction};
+    use shared::messages::Direction;
     use shared::radar::CellType;
 
     fn agent(name: &str) -> Agent {
