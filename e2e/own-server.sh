@@ -22,9 +22,11 @@ for _ in $(seq 50); do
 done
 
 CLIENT_PIDS=()
-for team in "${TEAMS[@]}"; do
-  timeout "$TIMEOUT" "$ROOT/target/release/client" --port "$PORT" --team "$team" --seed "$SEED" \
-    > /dev/null 2>&1 &
+# One seed per team: with the same seed, two opponents blocking each other step aside in
+# lockstep and never get past.
+for i in "${!TEAMS[@]}"; do
+  timeout "$TIMEOUT" "$ROOT/target/release/client" --port "$PORT" --team "${TEAMS[$i]}" \
+    --seed "$((SEED + i))" > /dev/null 2>&1 &
   CLIENT_PIDS+=($!)
 done
 wait "${CLIENT_PIDS[@]}" || true
