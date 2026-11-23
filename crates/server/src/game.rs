@@ -35,7 +35,6 @@ pub struct Player {
     pub secret: Option<u128>,
     /// The modulo of the challenge to solve before moving again.
     pub challenge: Option<u128>,
-    pub got_grid_size: bool,
 }
 
 impl Player {
@@ -72,7 +71,6 @@ impl Game {
             left: false,
             secret: None,
             challenge: None,
-            got_grid_size: false,
         });
         self.players.len() - 1
     }

@@ -54,6 +54,7 @@ pub struct GameServer {
 /// Odds per move of each random message, close to what the reference server sends.
 const SECRET_ODDS: f64 = 0.012;
 const COMPASS_ODDS: f64 = 0.012;
+const GRID_SIZE_ODDS: f64 = 0.001;
 const CHALLENGE_ODDS: f64 = 0.001;
 
 type ServerResult<T> = Result<T, RegistrationError>;
@@ -154,8 +155,7 @@ impl Match {
     }
 
     fn hint(&mut self, id: usize) -> Option<Hint> {
-        if !self.game.player(id).got_grid_size {
-            self.game.player_mut(id).got_grid_size = true;
+        if self.rng.random_bool(GRID_SIZE_ODDS) {
             let (columns, rows) = self.game.size();
             return Some(Hint::GridSize { columns, rows });
         }
