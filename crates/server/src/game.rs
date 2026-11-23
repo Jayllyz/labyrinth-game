@@ -29,6 +29,14 @@ pub struct Player {
     pub heading: Heading,
     pub moves: u32,
     pub exited: bool,
+    /// Disconnected before reaching the exit.
+    pub left: bool,
+}
+
+impl Player {
+    fn on_board(&self) -> bool {
+        !self.exited && !self.left
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -50,12 +58,36 @@ impl Game {
     }
 
     pub fn add_player(&mut self, team: usize, position: Position, heading: Heading) -> usize {
-        self.players.push(Player { team, position, heading, moves: 0, exited: false });
+        self.players.push(Player { team, position, heading, moves: 0, exited: false, left: false });
         self.players.len() - 1
     }
 
     pub fn player(&self, id: usize) -> &Player {
         &self.players[id]
+    }
+
+    /// Takes a disconnected player off the board, so it blocks nobody.
+    pub fn leave(&mut self, id: usize) {
+        self.players[id].left = true;
+    }
+
+    /// Cells where a new player may start.
+    pub fn free_cells(&self) -> Vec<Position> {
+        let (width, height) = ((self.maze.col_len / 2) as i16, (self.maze.row_len / 2) as i16);
+        (0..height)
+            .flat_map(|y| (0..width).map(move |x| Position { x, y }))
+            .filter(|&cell| self.is_free(cell))
+            .collect()
+    }
+
+    pub fn players(&self) -> impl Iterator<Item = &Player> {
+        self.players.iter()
+    }
+
+    /// Whether a new player may start on this cell: not the exit, and nobody there.
+    pub fn is_free(&self, position: Position) -> bool {
+        position != self.exit
+            && self.players.iter().all(|p| !p.on_board() || p.position != position)
     }
 
     /// Moves a player; a rejected move changes neither its cell nor its heading.
@@ -155,7 +187,9 @@ impl Game {
             .players
             .iter()
             .enumerate()
-            .filter(|&(id, player)| id != viewer && !player.exited && player.position == position)
+            .filter(|&(id, player)| {
+                id != viewer && player.on_board() && player.position == position
+            })
             .map(|(_, player)| if player.team == team { 0b01 } else { 0b10 })
             .max()
             .unwrap_or(0);
@@ -163,7 +197,7 @@ impl Game {
     }
 
     fn opponent_at(&self, position: Position, team: usize) -> bool {
-        self.players.iter().any(|p| !p.exited && p.team != team && p.position == position)
+        self.players.iter().any(|p| p.on_board() && p.team != team && p.position == position)
     }
 
     fn contains(&self, position: Position) -> bool {
@@ -238,6 +272,17 @@ mod tests {
         assert_eq!(game.apply_move(id, Direction::Front), Ok(Moved::Exited));
         assert_eq!(game.apply_move(opponent, Direction::Front), Ok(Moved::Stepped));
         assert_eq!(game.apply_move(opponent, Direction::Front), Ok(Moved::Exited));
+    }
+
+    #[test]
+    fn test_a_player_who_left_frees_its_cell() {
+        let mut game = corridor();
+        let id = game.add_player(0, Position { x: 0, y: 0 }, Heading::East);
+        let gone = game.add_player(1, Position { x: 1, y: 0 }, Heading::East);
+
+        game.leave(gone);
+
+        assert_eq!(game.apply_move(id, Direction::Front), Ok(Moved::Stepped));
     }
 
     #[test]
