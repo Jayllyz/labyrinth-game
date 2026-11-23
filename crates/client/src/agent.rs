@@ -31,14 +31,14 @@ pub struct Agent {
     challenge_modulo: Option<u128>,
     /// Cell an opponent recently held and turns left to route around it.
     avoid: Option<(Cell, u8)>,
-    /// The agent and its map as they will be once the server accepts the last move.
+    /// The agent as it will be once the server accepts the last move. The map changes
+    /// for that move are kept since a graph checkpoint, and undone if the move fails.
     pending: Option<Pending>,
     rng: StdRng,
 }
 
 struct Pending {
     player: Player,
-    graph: MazeGraph,
     solver: Box<dyn Solver>,
 }
 
@@ -107,16 +107,21 @@ impl Agent {
         let radar_view = extract_data(&decode_base64(&view.0));
 
         // A radar view after a move means the server accepted it.
-        if let Some(Pending { player, graph, solver }) = self.pending.take() {
+        if let Some(Pending { player, solver }) = self.pending.take() {
             self.player = player;
-            self.graph = graph;
             self.solver = solver;
+            self.graph.commit();
         }
         maze_to_graph(&radar_view, &self.player, &mut self.graph);
         self.share_map(&radar_view);
+        self.propose(&radar_view)
+    }
 
-        let mut next = self.copy_state();
-        let action = self.decide(&radar_view, &mut next);
+    /// Decides the next move on copies of the agent, and on the map since a checkpoint.
+    fn propose(&mut self, radar: &Radar) -> Action {
+        let mut next = Pending { player: self.player.clone(), solver: self.solver.clone() };
+        self.graph.checkpoint();
+        let action = self.decide(radar, &mut next);
         self.pending = Some(next);
         action
     }
@@ -150,18 +155,17 @@ impl Agent {
         maps.insert(self.name.clone(), me);
     }
 
-    fn copy_state(&self) -> Pending {
-        Pending {
-            player: self.player.clone(),
-            graph: self.graph.clone(),
-            solver: self.solver.clone(),
-        }
+    /// Forgets the last move, undoing what it changed on the map.
+    fn reject_move(&mut self) -> Option<Pending> {
+        self.graph.rollback();
+        self.pending.take()
     }
 
     /// Chooses the next move, updating `next` as if the server accepts it. Steps every
     /// solver needs (stepping aside, heading for a seen exit) come before the solver.
     fn decide(&mut self, radar: &Radar, next: &mut Pending) -> Action {
-        let Pending { player, graph, solver } = next;
+        let Pending { player, solver } = next;
+        let graph = &mut self.graph;
         // Right after a block, yield half the time so two agents blocking each other don't
         // retry in lockstep.
         let blocked = self
@@ -215,7 +219,7 @@ impl Agent {
         match err {
             // Without a pending move the error is stale, so there is no target to avoid.
             ActionError::CannotPassThroughOpponent => {
-                if let Some(rejected) = self.pending.take() {
+                if let Some(rejected) = self.reject_move() {
                     self.avoid = Some((rejected.player.position, AVOID_OPPONENT_TURNS));
                 }
                 None
@@ -224,7 +228,7 @@ impl Agent {
             | ActionError::InvalidMove
             | ActionError::OutOfMap
             | ActionError::Blocked => {
-                self.pending = None;
+                self.reject_move();
                 None
             }
             ActionError::NoRunningChallenge => None,
@@ -232,7 +236,7 @@ impl Agent {
                 self.challenge_modulo.and_then(|modulo| self.solve_challenge(modulo))
             }
             ActionError::SolveChallengeFirst => {
-                self.pending = None;
+                self.reject_move();
                 self.challenge_modulo.and_then(|modulo| self.solve_challenge(modulo))
             }
         }
@@ -260,10 +264,7 @@ mod tests {
     /// Chooses a move from the current map, as a radar view would.
     fn propose_move(agent: &mut Agent) -> Action {
         let radar = Radar { horizontal: Vec::new(), vertical: Vec::new(), cells: Vec::new() };
-        let mut next = agent.copy_state();
-        let action = agent.decide(&radar, &mut next);
-        agent.pending = Some(next);
-        action
+        agent.propose(&radar)
     }
 
     /// Moves forward on its first turn and back after that, to show whether its state
@@ -309,11 +310,7 @@ mod tests {
         let mut moved = agent.player.clone();
         moved.move_forward();
         let blocked = moved.position;
-        agent.pending = Some(Pending {
-            player: moved,
-            graph: agent.graph.clone(),
-            solver: agent.solver.clone(),
-        });
+        agent.pending = Some(Pending { player: moved, solver: agent.solver.clone() });
 
         agent.on_message(Message::ActionError(ActionError::CannotPassThroughOpponent)).unwrap();
 
@@ -410,11 +407,7 @@ mod tests {
         agent.player.heading = Heading::East;
         let mut turned = agent.player.clone();
         turned.turn(Direction::Right);
-        agent.pending = Some(Pending {
-            player: turned,
-            graph: agent.graph.clone(),
-            solver: agent.solver.clone(),
-        });
+        agent.pending = Some(Pending { player: turned, solver: agent.solver.clone() });
 
         agent.on_message(Message::Hint(Hint::RelativeCompass { angle: 90.0 })).unwrap();
 

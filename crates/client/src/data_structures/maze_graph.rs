@@ -56,6 +56,14 @@ pub struct MazeGraph {
     pub cell_map: HashMap<Cell, MazeCell>,
     /// Lets callers skip looking for a path to the exit until one is on the map.
     pub exit_seen: bool,
+    undo: Option<Undo>,
+}
+
+/// The cells changed since a checkpoint, as they were before, so the changes can be undone.
+#[derive(Debug, Clone)]
+struct Undo {
+    cells: HashMap<Cell, Option<MazeCell>>,
+    exit_seen: bool,
 }
 
 impl Default for MazeGraph {
@@ -66,7 +74,43 @@ impl Default for MazeGraph {
 
 impl MazeGraph {
     pub fn new() -> Self {
-        Self { cell_map: HashMap::new(), exit_seen: false }
+        Self { cell_map: HashMap::new(), exit_seen: false, undo: None }
+    }
+
+    /// Starts recording changes, so `rollback` can undo them.
+    pub fn checkpoint(&mut self) {
+        self.undo = Some(Undo { cells: HashMap::new(), exit_seen: self.exit_seen });
+    }
+
+    /// Keeps the changes since the checkpoint.
+    pub fn commit(&mut self) {
+        self.undo = None;
+    }
+
+    /// Undoes the changes since the checkpoint.
+    pub fn rollback(&mut self) {
+        let Some(undo) = self.undo.take() else {
+            return;
+        };
+        for (cell, before) in undo.cells {
+            match before {
+                Some(before) => self.cell_map.insert(cell, before),
+                None => self.cell_map.remove(&cell),
+            };
+        }
+        self.exit_seen = undo.exit_seen;
+    }
+
+    /// Records a cell as it is now, the first time it changes after a checkpoint.
+    fn save(&mut self, cell: Cell) {
+        if let Some(undo) = &mut self.undo {
+            undo.cells.entry(cell).or_insert_with(|| self.cell_map.get(&cell).cloned());
+        }
+    }
+
+    fn cell_mut(&mut self, position: Cell) -> Option<&mut MazeCell> {
+        self.save(position);
+        self.cell_map.get_mut(&position)
     }
 
     pub fn contains(&self, cell: &Cell) -> bool {
@@ -74,6 +118,7 @@ impl MazeGraph {
     }
 
     pub fn add(&mut self, cell: Cell, cell_type: CellType) {
+        self.save(cell);
         self.exit_seen |= cell_type.is_exit();
         self.cell_map.insert(
             cell,
@@ -89,29 +134,29 @@ impl MazeGraph {
     }
 
     pub fn add_neighbor(&mut self, cell: &Cell, neighbor: &Cell) {
-        if let Some(maze_cell) = self.cell_map.get_mut(cell) {
+        if let Some(maze_cell) = self.cell_mut(*cell) {
             maze_cell.neighbors.insert(*neighbor);
         }
     }
 
-    pub fn get_cell(&mut self, position: Cell) -> Option<&mut MazeCell> {
-        self.cell_map.get_mut(&position)
+    pub fn get_cell(&self, position: Cell) -> Option<&MazeCell> {
+        self.cell_map.get(&position)
     }
 
     pub fn update_cell_status(&mut self, position: Cell, status: CellStatus) {
-        if let Some(cell) = self.cell_map.get_mut(&position) {
+        if let Some(cell) = self.cell_mut(position) {
             cell.status = status;
         }
     }
 
     pub fn update_cell_type(&mut self, position: Cell, cell_type: CellType) {
-        if let Some(cell) = self.cell_map.get_mut(&position) {
+        if let Some(cell) = self.cell_mut(position) {
             cell.cell_type = cell_type;
         }
     }
 
     pub fn set_side(&mut self, position: Cell, heading: Heading, side: Side) {
-        if let Some(cell) = self.cell_map.get_mut(&position) {
+        if let Some(cell) = self.cell_mut(position) {
             cell.sides[heading.index()] = side;
         }
     }
@@ -125,7 +170,7 @@ impl MazeGraph {
     }
 
     pub fn set_parent(&mut self, position: Cell, parent: Cell) {
-        if let Some(cell) = self.cell_map.get_mut(&position) {
+        if let Some(cell) = self.cell_mut(position) {
             cell.parent = parent;
         }
     }
@@ -140,7 +185,7 @@ impl MazeGraph {
     }
 
     pub fn set_visited(&mut self, position: Cell, thread_name: &str) {
-        if let Some(cell) = self.cell_map.get_mut(&position) {
+        if let Some(cell) = self.cell_mut(position) {
             let count = cell.visited_by.entry(thread_name.to_string()).or_insert(0);
             *count = count.saturating_add(1);
         }
@@ -172,6 +217,23 @@ mod test {
         maze_graph.set_visited(cell, "a");
 
         assert_eq!(maze_graph.cell_map[&cell].visited_by.get("a"), Some(&2));
+    }
+
+    #[test]
+    fn test_rollback_undoes_changes_since_the_checkpoint() {
+        let mut maze_graph = MazeGraph::new();
+        let kept = Cell { row: 0, column: 0 };
+        let added = Cell { row: 1, column: 0 };
+        maze_graph.add(kept, CellType::NOTHING);
+
+        maze_graph.checkpoint();
+        maze_graph.update_cell_status(kept, CellStatus::DeadEnd);
+        maze_graph.add(added, CellType::OBJECTIVE);
+        maze_graph.rollback();
+
+        assert_eq!(maze_graph.get_cell_status(kept), Some(CellStatus::NotVisited));
+        assert!(!maze_graph.contains(&added));
+        assert!(!maze_graph.exit_seen);
     }
 
     #[test]
