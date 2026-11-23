@@ -4,9 +4,10 @@
 //! Every agent maps the maze from its own start cell. All agents start facing North, so
 //! two maps differ only by a shift, which a mutual sighting reveals.
 
-use crate::data_structures::maze_graph::{CellStatus, MazeCell, MazeGraph};
+use crate::data_structures::maze_graph::{CellStatus, MazeGraph, Side};
 use crate::maze_parser::Player;
 use shared::{
+    heading::Heading,
     maze::Cell,
     radar::{CellType, Radar},
 };
@@ -37,8 +38,8 @@ pub struct Snapshot {
     pub graph: MazeGraph,
 }
 
-/// A shared map takes a few fully seen cells in common before it is trusted.
-const MIN_OVERLAP: usize = 2;
+/// A shared map takes a few cell sides seen by both before it is trusted.
+const MIN_OVERLAP: usize = 4;
 
 /// Offsets from the player of the teammates on the radar.
 pub fn allies_seen(radar: &Radar, player: &Player) -> Vec<Cell> {
@@ -67,29 +68,27 @@ pub fn find_shift(me: &Snapshot, other: &Snapshot) -> Option<Cell> {
         .find(|&shift| maps_agree(&me.graph, &other.graph, shift))
 }
 
-/// Whether the cells both maps fully saw have the same passages, and there are enough.
+/// Whether every cell side both maps saw is the same, and there are enough of them.
 fn maps_agree(mine: &MazeGraph, other: &MazeGraph, shift: Cell) -> bool {
     let mut overlap = 0;
     for (cell, theirs) in &other.cell_map {
         let Some(ours) = mine.cell_map.get(&(*cell + shift)) else {
             continue;
         };
-        if !fully_seen(ours) || !fully_seen(theirs) {
-            continue;
-        }
-        let shifted = theirs.neighbors.iter().map(|n| *n + shift);
-        if !shifted.eq(ours.neighbors.iter().copied())
-            || ours.cell_type.is_exit() != theirs.cell_type.is_exit()
-        {
+        if ours.cell_type.is_exit() != theirs.cell_type.is_exit() {
             return false;
         }
-        overlap += 1;
+        for (a, b) in ours.sides.iter().zip(&theirs.sides) {
+            if *a == Side::Unknown || *b == Side::Unknown {
+                continue;
+            }
+            if a != b {
+                return false;
+            }
+            overlap += 1;
+        }
     }
     overlap >= MIN_OVERLAP
-}
-
-fn fully_seen(cell: &MazeCell) -> bool {
-    cell.walls + cell.neighbors.len() == 4
 }
 
 /// Copies what `other` knows into `mine`: new cells and passages, and the branches it
@@ -109,7 +108,11 @@ pub fn merge(mine: &mut MazeGraph, other: &MazeGraph, shift: Cell, keep: Cell) {
         for neighbor in &theirs.neighbors {
             mine.add_neighbor(&target, &(*neighbor + shift));
         }
-        mine.update_walls(target, theirs.walls);
+        for heading in Heading::CLOCKWISE {
+            if theirs.side(heading) != Side::Unknown {
+                mine.set_side(target, heading, theirs.side(heading));
+            }
+        }
         if theirs.status == CellStatus::DeadEnd {
             mine.update_cell_status(target, CellStatus::DeadEnd);
         }
@@ -131,8 +134,11 @@ mod tests {
             graph.add(cell(row, 0), CellType::NOTHING);
         }
         for row in from..=to {
-            let ends = u8::from(row == from) + u8::from(row == to);
-            graph.update_walls(cell(row, 0), 2 + usize::from(ends));
+            let open: Vec<Heading> = [(row > from, Heading::West), (row < to, Heading::East)]
+                .into_iter()
+                .filter_map(|(open, heading)| open.then_some(heading))
+                .collect();
+            graph.wall_in(cell(row, 0), &open);
             if row > from {
                 graph.add_neighbor(&cell(row, 0), &cell(row - 1, 0));
             }
