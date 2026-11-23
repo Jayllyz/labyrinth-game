@@ -9,6 +9,7 @@ use shared::messages::{
     send_message,
 };
 use std::collections::HashMap;
+use std::fmt;
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -44,7 +45,7 @@ impl Default for ServerConfig {
 }
 
 pub struct GameServer {
-    clients: Arc<Mutex<HashMap<String, Client>>>,
+    clients: Arc<Mutex<HashMap<PlayerId, Client>>>,
     teams: Arc<Mutex<HashMap<String, Teams>>>,
     config: ServerConfig,
     /// The game, and the signal that wakes players waiting for it to start.
@@ -58,8 +59,16 @@ const GRID_SIZE_ODDS: f64 = 0.001;
 const CHALLENGE_ODDS: f64 = 0.001;
 
 /// Players are known by team and name, so two teams may use the same player names.
-fn player_key(team: &str, name: &str) -> String {
-    format!("{team}/{name}")
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+struct PlayerId {
+    team: String,
+    name: String,
+}
+
+impl fmt::Display for PlayerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/{}", self.team, self.name)
+    }
 }
 
 type ServerResult<T> = Result<T, RegistrationError>;
@@ -68,10 +77,10 @@ type ServerResult<T> = Result<T, RegistrationError>;
 struct Match {
     game: Game,
     rng: StdRng,
-    players: HashMap<String, usize>,
+    players: HashMap<PlayerId, usize>,
     team_names: Vec<String>,
     /// Players who joined, with their team, until the game starts and places them.
-    waiting: Vec<(String, String)>,
+    waiting: Vec<PlayerId>,
     first_join: Option<Instant>,
     started: bool,
 }
@@ -100,22 +109,22 @@ impl Match {
     fn start(&mut self) {
         let mut waiting = std::mem::take(&mut self.waiting);
         waiting.sort();
-        for (name, team) in waiting {
-            self.add_player(&name, &team);
+        for player in waiting {
+            self.add_player(player);
         }
         self.started = true;
     }
 
-    fn add_player(&mut self, name: &str, team: &str) -> usize {
-        let team = self.team_names.iter().position(|t| t == team).unwrap_or_else(|| {
-            self.team_names.push(team.to_string());
+    fn add_player(&mut self, player: PlayerId) -> usize {
+        let team = self.team_names.iter().position(|t| *t == player.team).unwrap_or_else(|| {
+            self.team_names.push(player.team.clone());
             self.team_names.len() - 1
         });
         // Subscriptions stop once the maze is full, so a free cell is always left.
         let free = self.game.free_cells();
         let position = free[self.rng.random_range(0..free.len())];
         let id = self.game.add_player(team, position, Heading::North);
-        self.players.insert(name.to_string(), id);
+        self.players.insert(player, id);
         id
     }
 
@@ -253,24 +262,21 @@ impl GameServer {
     }
 
     /// Puts the player on the board, and starts the game once every team is full.
-    /// Returns the name the player goes by in the game.
-    fn join_game(&self, player: &Client) -> GameResult<String> {
+    fn join_game(&self, player: &PlayerId) -> GameResult<()> {
         // Teams stay locked until the start decision, so no registration slips in between.
         let teams = self.teams.lock().map_err(|e| GameError::ThreadError(e.to_string()))?;
-        let team = self.find_team_by_token(&teams, &player.registration_token).unwrap_or_default();
         let full = |team: &Teams| team.players.len() == self.config.max_players_per_team as usize;
         let all_full = !teams.is_empty() && teams.values().all(full);
         let registered: usize = teams.values().map(|team| team.players.len()).sum();
-        let name = player_key(&team, &player.player_name);
 
         let mut game = self.lock_match()?;
         // Only reachable when the start timeout fired while this player was joining.
         if game.started {
-            game.add_player(&name, &team);
-            return Ok(name);
+            game.add_player(player.clone());
+            return Ok(());
         }
         game.first_join.get_or_insert_with(Instant::now);
-        game.waiting.push((name.clone(), team));
+        game.waiting.push(player.clone());
         // A teammate may be registered without having joined yet; starting before it does
         // would leave it off the board.
         if !game.started && all_full && game.waiting.len() == registered {
@@ -278,12 +284,12 @@ impl GameServer {
             info!("All teams are full, the game starts");
             self.game.1.notify_all();
         }
-        Ok(name)
+        Ok(())
     }
 
     /// Waits until the game starts: once every team is full, or once the start timeout
     /// has passed since the first player joined, with whoever joined by then.
-    fn wait_for_start(&self, name: &str) -> GameResult<usize> {
+    fn wait_for_start(&self, name: &PlayerId) -> GameResult<usize> {
         let mut game = self.lock_match()?;
         while !game.started {
             let deadline =
@@ -309,7 +315,7 @@ impl GameServer {
     }
 
     /// Runs a subscribed player's game until it reaches the exit or leaves.
-    fn play(&self, stream: &mut TcpStream, name: &str) -> GameResult<()> {
+    fn play(&self, stream: &mut TcpStream, name: &PlayerId) -> GameResult<()> {
         let outcome = self.play_turns(stream, name);
         if !matches!(outcome, Ok(true)) {
             let mut game = self.lock_match()?;
@@ -322,7 +328,7 @@ impl GameServer {
     }
 
     /// Plays turns; true once the player reaches the exit.
-    fn play_turns(&self, stream: &mut TcpStream, name: &str) -> GameResult<bool> {
+    fn play_turns(&self, stream: &mut TcpStream, name: &PlayerId) -> GameResult<bool> {
         let id = self.wait_for_start(name)?;
         send_message(stream, &self.lock_match()?.view(id))?;
 
@@ -354,51 +360,51 @@ impl GameServer {
         Ok(false)
     }
 
-    fn register_client(&self, player: Client) -> SubscribePlayerResult {
+    fn register_client(&self, player: Client) -> ServerResult<PlayerId> {
         if player.player_name.is_empty() {
-            return SubscribePlayerResult::Err(RegistrationError::InvalidName);
+            return Err(RegistrationError::InvalidName);
         }
 
         if player.registration_token.is_empty() {
-            return SubscribePlayerResult::Err(RegistrationError::InvalidRegistrationToken);
+            return Err(RegistrationError::InvalidRegistrationToken);
         }
 
         let Ok(mut clients) = self.clients.lock() else {
-            return SubscribePlayerResult::Err(RegistrationError::ServerError);
+            return Err(RegistrationError::ServerError);
         };
 
         let Ok(mut teams) = self.teams.lock() else {
-            return SubscribePlayerResult::Err(RegistrationError::ServerError);
+            return Err(RegistrationError::ServerError);
         };
 
         // Every player needs a start cell other than the exit, and the board is set once
         // the game starts.
         if clients.len() + 1 >= self.config.width * self.config.height || self.has_started() {
-            return SubscribePlayerResult::Err(RegistrationError::TooManyPlayers);
+            return Err(RegistrationError::TooManyPlayers);
         }
 
         let Some(team_name) = self.find_team_by_token(&teams, &player.registration_token) else {
-            return SubscribePlayerResult::Err(RegistrationError::InvalidRegistrationToken);
+            return Err(RegistrationError::InvalidRegistrationToken);
         };
 
-        let key = player_key(&team_name, &player.player_name);
-        if clients.contains_key(&key) {
-            return SubscribePlayerResult::Err(RegistrationError::AlreadyRegistered);
+        let id = PlayerId { team: team_name.clone(), name: player.player_name.clone() };
+        if clients.contains_key(&id) {
+            return Err(RegistrationError::AlreadyRegistered);
         }
 
         if let Some(team) = teams.get_mut(&team_name) {
             if team.players.len() >= self.config.max_players_per_team as usize {
-                return SubscribePlayerResult::Err(RegistrationError::TooManyPlayers);
+                return Err(RegistrationError::TooManyPlayers);
             }
 
             team.players.push(player.clone());
-            clients.insert(key, player.clone());
+            clients.insert(id.clone(), player.clone());
 
             info!("{} registered successfully on team {}", player.player_name, team_name);
-            SubscribePlayerResult::Ok
+            Ok(id)
         } else {
             error!("Team {team_name} not found");
-            SubscribePlayerResult::Err(RegistrationError::ServerError)
+            Err(RegistrationError::ServerError)
         }
     }
 
@@ -478,17 +484,21 @@ impl GameServer {
                                 registration_token: player.registration_token,
                             };
 
-                            let result = self.register_client(player.clone());
-                            let joined = matches!(result, SubscribePlayerResult::Ok);
                             // Joined before answering: a registered player that never joins
                             // would hold the start back forever.
-                            let name = if joined { Some(self.join_game(&player)?) } else { None };
+                            let (result, id) = match self.register_client(player) {
+                                Ok(id) => {
+                                    self.join_game(&id)?;
+                                    (SubscribePlayerResult::Ok, Some(id))
+                                }
+                                Err(err) => (SubscribePlayerResult::Err(err), None),
+                            };
                             send_message(&mut stream, &Message::SubscribePlayerResult(result))?;
-                            let Some(name) = name else {
+                            let Some(id) = id else {
                                 continue;
                             };
                             // From here on this connection is the player's.
-                            return self.play(&mut stream, &name);
+                            return self.play(&mut stream, &id);
                         }
                         _ => {
                             warn!("Received invalid message type from {peer_address}");
@@ -568,13 +578,10 @@ mod tests {
         let server = small_server(1, 2, 2);
         let token = server.register_team(create_test_team("A")).unwrap();
 
-        assert!(matches!(
-            server.register_client(create_test_client("a", &token)),
-            SubscribePlayerResult::Ok
-        ));
+        assert!(server.register_client(create_test_client("a", &token)).is_ok());
         assert!(matches!(
             server.register_client(create_test_client("b", &token)),
-            SubscribePlayerResult::Err(RegistrationError::TooManyPlayers)
+            Err(RegistrationError::TooManyPlayers)
         ));
     }
 
@@ -589,8 +596,8 @@ mod tests {
         });
         let token = server.register_team(create_test_team("A")).unwrap();
         let player = create_test_client("a", &token);
-        server.register_client(player.clone());
-        let name = server.join_game(&player).unwrap();
+        let name = server.register_client(player).unwrap();
+        server.join_game(&name).unwrap();
 
         let (done, started) = std::sync::mpsc::channel();
         std::thread::spawn(move || done.send(server.wait_for_start(&name).is_ok()));
@@ -603,20 +610,18 @@ mod tests {
         let server = small_server(8, 8, 1);
         let token = server.register_team(create_test_team("A")).unwrap();
         let player = create_test_client("a", &token);
-        server.register_client(player.clone());
-        server.join_game(&player).unwrap();
+        let id = server.register_client(player).unwrap();
+        server.join_game(&id).unwrap();
 
         assert!(server.register_team(create_test_team("B")).is_err());
-        assert!(matches!(
-            server.register_client(create_test_client("a2", &token)),
-            SubscribePlayerResult::Err(_)
-        ));
+        assert!(server.register_client(create_test_client("a2", &token)).is_err());
     }
 
     /// A started game with two teammates, the first one in a challenge.
     fn game_in_challenge(modulo: u128) -> Match {
         let mut game = Match::new(&ServerConfig { width: 8, height: 8, ..ServerConfig::default() });
-        game.waiting = vec![("a".into(), "A".into()), ("b".into(), "A".into())];
+        let player = |name: &str| PlayerId { team: "A".into(), name: name.into() };
+        game.waiting = vec![player("a"), player("b")];
         game.start();
         game.game.player_mut(0).challenge = Some(modulo);
         game
@@ -693,10 +698,11 @@ mod tests {
         let client = create_test_client("Test Player", &token);
 
         let res = server.register_client(client);
-        assert!(matches!(res, SubscribePlayerResult::Ok));
+        assert!(res.is_ok());
 
         let clients = server.clients.lock().unwrap();
-        assert!(clients.contains_key("Test Team/Test Player"));
+        let id = PlayerId { team: "Test Team".into(), name: "Test Player".into() };
+        assert!(clients.contains_key(&id));
     }
 
     #[test]
@@ -708,8 +714,8 @@ mod tests {
         let first = server.register_client(create_test_client("Tremeaux1", &alpha));
         let second = server.register_client(create_test_client("Tremeaux1", &beta));
 
-        assert!(matches!(first, SubscribePlayerResult::Ok));
-        assert!(matches!(second, SubscribePlayerResult::Ok));
+        assert!(first.is_ok());
+        assert!(second.is_ok());
     }
 
     #[test]
@@ -718,10 +724,7 @@ mod tests {
         let client = create_test_client("Test Player", "invalid_token");
 
         let result = server.register_client(client);
-        assert!(matches!(
-            result,
-            SubscribePlayerResult::Err(RegistrationError::InvalidRegistrationToken)
-        ));
+        assert!(matches!(result, Err(RegistrationError::InvalidRegistrationToken)));
     }
 
     #[test]
@@ -732,7 +735,7 @@ mod tests {
         let client = create_test_client("", &token);
 
         let result = server.register_client(client);
-        assert!(matches!(result, SubscribePlayerResult::Err(RegistrationError::InvalidName)));
+        assert!(matches!(result, Err(RegistrationError::InvalidName)));
     }
 
     #[test]
@@ -744,7 +747,7 @@ mod tests {
         for i in 1..=3 {
             let client = create_test_client(&format!("Player{i}"), &token);
             let res = server.register_client(client);
-            assert!(matches!(res, SubscribePlayerResult::Ok));
+            assert!(res.is_ok());
         }
 
         let teams = server.teams.lock().unwrap();
@@ -774,8 +777,7 @@ mod tests {
         }
 
         let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-        let success_count =
-            results.iter().filter(|&r| matches!(r, SubscribePlayerResult::Ok)).count();
+        let success_count = results.iter().filter(|&r| r.is_ok()).count();
 
         assert_eq!(success_count, 3);
     }
