@@ -249,16 +249,15 @@ pub fn yield_to_opponent(
     let is_open = |c: &Cell| *c != blocked && *c != position;
 
     let retreat = if cell.neighbors.contains(&cell.parent) && is_open(&cell.parent) {
+        let parent = cell.parent;
         if cell.status == CellStatus::Visited {
-            cell.status = CellStatus::NotVisited;
+            graph.update_cell_status(position, CellStatus::NotVisited);
         }
-        cell.parent
+        parent
     } else {
         let side = *cell.neighbors.iter().find(|c| is_open(c))?;
-        if let Some(side_cell) = graph.get_cell(side)
-            && side_cell.status == CellStatus::NotVisited
-        {
-            side_cell.parent = position;
+        if graph.get_cell_status(side) == Some(CellStatus::NotVisited) {
+            graph.set_parent(side, position);
         }
         side
     };
