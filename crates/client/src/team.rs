@@ -183,8 +183,8 @@ mod tests {
         merge(&mut mine, &theirs, cell(0, 0), cell(0, 0));
 
         assert_eq!(mine.get_size(), 5);
-        assert_eq!(mine.get_cell_status(cell(4, 0)), CellStatus::DeadEnd);
-        assert_eq!(mine.get_cell_status(cell(0, 0)), CellStatus::NotVisited);
+        assert_eq!(mine.get_cell_status(cell(4, 0)), Some(CellStatus::DeadEnd));
+        assert_eq!(mine.get_cell_status(cell(0, 0)), Some(CellStatus::NotVisited));
         assert!(mine.cell_map[&cell(2, 0)].neighbors.contains(&cell(3, 0)));
     }
 }
