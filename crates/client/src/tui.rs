@@ -1,3 +1,9 @@
+mod log_layer;
+mod state;
+
+pub use log_layer::TuiLayer;
+pub use state::{AgentEvent, AgentState, GameState};
+
 use crate::data_structures::maze_graph::{CellStatus, MazeCell, MazeGraph};
 use crate::maze_parser::Player;
 use ratatui::crossterm::{
@@ -20,94 +26,7 @@ use std::{
     sync::mpsc::{Receiver, Sender, channel},
     time::{Duration, Instant},
 };
-use tracing::{
-    Level, Subscriber,
-    field::{Field, Visit},
-    span,
-};
-use tracing_subscriber::{Layer, layer::Context, registry::LookupSpan};
-
-/// What agents tell the TUI. Agents only send; the TUI thread owns the state, so agents
-/// never wait on a lock while it draws.
-pub enum AgentEvent {
-    Log { agent: String, level: Level, text: String },
-    Update { agent: String, graph: MazeGraph, player: Player },
-    ExitFound { agent: String },
-    Finished,
-}
-
-pub struct AgentState {
-    pub logs: Vec<(String, Level)>,
-    pub graph: MazeGraph,
-    pub player: Player,
-    pub found_exit: bool,
-}
-
-impl Default for AgentState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl AgentState {
-    pub fn new() -> Self {
-        Self { logs: Vec::new(), graph: MazeGraph::new(), player: Player::new(), found_exit: false }
-    }
-}
-
-pub struct GameState {
-    agents: HashMap<String, AgentState>,
-    selected_tab: usize,
-    finished: bool,
-}
-
-impl Default for GameState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl GameState {
-    pub fn new() -> Self {
-        Self { agents: HashMap::new(), selected_tab: 0, finished: false }
-    }
-
-    pub fn mark_finished(&mut self) {
-        self.finished = true;
-    }
-
-    pub fn mark_exit_found(&mut self, agent: &str) {
-        if let Some(state) = self.agents.get_mut(agent) {
-            state.found_exit = true;
-        }
-    }
-
-    pub fn register_agent(&mut self, name: String) {
-        self.agents.insert(name, AgentState::new());
-    }
-
-    pub fn add_log(&mut self, agent: &str, message: String, level: Level) {
-        if let Some(state) = self.agents.get_mut(agent) {
-            state.logs.push((message, level));
-        }
-    }
-
-    pub fn update_state(&mut self, agent: &str, graph: MazeGraph, player: Player) {
-        if let Some(state) = self.agents.get_mut(agent) {
-            state.graph = graph;
-            state.player = player;
-        }
-    }
-
-    pub fn apply(&mut self, event: AgentEvent) {
-        match event {
-            AgentEvent::Log { agent, level, text } => self.add_log(&agent, text, level),
-            AgentEvent::Update { agent, graph, player } => self.update_state(&agent, graph, player),
-            AgentEvent::ExitFound { agent } => self.mark_exit_found(&agent),
-            AgentEvent::Finished => self.mark_finished(),
-        }
-    }
-}
+use tracing::Level;
 
 #[cfg(not(test))]
 pub struct Tui {
@@ -665,124 +584,10 @@ impl Drop for Tui {
     }
 }
 
-/// Sends logs from agent threads to the TUI, in that agent's tab.
-pub struct TuiLayer {
-    events: Sender<AgentEvent>,
-}
-
-impl TuiLayer {
-    pub const fn new(events: Sender<AgentEvent>) -> Self {
-        Self { events }
-    }
-}
-
-/// The agent name kept on the `agent` span, so events inside it know their tab.
-struct AgentName(String);
-
-impl<S> Layer<S> for TuiLayer
-where
-    S: Subscriber + for<'a> LookupSpan<'a>,
-{
-    fn on_new_span(&self, attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
-        let mut name = FieldText::new("name");
-        attrs.record(&mut name);
-        if let (Some(name), Some(span)) = (name.text, ctx.span(id)) {
-            span.extensions_mut().insert(AgentName(name));
-        }
-    }
-
-    fn on_event(&self, event: &tracing::Event<'_>, ctx: Context<'_, S>) {
-        let mut message = FieldText::new("message");
-        event.record(&mut message);
-        let text = message.text.unwrap_or_default();
-        let level = *event.metadata().level();
-        let agent = ctx.event_scope(event).and_then(|scope| {
-            scope
-                .from_root()
-                .find_map(|span| span.extensions().get::<AgentName>().map(|n| n.0.clone()))
-        });
-
-        match agent {
-            // The TUI stops listening once the user quits it; the game plays on anyway.
-            Some(agent) => drop(self.events.send(AgentEvent::Log { agent, level, text })),
-            // Logs outside an agent have no tab, so they go to stderr as before.
-            None => eprintln!("{level} {text}"),
-        }
-    }
-}
-
-/// Reads one field of an event or span as text.
-struct FieldText {
-    field: &'static str,
-    text: Option<String>,
-}
-
-impl FieldText {
-    const fn new(field: &'static str) -> Self {
-        Self { field, text: None }
-    }
-}
-
-impl Visit for FieldText {
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        if field.name() == self.field {
-            self.text = Some(format!("{value:?}"));
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use shared::{maze::Cell, radar::CellType};
-
-    #[test]
-    fn test_game_state_new() {
-        let game_state = GameState::new();
-        assert_eq!(game_state.agents.len(), 0);
-        assert_eq!(game_state.selected_tab, 0);
-    }
-
-    #[test]
-    fn test_game_state_register_agent() {
-        let mut game_state = GameState::new();
-        game_state.register_agent("agent1".to_string());
-        game_state.register_agent("agent2".to_string());
-
-        assert!(game_state.agents.contains_key("agent1"));
-        assert!(game_state.agents.contains_key("agent2"));
-        assert_eq!(game_state.agents.len(), 2);
-    }
-
-    #[test]
-    fn test_game_state_add_log() {
-        let mut game_state = GameState::new();
-        game_state.register_agent("agent1".to_string());
-
-        game_state.add_log("agent1", "Test log".to_string(), Level::INFO);
-        game_state.add_log("agent1", "Warning log".to_string(), Level::WARN);
-
-        let agent_state = &game_state.agents["agent1"];
-        assert_eq!(agent_state.logs.len(), 2);
-    }
-
-    #[test]
-    fn test_game_state_update_state() {
-        let mut game_state = GameState::new();
-        game_state.register_agent("agent1".to_string());
-
-        let mut graph = MazeGraph::new();
-        let cell = Cell { row: 1, column: 1 };
-        graph.add(cell, CellType::NOTHING);
-
-        let player = Player { position: cell, heading: Heading::North, exit_bearing: None };
-
-        game_state.update_state("agent1", graph.clone(), player);
-
-        let agent_state = &game_state.agents["agent1"];
-        assert_eq!(agent_state.player.position, cell);
-        assert!(agent_state.graph.contains(&cell));
-    }
 
     #[test]
     fn test_select_agent_increment() {
