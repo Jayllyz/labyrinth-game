@@ -7,7 +7,7 @@ use shared::{maze::Cell, radar::CellType};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum CellStatus {
-    VISITED,
+    Visited,
     NotVisited,
     DeadEnd,
 }
@@ -111,12 +111,9 @@ impl MazeGraph {
         self.cell_map.len()
     }
 
-    pub fn get_cell_status(&self, position: Cell) -> CellStatus {
-        if let Some(cell) = self.cell_map.get(&position) {
-            cell.status.clone()
-        } else {
-            CellStatus::DeadEnd
-        }
+    /// The cell's status, or `None` when the cell is not on the map.
+    pub fn get_cell_status(&self, position: Cell) -> Option<CellStatus> {
+        self.cell_map.get(&position).map(|cell| cell.status.clone())
     }
 
     pub fn set_visited(&mut self, position: Cell, thread_name: &str) {
@@ -179,9 +176,9 @@ mod test {
         let mut maze_graph = MazeGraph::new();
         let cell = Cell { row: 0, column: 0 };
         maze_graph.add(cell, CellType::NOTHING);
-        maze_graph.update_cell_status(cell, CellStatus::VISITED);
+        maze_graph.update_cell_status(cell, CellStatus::Visited);
         let maze_cell = maze_graph.get_cell(cell).unwrap();
-        assert_eq!(maze_cell.status, CellStatus::VISITED);
+        assert_eq!(maze_cell.status, CellStatus::Visited);
     }
 
     #[test]
@@ -221,7 +218,7 @@ mod test {
         let mut maze_graph = MazeGraph::new();
         let cell = Cell { row: 0, column: 0 };
         maze_graph.add(cell, CellType::NOTHING);
-        maze_graph.update_cell_status(cell, CellStatus::VISITED);
-        assert_eq!(maze_graph.get_cell_status(cell), CellStatus::VISITED);
+        maze_graph.update_cell_status(cell, CellStatus::Visited);
+        assert_eq!(maze_graph.get_cell_status(cell), Some(CellStatus::Visited));
     }
 }

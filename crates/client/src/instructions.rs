@@ -56,8 +56,7 @@ pub fn alian_solver(
 
     let mut dead_ends_cell = 0;
     for pos in &neighbor_positions {
-        let status = graph.get_cell_status(*pos);
-        if status == CellStatus::DeadEnd {
+        if graph.get_cell_status(*pos) == Some(CellStatus::DeadEnd) {
             dead_ends_cell += 1;
         }
     }
@@ -90,14 +89,14 @@ pub fn alian_solver(
             if cell_type == CellType::ENEMY {
                 graph.update_cell_type(neighbor_position, CellType::NOTHING);
             }
-            graph.update_cell_status(player_position, CellStatus::VISITED);
+            graph.update_cell_status(player_position, CellStatus::Visited);
             graph.set_visited(player_position, thread_name);
 
             graph.set_parent(neighbor_position, player_position);
             return player.step_toward(&neighbor_position);
         }
 
-        if status == CellStatus::VISITED {
+        if status == CellStatus::Visited {
             visited.push(neighbor_position);
 
             if !visited_by.contains_key(thread_name) {
@@ -111,14 +110,10 @@ pub fn alian_solver(
     // Trie ascendant
     visited_by_self.sort_by_key(|a| a.1);
 
-    let parent_status = graph.get_cell_status(parent);
-    let target = if (parent_status == CellStatus::DeadEnd || parent == player_position)
-        && !not_visited_by_self.is_empty()
-    {
+    let parent_dead = graph.get_cell_status(parent) == Some(CellStatus::DeadEnd);
+    let target = if (parent_dead || parent == player_position) && !not_visited_by_self.is_empty() {
         not_visited_by_self[0]
-    } else if (parent_status == CellStatus::DeadEnd || parent == player_position)
-        && !visited.is_empty()
-    {
+    } else if (parent_dead || parent == player_position) && !visited.is_empty() {
         visited_by_self[0].0
     } else {
         backtrack_target(&neighbor_positions, parent)
@@ -225,13 +220,13 @@ pub fn tremeaux_solver(
         }
 
         if status == CellStatus::NotVisited {
-            graph.update_cell_status(player.position, CellStatus::VISITED);
+            graph.update_cell_status(player.position, CellStatus::Visited);
             graph.set_parent(neighbor_position, player.position);
             return player.step_toward(&neighbor_position);
         }
     }
 
-    let unexplored = |cell| graph.get_cell_status(cell) == CellStatus::NotVisited;
+    let unexplored = |cell| graph.get_cell_status(cell) == Some(CellStatus::NotVisited);
     let target = first_step_to(graph, player.position, avoid, player.exit_bearing, unexplored)
         .unwrap_or_else(|| backtrack_target(&neighbor_positions, parent));
     graph.update_cell_status(player.position, CellStatus::DeadEnd);
@@ -254,7 +249,7 @@ pub fn yield_to_opponent(
     let is_open = |c: &Cell| *c != blocked && *c != position;
 
     let retreat = if cell.neighbors.contains(&cell.parent) && is_open(&cell.parent) {
-        if cell.status == CellStatus::VISITED {
+        if cell.status == CellStatus::Visited {
             cell.status = CellStatus::NotVisited;
         }
         cell.parent
@@ -422,7 +417,7 @@ mod tests {
             graph.add_neighbor(&CURRENT, neighbor);
         }
         graph.set_parent(CURRENT, parent);
-        graph.update_cell_status(CURRENT, CellStatus::VISITED);
+        graph.update_cell_status(CURRENT, CellStatus::Visited);
 
         let mut player = Player::new();
         player.position = CURRENT;
@@ -435,8 +430,8 @@ mod tests {
         // still waiting next to SIDE.
         let unexplored = Cell { row: 7, column: 5 };
         let (mut player, mut graph) = graph_around_player(&[BEHIND, SIDE], BEHIND);
-        graph.update_cell_status(BEHIND, CellStatus::VISITED);
-        graph.update_cell_status(SIDE, CellStatus::VISITED);
+        graph.update_cell_status(BEHIND, CellStatus::Visited);
+        graph.update_cell_status(SIDE, CellStatus::Visited);
         graph.add(unexplored, CellType::NOTHING);
         graph.add_neighbor(&SIDE, &unexplored);
         graph.add_neighbor(&unexplored, &SIDE);
@@ -452,7 +447,7 @@ mod tests {
     fn test_tremeaux_routes_around_cell_held_by_opponent() {
         let unexplored = Cell { row: 7, column: 5 };
         let (mut player, mut graph) = graph_around_player(&[BLOCKED, SIDE], BEHIND);
-        graph.update_cell_status(SIDE, CellStatus::VISITED);
+        graph.update_cell_status(SIDE, CellStatus::Visited);
         graph.add(unexplored, CellType::NOTHING);
         graph.add_neighbor(&SIDE, &unexplored);
         graph.add_neighbor(&unexplored, &SIDE);
@@ -491,7 +486,7 @@ mod tests {
         for (via, unexplored) in
             [(BLOCKED, Cell { row: 5, column: 3 }), (SIDE, Cell { row: 7, column: 5 })]
         {
-            graph.update_cell_status(via, CellStatus::VISITED);
+            graph.update_cell_status(via, CellStatus::Visited);
             graph.add(unexplored, CellType::NOTHING);
             graph.add_neighbor(&via, &unexplored);
         }
@@ -550,7 +545,7 @@ mod tests {
     fn test_heads_for_a_known_exit_before_exploring() {
         let exit = Cell { row: 5, column: 7 };
         let (mut player, mut graph) = graph_around_player(&[SIDE, BEHIND], BEHIND);
-        graph.update_cell_status(BEHIND, CellStatus::VISITED);
+        graph.update_cell_status(BEHIND, CellStatus::Visited);
         graph.add(exit, CellType::OBJECTIVE);
         graph.add_neighbor(&BEHIND, &exit);
 
@@ -571,7 +566,7 @@ mod tests {
     #[test]
     fn test_tremeaux_heads_for_exit_held_by_opponent() {
         let (mut player, mut graph) = graph_around_player(&[BEHIND], BEHIND);
-        graph.update_cell_status(BEHIND, CellStatus::VISITED);
+        graph.update_cell_status(BEHIND, CellStatus::Visited);
         graph.add(BLOCKED, CellType::ObjectiveEnemy);
         graph.update_walls(BLOCKED, 3);
         graph.add_neighbor(&CURRENT, &BLOCKED);
@@ -589,7 +584,7 @@ mod tests {
 
         assert_eq!(action, Some(messages::Action::MoveTo(messages::Direction::Back)));
         assert_eq!(player.position, BEHIND);
-        assert_eq!(graph.get_cell_status(CURRENT), CellStatus::NotVisited);
+        assert_eq!(graph.get_cell_status(CURRENT), Some(CellStatus::NotVisited));
     }
 
     #[test]
@@ -602,7 +597,7 @@ mod tests {
         assert_eq!(player.position, SIDE);
         // Backtracking from the side cell must lead back here, without rewriting our parent.
         assert_eq!(graph.get_cell(SIDE).map(|c| c.parent), Some(CURRENT));
-        assert_eq!(graph.get_cell_status(CURRENT), CellStatus::VISITED);
+        assert_eq!(graph.get_cell_status(CURRENT), Some(CellStatus::Visited));
     }
 
     #[test]
@@ -611,6 +606,6 @@ mod tests {
 
         assert_eq!(yield_to_opponent(&mut player, &mut graph, BLOCKED), None);
         assert_eq!(player.position, CURRENT);
-        assert_eq!(graph.get_cell_status(CURRENT), CellStatus::VISITED);
+        assert_eq!(graph.get_cell_status(CURRENT), Some(CellStatus::Visited));
     }
 }
