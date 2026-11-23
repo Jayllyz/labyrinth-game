@@ -57,6 +57,11 @@ const COMPASS_ODDS: f64 = 0.012;
 const GRID_SIZE_ODDS: f64 = 0.001;
 const CHALLENGE_ODDS: f64 = 0.001;
 
+/// Players are known by team and name, so two teams may use the same player names.
+fn player_key(team: &str, name: &str) -> String {
+    format!("{team}/{name}")
+}
+
 type ServerResult<T> = Result<T, RegistrationError>;
 
 /// One game: the board, and which player and team each name stands for.
@@ -248,22 +253,24 @@ impl GameServer {
     }
 
     /// Puts the player on the board, and starts the game once every team is full.
-    fn join_game(&self, player: &Client) -> GameResult<()> {
+    /// Returns the name the player goes by in the game.
+    fn join_game(&self, player: &Client) -> GameResult<String> {
         // Teams stay locked until the start decision, so no registration slips in between.
         let teams = self.teams.lock().map_err(|e| GameError::ThreadError(e.to_string()))?;
         let team = self.find_team_by_token(&teams, &player.registration_token).unwrap_or_default();
         let full = |team: &Teams| team.players.len() == self.config.max_players_per_team as usize;
         let all_full = !teams.is_empty() && teams.values().all(full);
         let registered: usize = teams.values().map(|team| team.players.len()).sum();
+        let name = player_key(&team, &player.player_name);
 
         let mut game = self.lock_match()?;
         // Only reachable when the start timeout fired while this player was joining.
         if game.started {
-            game.add_player(&player.player_name, &team);
-            return Ok(());
+            game.add_player(&name, &team);
+            return Ok(name);
         }
         game.first_join.get_or_insert_with(Instant::now);
-        game.waiting.push((player.player_name.clone(), team));
+        game.waiting.push((name.clone(), team));
         // A teammate may be registered without having joined yet; starting before it does
         // would leave it off the board.
         if !game.started && all_full && game.waiting.len() == registered {
@@ -271,7 +278,7 @@ impl GameServer {
             info!("All teams are full, the game starts");
             self.game.1.notify_all();
         }
-        Ok(())
+        Ok(name)
     }
 
     /// Waits until the game starts: once every team is full, or once the start timeout
@@ -364,10 +371,6 @@ impl GameServer {
             return SubscribePlayerResult::Err(RegistrationError::ServerError);
         };
 
-        if clients.contains_key(&player.player_name) {
-            return SubscribePlayerResult::Err(RegistrationError::AlreadyRegistered);
-        }
-
         // Every player needs a start cell other than the exit, and the board is set once
         // the game starts.
         if clients.len() + 1 >= self.config.width * self.config.height || self.has_started() {
@@ -378,13 +381,18 @@ impl GameServer {
             return SubscribePlayerResult::Err(RegistrationError::InvalidRegistrationToken);
         };
 
+        let key = player_key(&team_name, &player.player_name);
+        if clients.contains_key(&key) {
+            return SubscribePlayerResult::Err(RegistrationError::AlreadyRegistered);
+        }
+
         if let Some(team) = teams.get_mut(&team_name) {
             if team.players.len() >= self.config.max_players_per_team as usize {
                 return SubscribePlayerResult::Err(RegistrationError::TooManyPlayers);
             }
 
             team.players.push(player.clone());
-            clients.insert(player.player_name.clone(), player.clone());
+            clients.insert(key, player.clone());
 
             info!("{} registered successfully on team {}", player.player_name, team_name);
             SubscribePlayerResult::Ok
@@ -471,18 +479,15 @@ impl GameServer {
                                 registration_token: player.registration_token,
                             };
 
-                            let name = player.player_name.clone();
                             let result = self.register_client(player.clone());
                             let joined = matches!(result, SubscribePlayerResult::Ok);
                             // Joined before answering: a registered player that never joins
                             // would hold the start back forever.
-                            if joined {
-                                self.join_game(&player)?;
-                            }
+                            let name = if joined { Some(self.join_game(&player)?) } else { None };
                             send_message(&mut stream, &Message::SubscribePlayerResult(result))?;
-                            if !joined {
+                            let Some(name) = name else {
                                 continue;
-                            }
+                            };
                             // From here on this connection is the player's.
                             return self.play(&mut stream, &name);
                         }
@@ -587,10 +592,10 @@ mod tests {
         let token = server.register_team(create_test_team("A")).unwrap();
         let player = create_test_client("a", &token);
         server.register_client(player.clone());
-        server.join_game(&player).unwrap();
+        let name = server.join_game(&player).unwrap();
 
         let (done, started) = std::sync::mpsc::channel();
-        std::thread::spawn(move || done.send(server.wait_for_start("a").is_ok()));
+        std::thread::spawn(move || done.send(server.wait_for_start(&name).is_ok()));
 
         assert_eq!(started.recv_timeout(Duration::from_secs(5)), Ok(true));
     }
@@ -693,7 +698,20 @@ mod tests {
         assert!(matches!(res, SubscribePlayerResult::Ok));
 
         let clients = server.clients.lock().unwrap();
-        assert!(clients.contains_key("Test Player"));
+        assert!(clients.contains_key("Test Team/Test Player"));
+    }
+
+    #[test]
+    fn test_players_on_different_teams_may_share_a_name() {
+        let server = setup_test_environment();
+        let alpha = server.register_team(create_test_team("Alpha")).unwrap();
+        let beta = server.register_team(create_test_team("Beta")).unwrap();
+
+        let first = server.register_client(create_test_client("Tremeaux1", &alpha));
+        let second = server.register_client(create_test_client("Tremeaux1", &beta));
+
+        assert!(matches!(first, SubscribePlayerResult::Ok));
+        assert!(matches!(second, SubscribePlayerResult::Ok));
     }
 
     #[test]

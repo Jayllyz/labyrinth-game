@@ -35,3 +35,22 @@ jobs:
 
     - name: Run Docker container
       run: docker run --rm test-e2e
+
+  own-server:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Install Rust toolchain
+      uses: oxc-project/setup-rust@12a52e3caf7bac9d8b9ca550a82c425ed6343aee # v1.0.18
+      with:
+        cache-key: e2e-own-server
+        save-cache: ${{ github.ref_name == 'main' }}
+
+    - name: Play two teams against our server
+      run: e2e/own-server.sh
