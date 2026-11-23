@@ -1,5 +1,6 @@
-use crate::agent::{Agent, TeamSecrets};
+use crate::agent::Agent;
 use crate::instructions::Algorithm;
+use crate::team::Team;
 use crate::tui::AgentEvent;
 use shared::utils::print_error;
 use shared::{
@@ -12,7 +13,7 @@ use shared::{
 use std::{
     io::{Read, Write},
     net::TcpStream,
-    sync::{Arc, mpsc::Sender},
+    sync::mpsc::Sender,
     thread,
     time::Duration,
 };
@@ -30,7 +31,7 @@ pub struct ClientConfig {
 
 pub struct GameClient {
     config: ClientConfig,
-    secrets: TeamSecrets,
+    team: Team,
 }
 
 /// Name of the agent at `index`, shared by the server subscription and the TUI tabs.
@@ -40,7 +41,7 @@ pub fn agent_name(algorithm: Algorithm, index: u8) -> String {
 
 impl GameClient {
     pub fn new(config: ClientConfig) -> Self {
-        Self { config, secrets: TeamSecrets::default() }
+        Self { config, team: Team::default() }
     }
 
     fn connect_to_server(address: &str, mut max_retries: u8) -> GameResult<TcpStream> {
@@ -92,8 +93,7 @@ impl GameClient {
                 .map(|i| {
                     let name = agent_name(algorithm, i);
                     let seed = config.seed.wrapping_add(u64::from(i));
-                    let mut agent =
-                        Agent::new(name.clone(), algorithm, Arc::clone(&self.secrets), seed);
+                    let mut agent = Agent::new(name.clone(), algorithm, self.team.clone(), seed);
                     let tui = tui.clone();
                     thread::Builder::new().name(name.clone()).spawn_scoped(
                         scope,
@@ -177,8 +177,7 @@ mod tests {
 
     #[test]
     fn test_agent_found_the_exit_when_server_closes_connection() {
-        let mut agent =
-            Agent::new("Player1".into(), Algorithm::Tremeaux, TeamSecrets::default(), 0);
+        let mut agent = Agent::new("Player1".into(), Algorithm::Tremeaux, Team::default(), 0);
         let (tui, events) = std::sync::mpsc::channel();
         let mut closed_stream = std::io::Cursor::new(Vec::new());
 

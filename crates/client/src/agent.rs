@@ -2,6 +2,7 @@ use crate::data_structures::maze_graph::MazeGraph;
 use crate::instructions::{self, Algorithm};
 use crate::maze_parser::{Player, maze_to_graph};
 use crate::solver::{Solver, Turn};
+use crate::team::{self, Snapshot, Team};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use shared::{
     errors::{GameError, GameResult},
@@ -9,14 +10,8 @@ use shared::{
     messages::{Action, ActionError, Challenge, Hint, Message, RadarView, SubscribePlayerResult},
     radar::{Radar, decode_base64, extract_data},
 };
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::collections::HashMap;
 use tracing::{debug, error, info, warn};
-
-/// Secrets of the whole team, by agent name. A challenge is answered with all of them.
-pub type TeamSecrets = Arc<Mutex<HashMap<String, u128>>>;
 
 /// Opponents move on quickly, so a held cell is only avoided for a few moves.
 pub const AVOID_OPPONENT_TURNS: u8 = 3;
@@ -28,7 +23,9 @@ pub struct Agent {
     graph: MazeGraph,
     player: Player,
     solver: Box<dyn Solver>,
-    secrets: TeamSecrets,
+    team: Team,
+    /// For each teammate whose map lines up with ours, the shift into our frame.
+    links: HashMap<String, Cell>,
     challenge_modulo: Option<u128>,
     /// Cell an opponent recently held and turns left to route around it.
     avoid: Option<(Cell, u8)>,
@@ -44,12 +41,13 @@ struct Pending {
 }
 
 impl Agent {
-    pub fn new(name: String, algorithm: Algorithm, secrets: TeamSecrets, seed: u64) -> Self {
+    pub fn new(name: String, algorithm: Algorithm, team: Team, seed: u64) -> Self {
         Self {
             graph: MazeGraph::new(),
             player: Player::new(),
             solver: algorithm.solver(&name),
-            secrets,
+            team,
+            links: HashMap::new(),
             challenge_modulo: None,
             avoid: None,
             pending: None,
@@ -113,11 +111,41 @@ impl Agent {
             self.solver = solver;
         }
         maze_to_graph(&radar_view, &self.player, &mut self.graph);
+        self.share_map(&radar_view);
 
         let mut next = self.copy_state();
         let action = self.decide(&radar_view, &mut next);
         self.pending = Some(next);
         action
+    }
+
+    /// Publishes what this agent knows, lines its map up with teammates it meets, and
+    /// copies in what lined-up teammates know.
+    fn share_map(&mut self, radar: &Radar) {
+        let Ok(mut maps) = self.team.maps.lock() else {
+            return;
+        };
+        let me = Snapshot {
+            position: self.player.position,
+            allies_seen: team::allies_seen(radar, &self.player),
+            graph: self.graph.clone(),
+        };
+        // A shift is trusted only when a single teammate fits, as the radar does not say
+        // which teammate it shows.
+        let mut candidates = maps
+            .iter()
+            .filter(|(name, _)| **name != self.name && !self.links.contains_key(*name))
+            .filter_map(|(name, other)| team::find_shift(&me, other).map(|shift| (name, shift)));
+        if let (Some((name, shift)), None) = (candidates.next(), candidates.next()) {
+            debug!("Map lined up with {name}");
+            self.links.insert(name.clone(), shift);
+        }
+        for (name, shift) in &self.links {
+            if let Some(other) = maps.get(name) {
+                team::merge(&mut self.graph, &other.graph, *shift, self.player.position);
+            }
+        }
+        maps.insert(self.name.clone(), me);
     }
 
     fn copy_state(&self) -> Pending {
@@ -162,7 +190,7 @@ impl Agent {
                 }
             }
             Hint::Secret(secret) => {
-                if let Ok(mut secrets) = self.secrets.lock() {
+                if let Ok(mut secrets) = self.team.secrets.lock() {
                     secrets.insert(self.name.clone(), secret);
                 }
             }
@@ -209,7 +237,7 @@ impl Agent {
     }
 
     fn solve_challenge(&self, modulo: u128) -> Option<Action> {
-        let secrets = self.secrets.lock().ok()?;
+        let secrets = self.team.secrets.lock().ok()?;
         Some(Action::SolveChallenge { answer: instructions::solve_sum_modulo(modulo, &secrets) })
     }
 }
@@ -223,7 +251,7 @@ mod tests {
     use shared::radar::CellType;
 
     fn agent(name: &str) -> Agent {
-        Agent::new(name.to_string(), Algorithm::Tremeaux, TeamSecrets::default(), 0)
+        Agent::new(name.to_string(), Algorithm::Tremeaux, Team::default(), 0)
     }
 
     /// Chooses a move from the current map, as a radar view would.
@@ -333,11 +361,9 @@ mod tests {
 
     #[test]
     fn test_each_agent_answers_challenge_with_its_own_modulo() {
-        let secrets = TeamSecrets::default();
-        let mut agent_a =
-            Agent::new("Player1".into(), Algorithm::Tremeaux, Arc::clone(&secrets), 0);
-        let mut agent_b =
-            Agent::new("Player2".into(), Algorithm::Tremeaux, Arc::clone(&secrets), 0);
+        let team = Team::default();
+        let mut agent_a = Agent::new("Player1".into(), Algorithm::Tremeaux, team.clone(), 0);
+        let mut agent_b = Agent::new("Player2".into(), Algorithm::Tremeaux, team, 0);
         agent_a.on_message(Message::Hint(Hint::Secret(25))).unwrap();
 
         let challenge = |m| Message::Challenge(Challenge::SecretSumModulo(m));
