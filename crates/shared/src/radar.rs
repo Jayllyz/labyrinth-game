@@ -129,7 +129,7 @@ pub fn decode_base64(input: &str) -> Vec<u8> {
 }
 
 /// Reads the 9 cells of the radar, 4 bits each, from the high bits of a 40-bit field.
-pub fn retrieve_cell(bits: u64) -> Vec<CellType> {
+fn retrieve_cell(bits: u64) -> Vec<CellType> {
     (0..9)
         .map(|i| match (bits >> (36 - 4 * i)) & 0xF {
             0 => CellType::NOTHING,
@@ -161,7 +161,7 @@ fn passages(bits: u32) -> Vec<Passages> {
 }
 
 /// Reads the horizontal and vertical passages from their 24-bit fields.
-pub fn retrieve_passage(horizontal: u32, vertical: u32) -> (Vec<Passages>, Vec<Passages>) {
+fn retrieve_passage(horizontal: u32, vertical: u32) -> (Vec<Passages>, Vec<Passages>) {
     (passages(horizontal), passages(vertical))
 }
 

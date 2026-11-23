@@ -1,6 +1,6 @@
 use crate::data_structures::maze_graph::MazeGraph;
 use crate::instructions::{self, Algorithm};
-use crate::maze_parser::{Player, maze_to_graph};
+use crate::maze_parser::Player;
 use crate::solver::{Solver, Turn};
 use crate::team::{self, Snapshot, Team};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
@@ -112,7 +112,7 @@ impl Agent {
             self.solver = solver;
             self.graph.commit();
         }
-        maze_to_graph(&radar_view, &self.player, &mut self.graph);
+        self.graph.record(&radar_view, self.player.position, self.player.heading);
         self.share_map(&radar_view);
         self.propose(&radar_view)
     }
@@ -149,7 +149,7 @@ impl Agent {
         }
         for (name, shift) in &self.links {
             if let Some(other) = maps.get(name) {
-                team::merge(&mut self.graph, &other.graph, *shift, self.player.position);
+                self.graph.absorb(&other.graph, *shift, self.player.position);
             }
         }
         maps.insert(self.name.clone(), me);

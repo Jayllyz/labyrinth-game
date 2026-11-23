@@ -190,7 +190,7 @@ pub fn a_star_shortest_path(maze: &Maze, print: PrintPathMode) -> Vec<Cell> {
 
 #[cfg(test)]
 mod tests {
-    use shared::maze_generator::sidewinder;
+    use shared::maze_generator::{GeneratorAlgorithm, generate};
 
     use super::*;
     #[test]
@@ -345,7 +345,7 @@ mod tests {
 
     #[test]
     fn test_random_generated() {
-        let maze = sidewinder(10, 10, false, 5849);
+        let maze = generate(GeneratorAlgorithm::Sidewinder, 10, 10, false, 5849);
         let shortest_path = bfs_shortest_path(&maze, PrintPathMode::None);
         assert!(!shortest_path.is_empty());
     }

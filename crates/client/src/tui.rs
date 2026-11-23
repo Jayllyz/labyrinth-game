@@ -21,7 +21,6 @@ use ratatui::{
 use shared::heading::Heading;
 use shared::{maze::Cell, radar::CellType};
 use std::{
-    collections::HashMap,
     io,
     sync::mpsc::{Receiver, Sender, channel},
     time::{Duration, Instant},
@@ -328,14 +327,9 @@ impl Tui {
 
     fn create_stats(&self, agent: &AgentState) -> (f64, String) {
         let graph = &agent.graph;
-        let cells = &graph.cell_map;
-
-        let total_cells = cells.len();
-        let visited_cells =
-            cells.values().filter(|cell| cell.status == CellStatus::Visited).count();
-        let dead_ends = cells.values().filter(|cell| cell.status == CellStatus::DeadEnd).count();
-        let not_visited =
-            cells.values().filter(|cell| cell.status == CellStatus::NotVisited).count();
+        let counts = graph.status_counts();
+        let (total_cells, visited_cells, dead_ends, not_visited) =
+            (counts.total, counts.visited, counts.dead_ends, counts.not_visited);
 
         let explored =
             if total_cells > 0 { visited_cells as f64 / total_cells as f64 } else { 0.0 };
@@ -349,20 +343,6 @@ impl Tui {
             not_visited,
         );
         (explored, text)
-    }
-
-    fn calculate_bounds(cells: &HashMap<Cell, MazeCell>) -> (i16, i16, i16, i16) {
-        cells.keys().fold(
-            (i16::MAX, i16::MIN, i16::MAX, i16::MIN),
-            |(min_row, max_row, min_col, max_col), cell| {
-                (
-                    min_row.min(cell.row),
-                    max_row.max(cell.row),
-                    min_col.min(cell.column),
-                    max_col.max(cell.column),
-                )
-            },
-        )
     }
 
     fn calculate_view_bounds(
@@ -475,12 +455,7 @@ impl Tui {
         Span::styled(symbol, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
     }
 
-    fn render_horizontal_wall(
-        cells: &HashMap<Cell, MazeCell>,
-        row: i16,
-        col: i16,
-        col_end: i16,
-    ) -> String {
+    fn render_horizontal_wall(graph: &MazeGraph, row: i16, col: i16, col_end: i16) -> String {
         let mut wall = String::new();
         wall.push_str("    │");
 
@@ -488,7 +463,7 @@ impl Tui {
             let pos = Cell { row, column: current_col };
             let below_pos = Cell { row: row + 1, column: current_col };
 
-            if let Some(cell) = cells.get(&pos) {
+            if let Some(cell) = graph.get_cell(pos) {
                 if !cell.neighbors.contains(&below_pos) {
                     wall.push_str("───");
                 } else {
@@ -528,9 +503,7 @@ impl Tui {
         available_height: i16,
     ) -> Vec<Line<'static>> {
         let wall = Style::default().fg(Color::DarkGray);
-        let cells = &graph.cell_map;
-
-        let bounds = Self::calculate_bounds(cells);
+        let bounds = graph.bounds();
         let (row_start, row_end, col_start, col_end) =
             Self::calculate_view_bounds(bounds, player, available_width, available_height);
 
@@ -548,7 +521,7 @@ impl Tui {
 
             for col in col_start..=col_end {
                 let pos = Cell { row, column: col };
-                let Some(cell) = cells.get(&pos) else {
+                let Some(cell) = graph.get_cell(pos) else {
                     spans.push(Span::raw(if col < col_end { "    " } else { "   " }));
                     continue;
                 };
@@ -567,7 +540,7 @@ impl Tui {
             lines.push(Line::from(spans));
 
             if row < row_end {
-                let below = Self::render_horizontal_wall(cells, row, col_start, col_end);
+                let below = Self::render_horizontal_wall(graph, row, col_start, col_end);
                 lines.push(Line::styled(below.trim_end_matches('\n').to_string(), wall));
             }
         }
@@ -654,20 +627,6 @@ mod tests {
     }
 
     #[test]
-    fn test_calculate_bounds() {
-        let mut cells = HashMap::new();
-
-        assert_eq!(Tui::calculate_bounds(&cells), (i16::MAX, i16::MIN, i16::MAX, i16::MIN));
-
-        cells.insert(Cell { row: 0, column: 0 }, MazeCell::new(CellType::NOTHING));
-        assert_eq!(Tui::calculate_bounds(&cells), (0, 0, 0, 0));
-
-        cells.insert(Cell { row: -1, column: 2 }, MazeCell::new(CellType::NOTHING));
-        cells.insert(Cell { row: 3, column: -2 }, MazeCell::new(CellType::NOTHING));
-        assert_eq!(Tui::calculate_bounds(&cells), (-1, 3, -2, 2));
-    }
-
-    #[test]
     fn test_calculate_view_bounds() {
         let bounds = (-2, 2, -3, 3); // 5x7 maze
         let player = Player {
@@ -705,34 +664,23 @@ mod tests {
 
     #[test]
     fn test_render_horizontal_wall() {
-        let mut cells = HashMap::new();
+        let (left, right) = (Cell { row: 0, column: 0 }, Cell { row: 0, column: 1 });
+        let mut graph = MazeGraph::new();
 
-        let wall = Tui::render_horizontal_wall(&cells, 0, 0, 2);
+        let wall = Tui::render_horizontal_wall(&graph, 0, 0, 2);
         assert_eq!(wall, "    │           \n");
 
-        let mut cell1 = MazeCell::new(CellType::NOTHING);
-        let mut cell2 = MazeCell::new(CellType::NOTHING);
-
-        cell1.neighbors.insert(Cell { row: 0, column: 1 }); // Right neighbor
-        cell1.neighbors.insert(Cell { row: 1, column: 0 }); // Bottom neighbor
-        cell2.neighbors.insert(Cell { row: 0, column: 0 }); // Left neighbor
-        cell2.neighbors.insert(Cell { row: 1, column: 1 }); // Bottom neighbor
-
-        cells.insert(Cell { row: 0, column: 0 }, cell1);
-        cells.insert(Cell { row: 0, column: 1 }, cell2);
-
-        let wall = Tui::render_horizontal_wall(&cells, 0, 0, 1);
-        assert_eq!(wall, "    │       \n");
-
-        cells.clear();
-        let cell1 = MazeCell::new(CellType::NOTHING);
-        let cell2 = MazeCell::new(CellType::NOTHING);
-
-        cells.insert(Cell { row: 0, column: 0 }, cell1);
-        cells.insert(Cell { row: 0, column: 1 }, cell2);
-
-        let wall = Tui::render_horizontal_wall(&cells, 0, 0, 1);
+        graph.add(left, CellType::NOTHING);
+        graph.add(right, CellType::NOTHING);
+        let wall = Tui::render_horizontal_wall(&graph, 0, 0, 1);
         assert_eq!(wall, "    │───┼───\n");
+
+        graph.add_neighbor(&left, &right);
+        graph.add_neighbor(&left, &Cell { row: 1, column: 0 });
+        graph.add_neighbor(&right, &left);
+        graph.add_neighbor(&right, &Cell { row: 1, column: 1 });
+        let wall = Tui::render_horizontal_wall(&graph, 0, 0, 1);
+        assert_eq!(wall, "    │       \n");
     }
 
     fn lines_text(lines: &[Line]) -> String {

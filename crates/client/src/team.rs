@@ -4,10 +4,9 @@
 //! Every agent maps the maze from its own start cell. All agents start facing North, so
 //! two maps differ only by a shift, which a mutual sighting reveals.
 
-use crate::data_structures::maze_graph::{CellStatus, MazeGraph, Side};
+use crate::data_structures::maze_graph::MazeGraph;
 use crate::maze_parser::Player;
 use shared::{
-    heading::Heading,
     maze::Cell,
     radar::{CellType, Radar},
 };
@@ -65,63 +64,14 @@ pub fn find_shift(me: &Snapshot, other: &Snapshot) -> Option<Cell> {
             let at = me.position + *seen;
             Cell { row: at.row - other.position.row, column: at.column - other.position.column }
         })
-        .find(|&shift| maps_agree(&me.graph, &other.graph, shift))
-}
-
-/// Whether every cell side both maps saw is the same, and there are enough of them.
-fn maps_agree(mine: &MazeGraph, other: &MazeGraph, shift: Cell) -> bool {
-    let mut overlap = 0;
-    for (cell, theirs) in &other.cell_map {
-        let Some(ours) = mine.cell_map.get(&(*cell + shift)) else {
-            continue;
-        };
-        if ours.cell_type.is_exit() != theirs.cell_type.is_exit() {
-            return false;
-        }
-        for (a, b) in ours.sides.iter().zip(&theirs.sides) {
-            if *a == Side::Unknown || *b == Side::Unknown {
-                continue;
-            }
-            if a != b {
-                return false;
-            }
-            overlap += 1;
-        }
-    }
-    overlap >= MIN_OVERLAP
-}
-
-/// Copies what `other` knows into `mine`: new cells and passages, and the branches it
-/// found to be dead ends. `keep` is left as is, so the agent's own cell keeps its marks.
-pub fn merge(mine: &mut MazeGraph, other: &MazeGraph, shift: Cell, keep: Cell) {
-    for (cell, theirs) in &other.cell_map {
-        let target = *cell + shift;
-        if target == keep {
-            continue;
-        }
-        if !mine.contains(&target) {
-            // Players seen there have moved on, so only the exit is worth keeping.
-            let cell_type =
-                if theirs.cell_type.is_exit() { CellType::OBJECTIVE } else { CellType::NOTHING };
-            mine.add(target, cell_type);
-        }
-        for neighbor in &theirs.neighbors {
-            mine.add_neighbor(&target, &(*neighbor + shift));
-        }
-        for heading in Heading::CLOCKWISE {
-            if theirs.side(heading) != Side::Unknown {
-                mine.set_side(target, heading, theirs.side(heading));
-            }
-        }
-        if theirs.status == CellStatus::DeadEnd {
-            mine.update_cell_status(target, CellStatus::DeadEnd);
-        }
-    }
+        .find(|&shift| me.graph.shared_sides(&other.graph, shift).is_some_and(|n| n >= MIN_OVERLAP))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_structures::maze_graph::CellStatus;
+    use shared::heading::Heading;
 
     const fn cell(row: i16, column: i16) -> Cell {
         Cell { row, column }
@@ -186,11 +136,11 @@ mod tests {
         theirs.update_cell_status(cell(4, 0), CellStatus::DeadEnd);
         theirs.update_cell_status(cell(0, 0), CellStatus::DeadEnd);
 
-        merge(&mut mine, &theirs, cell(0, 0), cell(0, 0));
+        mine.absorb(&theirs, cell(0, 0), cell(0, 0));
 
-        assert_eq!(mine.get_size(), 5);
+        assert_eq!(mine.status_counts().total, 5);
         assert_eq!(mine.get_cell_status(cell(4, 0)), Some(CellStatus::DeadEnd));
         assert_eq!(mine.get_cell_status(cell(0, 0)), Some(CellStatus::NotVisited));
-        assert!(mine.cell_map[&cell(2, 0)].neighbors.contains(&cell(3, 0)));
+        assert!(mine.get_cell(cell(2, 0)).is_some_and(|c| c.neighbors.contains(&cell(3, 0))));
     }
 }

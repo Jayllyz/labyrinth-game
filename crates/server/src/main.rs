@@ -1,6 +1,6 @@
 use clap::Parser;
 use server::server::{GameServer, ServerConfig};
-use shared::maze::GeneratorAlgorithm;
+use shared::maze_generator::GeneratorAlgorithm;
 use tracing::{error, info};
 use tracing_subscriber::filter::LevelFilter;
 

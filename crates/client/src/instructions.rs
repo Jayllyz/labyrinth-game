@@ -1,10 +1,10 @@
-use crate::data_structures::maze_graph::{CellStatus, MazeGraph};
+use crate::data_structures::maze_graph::{CellStatus, MazeCell, MazeGraph};
 use crate::maze_parser::Player;
 use shared::heading::Heading;
 use shared::maze::Cell;
 use shared::messages;
 use shared::radar::{CellType, Passages, Radar};
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 #[value(rename_all = "PascalCase")]
@@ -123,59 +123,6 @@ pub fn alian_solver(
     player.step_toward(&target)
 }
 
-/// First step on the shortest known path from `from` to the nearest cell matching `is_target`.
-///
-/// Backtracking along parents breaks once the agent is pushed off its path (by an
-/// opponent), so the path goes through every known cell, dead ends included, except
-/// `avoid` (a cell an opponent holds).
-fn first_step_to(
-    graph: &MazeGraph,
-    from: Cell,
-    avoid: Option<Cell>,
-    exit_bearing: Option<f32>,
-    is_target: impl Fn(Cell) -> bool,
-) -> Option<Cell> {
-    let mut came_from: HashMap<Cell, Cell> = HashMap::from([(from, from)]);
-    let mut queue = VecDeque::from([from]);
-
-    while let Some(cell) = queue.pop_front() {
-        // Trying first steps toward the exit first breaks ties between equally close cells.
-        let bearing = exit_bearing.filter(|_| cell == from);
-        for next in toward_exit(cell, &graph.cell_map.get(&cell)?.neighbors, bearing) {
-            if came_from.contains_key(&next) || !graph.contains(&next) || Some(next) == avoid {
-                continue;
-            }
-            came_from.insert(next, cell);
-            if is_target(next) {
-                let mut step = next;
-                while came_from[&step] != from {
-                    step = came_from[&step];
-                }
-                return Some(step);
-            }
-            queue.push_back(next);
-        }
-    }
-    None
-}
-
-/// `neighbors` of `from`, those whose direction is closest to the exit bearing first.
-fn toward_exit(from: Cell, neighbors: &BTreeSet<Cell>, exit_bearing: Option<f32>) -> Vec<Cell> {
-    let mut cells: Vec<Cell> = neighbors.iter().copied().collect();
-    let Some(bearing) = exit_bearing else {
-        return cells;
-    };
-    cells.sort_by_cached_key(|cell| {
-        let delta = Cell { row: cell.row - from.row, column: cell.column - from.column };
-        let Some(heading) = Heading::from_delta(delta) else {
-            return u32::MAX;
-        };
-        let diff = (heading.degrees() - bearing).rem_euclid(360.0);
-        diff.min(360.0 - diff) as u32
-    });
-    cells
-}
-
 /// Steps toward the exit once it is on the map, whatever the algorithm, instead of
 /// exploring on after seeing it.
 pub fn step_to_known_exit(
@@ -183,11 +130,7 @@ pub fn step_to_known_exit(
     graph: &MazeGraph,
     avoid: Option<Cell>,
 ) -> Option<messages::Action> {
-    if !graph.exit_seen {
-        return None;
-    }
-    let is_exit = |cell| graph.cell_map.get(&cell).is_some_and(|c| c.cell_type.is_exit());
-    let step = first_step_to(graph, player.position, avoid, None, is_exit)?;
+    let step = graph.first_step_to_exit(player.position, avoid)?;
     Some(player.step_toward(&step))
 }
 
@@ -202,8 +145,7 @@ pub fn tremeaux_solver(
         };
         (player_cell.neighbors.clone(), player_cell.parent)
     };
-    for neighbor_position in toward_exit(player.position, &neighbor_positions, player.exit_bearing)
-    {
+    for neighbor_position in graph.neighbors_toward(player.position, player.exit_bearing) {
         if Some(neighbor_position) == avoid {
             continue;
         }
@@ -226,8 +168,11 @@ pub fn tremeaux_solver(
         }
     }
 
-    let unexplored = |cell| graph.get_cell_status(cell) == Some(CellStatus::NotVisited);
-    let target = first_step_to(graph, player.position, avoid, player.exit_bearing, unexplored)
+    // Backtracking along parents breaks once the agent is pushed off its path by an
+    // opponent, so the path goes through every known cell, dead ends included.
+    let unexplored = |cell: &MazeCell| cell.status == CellStatus::NotVisited;
+    let target = graph
+        .first_step(player.position, avoid, player.exit_bearing, unexplored)
         .unwrap_or_else(|| backtrack_target(&neighbor_positions, parent));
     graph.update_cell_status(player.position, CellStatus::DeadEnd);
     player.step_toward(&target)
@@ -335,7 +280,6 @@ pub fn right_hand_solver(radar_view: &Radar, player: &mut Player) -> messages::A
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::maze_parser::maze_to_graph;
     use messages::RadarView;
     use shared::radar::{decode_base64, extract_data};
 
@@ -354,7 +298,7 @@ mod tests {
         let radar = extract_data(&decode_base64(&view.0));
         let mut player = Player::new();
         let mut graph = MazeGraph::new();
-        maze_to_graph(&radar, &player, &mut graph);
+        graph.record(&radar, player.position, player.heading);
 
         let result = tremeaux_solver(&mut player, &mut graph, None);
 

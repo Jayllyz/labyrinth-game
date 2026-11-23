@@ -28,17 +28,14 @@ where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
     fn on_new_span(&self, attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
-        let mut name = FieldText::new("name");
-        attrs.record(&mut name);
-        if let (Some(name), Some(span)) = (name.text, ctx.span(id)) {
+        let name = FieldText::read("name", |visitor| attrs.record(visitor));
+        if let (Some(name), Some(span)) = (name, ctx.span(id)) {
             span.extensions_mut().insert(AgentName(name));
         }
     }
 
     fn on_event(&self, event: &tracing::Event<'_>, ctx: Context<'_, S>) {
-        let mut message = FieldText::new("message");
-        event.record(&mut message);
-        let text = message.text.unwrap_or_default();
+        let text = FieldText::read("message", |visitor| event.record(visitor)).unwrap_or_default();
         let level = *event.metadata().level();
         let agent = ctx.event_scope(event).and_then(|scope| {
             scope
@@ -62,8 +59,11 @@ struct FieldText {
 }
 
 impl FieldText {
-    const fn new(field: &'static str) -> Self {
-        Self { field, text: None }
+    /// The text of `field`, from whatever `record` feeds the visitor it gets.
+    fn read(field: &'static str, record: impl FnOnce(&mut dyn Visit)) -> Option<String> {
+        let mut visitor = Self { field, text: None };
+        record(&mut visitor);
+        visitor.text
     }
 }
 
