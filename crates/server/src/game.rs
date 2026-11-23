@@ -3,7 +3,7 @@
 use shared::{
     heading::Heading,
     maze::{Maze, PositionType},
-    messages::{ActionError, Direction},
+    messages::{ActionError, Direction, secret_sum_modulo},
     radar::encode_base64,
 };
 
@@ -85,13 +85,8 @@ impl Game {
 
     /// The sum of the team's secrets modulo `modulo`; a member without a secret adds nothing.
     pub fn team_secret_sum(&self, team: usize, modulo: u128) -> u128 {
-        self.players
-            .iter()
-            .filter(|p| p.team == team)
-            .filter_map(|p| p.secret)
-            .map(|secret| secret % modulo)
-            .sum::<u128>()
-            % modulo
+        let secrets = self.players.iter().filter(|p| p.team == team).filter_map(|p| p.secret);
+        secret_sum_modulo(secrets, modulo)
     }
 
     /// Counts an action that is not a move, such as a challenge answer, in the score.

@@ -333,23 +333,12 @@ pub fn right_hand_solver(radar_view: &Radar, player: &mut Player) -> messages::A
     messages::Action::MoveTo(messages::Direction::Right)
 }
 
-pub fn solve_sum_modulo<K, S: ::std::hash::BuildHasher>(
-    secret_sum: u128,
-    secrets: &HashMap<K, u128, S>,
-) -> String {
-    (secrets.values().sum::<u128>() % secret_sum).to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::maze_parser::maze_to_graph;
     use messages::RadarView;
     use shared::radar::{decode_base64, extract_data};
-    use std::{
-        collections::HashMap,
-        sync::{Arc, Mutex},
-    };
 
     #[test]
     fn test_right_hand_solver() {
@@ -374,34 +363,6 @@ mod tests {
             result,
             messages::Action::MoveTo(messages::Direction::Front | messages::Direction::Back)
         ));
-    }
-
-    #[test]
-    fn test_sum_modulo() {
-        let secrets_arc = Arc::new(Mutex::new(HashMap::new()));
-        let mut handles = vec![];
-
-        let values = vec![2667360881372235285, 7064968778338382540, 8653237798568263501];
-
-        for value in values {
-            let secrets = Arc::<
-                std::sync::Mutex<std::collections::HashMap<std::thread::ThreadId, u128>>,
-            >::clone(&secrets_arc);
-            let handle = std::thread::spawn(move || {
-                let thread_id = std::thread::current().id();
-                secrets.lock().unwrap().insert(thread_id, value);
-            });
-            handles.push(handle);
-        }
-
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
-        let secrets = secrets_arc.lock().unwrap();
-
-        let result = solve_sum_modulo(1524576388644652385, &secrets);
-        assert_eq!(result, "90650794543052706");
     }
 
     const CURRENT: Cell = Cell { row: 5, column: 5 };

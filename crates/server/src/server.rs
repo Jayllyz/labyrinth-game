@@ -474,7 +474,6 @@ impl GameServer {
                         Message::SubscribePlayer(player) => {
                             let player = Client {
                                 player_name: player.name.clone(),
-                                team_name: String::new(),
                                 address: peer_address,
                                 registration_token: player.registration_token,
                             };
@@ -539,7 +538,6 @@ mod tests {
     fn create_test_client(name: &str, token: &str) -> Client {
         Client {
             player_name: name.to_string(),
-            team_name: "Test Team".to_string(),
             address: SocketAddr::from_str("127.0.0.1:8080").unwrap(),
             registration_token: token.to_string(),
         }
